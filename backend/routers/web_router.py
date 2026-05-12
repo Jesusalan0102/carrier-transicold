@@ -83,7 +83,22 @@ BASE_STYLE = """
     .modal-content { background: white; padding: 24px; border-radius: 16px; width: 90%; max-width: 500px; max-height: 80vh; overflow-y: auto; box-shadow: 0 12px 40px rgba(0,0,0,0.2); }
     .modal-content input { margin-bottom: 10px; }
     .modal-content .btn-primary, .modal-content .btn-danger, .modal-content .btn-success { margin-top: 8px; }
-    @media (max-width: 768px) { .main-header { font-size: 1.2rem; } .kpi-num { font-size: 1.6rem; } .sidebar { width: 18rem; } .main-content { margin-left: 18rem; } }
+    .hamburger {
+        display: none; position: fixed; top: 14px; left: 14px; z-index: 300;
+        background: var(--carrier-blue); color: white; border: none; border-radius: 10px;
+        width: 44px; height: 44px; font-size: 1.3rem; cursor: pointer;
+        box-shadow: 0 4px 12px rgba(0,43,91,0.35); align-items: center; justify-content: center;
+    }
+    .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.45); z-index: 99; }
+    @media (max-width: 768px) {
+        .main-header { font-size: 1.2rem; }
+        .kpi-num { font-size: 1.6rem; }
+        .sidebar { width: 80vw; max-width: 300px; transform: translateX(-100%); transition: transform 0.3s ease; }
+        .sidebar.open { transform: translateX(0); }
+        .main-content { margin-left: 0; padding: 1rem; padding-top: 4rem; }
+        .hamburger { display: flex; }
+        .overlay.open { display: block; }
+    }
 </style>
 """
 
@@ -122,6 +137,8 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
         </script>
     </head>
     <body>
+        <button class="hamburger" id="hambBtn" onclick="toggleSidebar()">☰</button>
+        <div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
         <div class="sidebar" id="sidebar">
             <div style="text-align:center; margin-bottom:24px;">
                 <img src="https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo.jpg" style="width:150px; border-radius:8px;">
@@ -169,10 +186,17 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 let navHtml = '';
                 menu.forEach(item => {{
                     const active = item.href === '/app/{pagina_activa}' ? ' active' : '';
-                    navHtml += `<a href="${{item.href}}" class="nav-item${{active}}">${{item.label}}</a>`;
+                    navHtml += `<a href="${{item.href}}" class="nav-item${{active}}" onclick="if(window.innerWidth<=768)toggleSidebar()">${{item.label}}</a>`;
                 }});
                 document.getElementById('navMenu').innerHTML = navHtml;
             }});
+
+            function toggleSidebar() {{
+                const sidebar = document.getElementById('sidebar');
+                const overlay = document.getElementById('overlay');
+                sidebar.classList.toggle('open');
+                overlay.classList.toggle('open');
+            }}
 
             function logout() {{
                 localStorage.clear();
