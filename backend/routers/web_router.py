@@ -75,6 +75,14 @@ BASE_STYLE = """
     .evidencia-info { background: #eff6ff; border: 1px solid #bfdbfe; border-left: 5px solid #3b82f6; border-radius: 10px; padding: 12px 18px; margin-bottom: 14px; }
     .inv-info-bar { background: linear-gradient(90deg, var(--carrier-blue) 0%, var(--carrier-accent) 100%); color: white; padding: 14px 20px; border-radius: 12px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
     .tv-field-badge { background: var(--carrier-light); border: 1px solid #c3d4f0; border-radius: 8px; padding: 6px 12px; font-size: 0.82rem; color: var(--carrier-blue); font-weight: 600; display: inline-block; margin-bottom: 8px; }
+    /* Visor: ocultar botones de acción */
+    body.visor-mode .btn-primary,
+    body.visor-mode .btn-danger,
+    body.visor-mode .btn-success,
+    body.visor-mode .btn-warning,
+    body.visor-mode button:not(.logout-btn):not(.hamburger) { display: none !important; }
+    body.visor-mode input, body.visor-mode select, body.visor-mode textarea { pointer-events: none; background: #f9fafb; }
+    .visor-banner { background: #fef3c7; border: 1px solid #f59e0b; color: #92400e; padding: 8px 16px; border-radius: 8px; font-size: 0.82rem; font-weight: 600; text-align: center; margin-bottom: 16px; }
     .login-card { background: white; padding: 36px 40px; border-radius: 20px; box-shadow: 0 12px 40px rgba(0,43,91,0.18); border: 1px solid #e2e8f2; }
     .user-chip { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.22); border-radius: 50px; padding: 6px 14px; color: white; font-size: 0.82rem; font-weight: 500; display: inline-block; margin-top: 4px; }
     .logout-btn { background: rgba(220,38,38,0.25); border: 1px solid rgba(220,38,38,0.5); padding: 14px 20px; border-radius: 10px; color: white; font-weight: 600; font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; transition: background 0.2s; flex-shrink: 0; }
@@ -160,13 +168,17 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 <h1 class="main-header">{titulo}</h1>
                 <div id="liveClock" class="time-badge"></div>
             </div>
+            <div id="visorBanner" style="display:none" class="visor-banner">👁 Modo solo lectura — No tienes permisos para editar</div>
+            <script>if(window.role==='visor') document.getElementById('visorBanner').style.display='block';</script>
             {contenido}
         </div>
 
         <script>
             document.addEventListener('DOMContentLoaded', function() {{
+                if (window.role === 'visor') {{ document.body.classList.add('visor-mode'); }}
                 document.getElementById('sidebarUser').textContent = '👤 ' + window.username;
-                document.getElementById('sidebarRole').textContent = window.role === 'admin' ? '🛡 Administrador' : '🔧 Técnico';
+                const roleLabels = {{ admin: '🛡 Administrador', tecnico: '🔧 Técnico', visor: '👁 Visor' }};
+                document.getElementById('sidebarRole').textContent = roleLabels[window.role] || window.role;
 
                 const adminMenu = [
                     {{ href: '/app/dashboard', label: '📊 Dashboard Ejecutivo' }},
@@ -177,12 +189,20 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/usuarios', label: '👥 Gestión de Usuarios' }},
                     {{ href: '/app/admin', label: '🛠 Panel de Administración' }},
                 ];
+                const visorMenu = [
+                    {{ href: '/app/dashboard', label: '📊 Dashboard Ejecutivo' }},
+                    {{ href: '/app/asignaciones', label: '🎯 Control de Asignaciones' }},
+                    {{ href: '/app/tickets', label: '🎫 Tickets' }},
+                    {{ href: '/app/inventario', label: '📦 Inventarios' }},
+                    {{ href: '/app/unidades', label: '📸 Registro de Unidades' }},
+                    {{ href: '/app/usuarios', label: '👥 Gestión de Usuarios' }},
+                ];
                 const techMenu = [
                     {{ href: '/app/mis-tareas', label: '🎯 Mis Tareas' }},
                     {{ href: '/app/solicitud', label: '🔔 Nueva Solicitud' }},
                     {{ href: '/app/mis-tickets', label: '🎫 Mis Tickets' }},
                 ];
-                const menu = window.role === 'admin' ? adminMenu : techMenu;
+                const menu = window.role === 'admin' ? adminMenu : (window.role === 'visor' ? visorMenu : techMenu);
                 let navHtml = '';
                 menu.forEach(item => {{
                     const active = item.href === '/app/{pagina_activa}' ? ' active' : '';
@@ -234,7 +254,15 @@ async def login():
         <style>
             * { box-sizing: border-box; font-family: 'Inter', system-ui, sans-serif; }
             body { background: linear-gradient(135deg, #EEF2F9 0%, #F5F7FB 60%, #EAF0FB 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; margin: 0; padding: 20px; }
-            .login-card { background: white; padding: 40px 32px; border-radius: 20px; box-shadow: 0 12px 40px rgba(0,43,91,0.18); max-width: 400px; width: 100%; text-align: center; }
+            /* Visor: ocultar botones de acción */
+    body.visor-mode .btn-primary,
+    body.visor-mode .btn-danger,
+    body.visor-mode .btn-success,
+    body.visor-mode .btn-warning,
+    body.visor-mode button:not(.logout-btn):not(.hamburger) { display: none !important; }
+    body.visor-mode input, body.visor-mode select, body.visor-mode textarea { pointer-events: none; background: #f9fafb; }
+    .visor-banner { background: #fef3c7; border: 1px solid #f59e0b; color: #92400e; padding: 8px 16px; border-radius: 8px; font-size: 0.82rem; font-weight: 600; text-align: center; margin-bottom: 16px; }
+    .login-card { background: white; padding: 40px 32px; border-radius: 20px; box-shadow: 0 12px 40px rgba(0,43,91,0.18); max-width: 400px; width: 100%; text-align: center; }
             .login-card img { width: 280px; max-width: 100%; border-radius: 12px; margin-bottom: 20px; }
             .login-card h2 { color: #002B5B; font-weight: 800; font-size: 1.5rem; margin-bottom: 4px; }
             .login-card p { color: #6b7280; font-size: 0.9rem; margin-bottom: 24px; }

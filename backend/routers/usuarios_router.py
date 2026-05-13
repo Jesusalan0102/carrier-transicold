@@ -5,6 +5,8 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/usuarios", tags=["usuarios"])
 
+ROLES_PERMITIDOS = {"admin", "tecnico", "visor"}
+
 class UserCreate(BaseModel):
     username: str
     password: str
@@ -12,14 +14,16 @@ class UserCreate(BaseModel):
 
 @router.get("/")
 def listar_usuarios(current_user=Depends(verify_token)):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if current_user["role"] not in ("admin", "visor"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
     return execute_read("SELECT id, username, role FROM users ORDER BY role, username")
 
 @router.post("/")
 def crear_usuario(user: UserCreate, current_user=Depends(verify_token)):
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo administradores")
+    if user.role not in ROLES_PERMITIDOS:
+        raise HTTPException(status_code=400, detail=f"Rol inválido. Usa: {ROLES_PERMITIDOS}")
     execute_write(
         "INSERT INTO users (username, password, role) VALUES (%s,%s,%s)",
         (user.username, user.password, user.role)
@@ -30,6 +34,8 @@ def crear_usuario(user: UserCreate, current_user=Depends(verify_token)):
 def actualizar_usuario(user_id: int, user: UserCreate, current_user=Depends(verify_token)):
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo administradores")
+    if user.role not in ROLES_PERMITIDOS:
+        raise HTTPException(status_code=400, detail=f"Rol inválido. Usa: {ROLES_PERMITIDOS}")
     execute_write(
         "UPDATE users SET username=%s, password=%s, role=%s WHERE id=%s",
         (user.username, user.password, user.role, user_id)
