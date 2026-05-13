@@ -82,6 +82,7 @@ BASE_STYLE = """
     body.visor-mode .btn-warning,
     body.visor-mode button:not(.logout-btn):not(.hamburger) { display: none !important; }
     body.visor-mode input, body.visor-mode select, body.visor-mode textarea { pointer-events: none; background: #f9fafb; }
+    body.visor-mode .admin-only { display: none !important; }
     .visor-banner { background: #fef3c7; border: 1px solid #f59e0b; color: #92400e; padding: 8px 16px; border-radius: 8px; font-size: 0.82rem; font-weight: 600; text-align: center; margin-bottom: 16px; }
     .login-card { background: white; padding: 36px 40px; border-radius: 20px; box-shadow: 0 12px 40px rgba(0,43,91,0.18); border: 1px solid #e2e8f2; }
     .user-chip { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.22); border-radius: 50px; padding: 6px 14px; color: white; font-size: 0.82rem; font-weight: 500; display: inline-block; margin-top: 4px; }
@@ -315,7 +316,7 @@ async def login():
 @router.get("/app/dashboard", response_class=HTMLResponse)
 async def dashboard():
     contenido = """
-    <script> if (window.role !== 'admin') { window.location.href = '/app/mis-tareas'; } </script>
+    <script> if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; } </script>
     <div id="kpiContainer" style="display:grid; grid-template-columns: repeat(5, 1fr); gap:16px; margin-bottom:32px;"></div>
     <div style="display:grid; grid-template-columns: 2fr 1fr; gap:24px; margin-bottom:32px;">
         <div id="barChart" style="background:white; border-radius:16px; padding:20px; box-shadow:0 4px 12px rgba(0,43,91,0.08); min-height:420px;"></div>
@@ -325,15 +326,15 @@ async def dashboard():
     <div id="statusTable" style="overflow-x:auto; margin-bottom:32px;"></div>
     <div class="section-title">📦 Lotes y Series por Unidad</div>
     <div id="lotesContainer" style="margin-bottom:32px;"></div>
-    <div class="section-title">📂 Descarga de Evidencias por Unidad</div>
-    <div style="display:flex; gap:16px; align-items:center; margin-bottom:16px;">
+    <div class="section-title admin-only">📂 Descarga de Evidencias por Unidad</div>
+    <div class="admin-only" style="display:flex; gap:16px; align-items:center; margin-bottom:16px;">
         <select id="unidadEv" style="width:auto; flex:1;"><option value="">Selecciona unidad</option></select>
         <button class="btn-primary" onclick="descargarEvidencias()">📥 Descargar ZIP</button>
     </div>
-    <div class="section-title">📥 Reportes y Descargas</div>
-    <button class="btn-primary" onclick="descargarReporte()">📊 Descargar Reporte Maestro Excel</button>
+    <div class="section-title admin-only">📥 Reportes y Descargas</div>
+    <button class="btn-primary admin-only" onclick="descargarReporte()">📊 Descargar Reporte Maestro Excel</button>
     <script>
-        if (window.role !== 'admin') { window.location.href = '/app/mis-tareas'; }
+        if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; }
         const fetchAuth = window.fetchAuth;
         const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series'];
         const camposSeries = {"vin_number":"VIN Number","reefer_serial":"Serie del Reefer","reefer_model":"Modelo del Reefer","evaporator_serial_mjs11":"Evaporador MJS11","evaporator_serial_mjd22":"Evaporador MJD22","engine_serial":"Motor","compressor_serial":"Compresor","generator_serial":"Generador","battery_charger_serial":"Cargador de Batería"};
@@ -382,7 +383,7 @@ async def dashboard():
 @router.get("/app/asignaciones", response_class=HTMLResponse)
 async def asignaciones():
     contenido = """
-    <script> if (window.role !== 'admin') { window.location.href = '/app/mis-tareas'; } </script>
+    <script> if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; } </script>
     <div id="solicitudesPendientes">
         <div style="display:flex; justify-content:space-between; align-items:center;">
             <div class="section-title" style="margin:0;">🔔 Solicitudes Pendientes</div>
@@ -390,8 +391,8 @@ async def asignaciones():
         </div>
         <div id="listaSolicitudes" style="margin-top:16px;"></div>
     </div>
-    <div class="section-title">➕ Asignación Directa</div>
-    <form id="asignacionForm" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px;">
+    <div class="section-title admin-only">➕ Asignación Directa</div>
+    <form id="asignacionForm" class="admin-only" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px;">
         <select id="unidad" required><option value="">Unidad</option></select>
         <select id="tecnico" required><option value="">Técnico</option></select>
         <select id="actividad" required><option value="">Actividad</option></select>
@@ -477,10 +478,10 @@ async def asignaciones():
 @router.get("/app/tickets", response_class=HTMLResponse)
 async def tickets():
     contenido = """
-    <script> if (window.role !== 'admin') { window.location.href = '/app/mis-tareas'; } </script>
+    <script> if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; } </script>
     <div id="ticketsList"></div>
-    <div class="section-title">➕ Nuevo Ticket</div>
-    <form id="ticketForm">
+    <div class="section-title admin-only">➕ Nuevo Ticket</div>
+    <form id="ticketForm" class="admin-only">
         <select id="unidad" required><option value="">Unidad</option></select>
         <input type="text" id="vin" placeholder="VIN (opcional)">
         <textarea id="descripcion" placeholder="Descripción del problema" rows="3" required></textarea>
@@ -522,7 +523,7 @@ async def tickets():
 @router.get("/app/inventario", response_class=HTMLResponse)
 async def inventario():
     contenido = """
-    <script> if (window.role !== 'admin') { window.location.href = '/app/mis-tareas'; } </script>
+    <script> if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; } </script>
     <div class="inv-info-bar" id="infoBar"></div>
     <div style="display:flex; gap:12px; margin-bottom:16px;">
         <button class="btn-primary" onclick="agregarFila()">➕ Agregar Fila</button>
@@ -564,8 +565,8 @@ async def inventario():
 @router.get("/app/unidades", response_class=HTMLResponse)
 async def unidades():
     contenido = """
-    <script> if (window.role !== 'admin') { window.location.href = '/app/mis-tareas'; } </script>
-    <form id="unidadForm" style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+    <script> if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; } </script>
+    <form id="unidadForm" class="admin-only" style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
         <input type="text" id="unit_number" placeholder="Número Económico" required><input type="text" id="id_lote" placeholder="Número de Lote">
         <input type="text" id="vin_number" placeholder="VIN Number"><input type="text" id="reefer_serial" placeholder="Serie del Reefer">
         <input type="text" id="reefer_model" placeholder="Modelo del Reefer"><input type="text" id="evaporator_serial_mjs11" placeholder="Evaporador MJS11">
@@ -591,11 +592,11 @@ async def unidades():
 @router.get("/app/usuarios", response_class=HTMLResponse)
 async def usuarios():
     contenido = """
-    <script> if (window.role !== 'admin') { window.location.href = '/app/mis-tareas'; } </script>
+    <script> if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; } </script>
     <div class="section-title">👥 Usuarios Registrados</div>
     <div id="usuariosList"></div>
-    <div class="section-title">➕ Crear Nuevo Usuario</div>
-    <form id="usuarioForm" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px;">
+    <div class="section-title admin-only">➕ Crear Nuevo Usuario</div>
+    <form id="usuarioForm" class="admin-only" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px;">
         <input type="text" id="username" placeholder="Nombre de usuario" required>
         <input type="password" id="password" placeholder="Contraseña" required>
         <select id="role" required>
@@ -709,6 +710,7 @@ async def admin():
 @router.get("/app/mis-tareas", response_class=HTMLResponse)
 async def mis_tareas():
     contenido = """
+    <script> if (window.role === 'visor') { window.location.href = '/app/dashboard'; } </script>
     <div id="tareasList"></div>
     <script>
         const fetchAuth = window.fetchAuth, username = window.username;
