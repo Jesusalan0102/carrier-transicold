@@ -349,7 +349,7 @@ async def dashboard():
                 const tecnicosSet = new Set(usuariosAll.filter(u => u.role === 'tecnico').map(u => u.username));
                 const stats = statsRaw.filter(s => tecnicosSet.has(s.tecnico));
                 if (stats.length > 0) {
-                    let html = `<table><thead><tr><th>Técnico</th><th>Total</th><th>Completadas</th><th>En Curso</th><th>Pendientes</th><th>Rendimiento</th></tr></thead><tbody>`;
+                    let html = `</table><thead><tr><th>Técnico</th><th>Total</th><th>Completadas</th><th>En Curso</th><th>Pendientes</th><th>Rendimiento</th></tr></thead><tbody>`;
                     stats.forEach(s => { const rend = s.total > 0 ? Math.round((s.completadas / s.total) * 100) : 0; html += `<tr><td>${s.tecnico}</td><td>${s.total}</td><td style="color:var(--carrier-success);">${s.completadas}</td><td style="color:var(--carrier-warn);">${s.en_curso}</td><td style="color:var(--carrier-danger);">${s.pendientes}</td><td>${rend}%</td></tr>`; });
                     html += '</tbody></table>'; document.getElementById('statsTable').innerHTML = html;
                     const barData = [{x: stats.map(s => s.tecnico), y: stats.map(s => s.completadas), type: 'bar', name: 'Completadas', marker: { color: '#16a34a' }},{x: stats.map(s => s.tecnico), y: stats.map(s => s.en_curso), type: 'bar', name: 'En Curso', marker: { color: '#d97706' }},{x: stats.map(s => s.tecnico), y: stats.map(s => s.pendientes), type: 'bar', name: 'Pendientes', marker: { color: '#dc2626' }}];
@@ -358,7 +358,7 @@ async def dashboard():
                 const asigRes = await fetchAuth('/api/asignaciones/'); const asignaciones = await asigRes.json();
                 if (asignaciones.length) {
                     const conteos = { completada: 0, en_proceso: 0, pendiente: 0 }; asignaciones.forEach(a => conteos[a.estado] = (conteos[a.estado] || 0) + 1);
-                    Plotly.newPlot('pieChart', [{ values: [conteos.completada, conteos.en_proceso, conteos.pendiente], labels: ['Completadas', 'En Proceso', 'Pendientes'], marker: { colors: ['#16a34a', '#d97706', '#dc2626'] }, hole: 0.55, type: 'pie' }], { title: 'Distribución Global', paper_bgcolor: 'transparent', font: { family: 'Inter, sans-serif' } });
+                    Plotly.newPlot('pieChart', [{ values: [conteos.completada, conteos.en_proceso, conteos.pendientes], labels: ['Completadas', 'En Proceso', 'Pendientes'], marker: { colors: ['#16a34a', '#d97706', '#dc2626'] }, hole: 0.55, type: 'pie' }], { title: 'Distribución Global', paper_bgcolor: 'transparent', font: { family: 'Inter, sans-serif' } });
                     const unidadesRes = await fetchAuth('/api/unidades/'); const unidades = await unidadesRes.json();
                     if (unidades.length) {
                         const completadasSet = new Set(asignaciones.filter(a => a.estado === 'completada').map(a => a.unidad + '||' + a.actividad_id));
@@ -590,7 +590,7 @@ async def unidades():
     return HTMLResponse(content=pagina_con_menu("📸 Registro de Unidades", contenido, "unidades"))
 
 # ------------------------------------------------------------
-# GESTIÓN DE USUARIOS (admin)
+# GESTIÓN DE USUARIOS (admin) - CORREGIDO: se añadió opción "visor"
 # ------------------------------------------------------------
 @router.get("/app/usuarios", response_class=HTMLResponse)
 async def usuarios():
@@ -600,8 +600,13 @@ async def usuarios():
     <div id="usuariosList"></div>
     <div class="section-title">➕ Crear Nuevo Usuario</div>
     <form id="usuarioForm" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px;">
-        <input type="text" id="username" placeholder="Nombre de usuario" required><input type="password" id="password" placeholder="Contraseña" required>
-        <select id="role" required><option value="tecnico">Técnico</option><option value="admin">Administrador</option></select>
+        <input type="text" id="username" placeholder="Nombre de usuario" required>
+        <input type="password" id="password" placeholder="Contraseña" required>
+        <select id="role" required>
+            <option value="tecnico">Técnico</option>
+            <option value="admin">Administrador</option>
+            <option value="visor">Visor (solo lectura)</option>
+        </select>
         <button type="submit" class="btn-primary" style="grid-column: span 3;">👤 Crear Usuario</button>
     </form>
     <script>
