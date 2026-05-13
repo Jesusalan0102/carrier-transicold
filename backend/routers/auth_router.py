@@ -1,20 +1,26 @@
 import os
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from db import execute_read
-from models import LoginRequest, TokenResponse
-from auth import create_access_token
+from pydantic import BaseModel
+from auth import create_access_token, authenticate_user
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class TokenResponse(BaseModel):
+    access_token: str
+    role: str
+    username: str
+
 @router.post("/login", response_model=TokenResponse)
 def login(login_data: LoginRequest):
-    users = execute_read(
-        "SELECT username, role FROM users WHERE username=%s AND password=%s",
-        (login_data.username, login_data.password)
-    )
-    if not users:
+    user = authenticate_user(login_data.username, login_data.password)
+    if not user:
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
-    user = users[0]
+    
     token = create_access_token({"sub": user["username"], "role": user["role"]})
     return {
         "access_token": token,
