@@ -231,7 +231,8 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
             actualizarReloj();
             setInterval(actualizarReloj, 1000);
 
-            const ws = new WebSocket('ws://' + window.location.host + '/ws');
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
             ws.onmessage = (event) => {{}};
         </script>
         {extra_scripts}
@@ -309,15 +310,13 @@ async def login():
     """
 
 # ------------------------------------------------------------
-# DASHBOARD (solo admin)
+# DASHBOARD (solo admin) - TABLA DE ESTADÍSTICAS ELIMINADA
 # ------------------------------------------------------------
 @router.get("/app/dashboard", response_class=HTMLResponse)
 async def dashboard():
     contenido = """
     <script> if (window.role !== 'admin') { window.location.href = '/app/mis-tareas'; } </script>
     <div id="kpiContainer" style="display:grid; grid-template-columns: repeat(5, 1fr); gap:16px; margin-bottom:32px;"></div>
-    <div class="section-title">📈 Estadísticas por Técnico</div>
-    <div id="statsTable" style="margin-bottom:24px;"></div>
     <div style="display:grid; grid-template-columns: 2fr 1fr; gap:24px; margin-bottom:32px;">
         <div id="barChart" style="background:white; border-radius:16px; padding:20px; box-shadow:0 4px 12px rgba(0,43,91,0.08); min-height:420px;"></div>
         <div id="pieChart" style="background:white; border-radius:16px; padding:20px; box-shadow:0 4px 12px rgba(0,43,91,0.08); min-height:420px;"></div>
@@ -349,9 +348,6 @@ async def dashboard():
                 const tecnicosSet = new Set(usuariosAll.filter(u => u.role === 'tecnico').map(u => u.username));
                 const stats = statsRaw.filter(s => tecnicosSet.has(s.tecnico));
                 if (stats.length > 0) {
-                    let html = `</table><thead><tr><th>Técnico</th><th>Total</th><th>Completadas</th><th>En Curso</th><th>Pendientes</th><th>Rendimiento</th></tr></thead><tbody>`;
-                    stats.forEach(s => { const rend = s.total > 0 ? Math.round((s.completadas / s.total) * 100) : 0; html += `<tr><td>${s.tecnico}</td><td>${s.total}</td><td style="color:var(--carrier-success);">${s.completadas}</td><td style="color:var(--carrier-warn);">${s.en_curso}</td><td style="color:var(--carrier-danger);">${s.pendientes}</td><td>${rend}%</td></tr>`; });
-                    html += '</tbody></table>'; document.getElementById('statsTable').innerHTML = html;
                     const barData = [{x: stats.map(s => s.tecnico), y: stats.map(s => s.completadas), type: 'bar', name: 'Completadas', marker: { color: '#16a34a' }},{x: stats.map(s => s.tecnico), y: stats.map(s => s.en_curso), type: 'bar', name: 'En Curso', marker: { color: '#d97706' }},{x: stats.map(s => s.tecnico), y: stats.map(s => s.pendientes), type: 'bar', name: 'Pendientes', marker: { color: '#dc2626' }}];
                     Plotly.newPlot('barChart', barData, { title: 'Carga de Trabajo por Técnico', barmode: 'group', paper_bgcolor: 'transparent', plot_bgcolor: 'transparent', font: { family: 'Inter, sans-serif' } });
                 }
@@ -362,7 +358,7 @@ async def dashboard():
                     const unidadesRes = await fetchAuth('/api/unidades/'); const unidades = await unidadesRes.json();
                     if (unidades.length) {
                         const completadasSet = new Set(asignaciones.filter(a => a.estado === 'completada').map(a => a.unidad + '||' + a.actividad_id));
-                        let headers = '<tr><th>LOTE</th><th>#Económico</th>'; actividades.forEach(a => headers += `<th>${a}</th>`); headers += '</tr>';
+                        let headers = '<table><th>LOTE</th><th>#Económico</th>'; actividades.forEach(a => headers += `<th>${a}</th>`); headers += '</tr>';
                         let body = ''; unidades.forEach(u => { body += `<tr><td>${u.id_lote || ''}</td><td>${u.unit_number}</td>`; actividades.forEach(act => body += `<td>${completadasSet.has(u.unit_number + '||' + act) ? '✔' : '–'}</td>`); body += '</tr>'; });
                         document.getElementById('statusTable').innerHTML = `<table><thead>${headers}</thead><tbody>${body}</tbody></table>`;
                         const lotesMap = {}; unidades.forEach(u => { const lote = u.id_lote || 'Sin lote'; if (!lotesMap[lote]) lotesMap[lote] = []; lotesMap[lote].push(u); });
@@ -547,7 +543,7 @@ async def inventario():
             document.getElementById('infoBar').innerHTML = `🗄 Inventario Principal &nbsp;·&nbsp; ${datos.length} registros &nbsp;·&nbsp; ${columnas.length} columnas`;
             renderTabla();
         }
-        function renderTabla() { let html = '<table><thead><tr><th>#</th>'; columnas.forEach(c => html += `<th>${c}</th>`); html += '<th>Acción</th></tr></thead><tbody>'; datos.forEach((fila, idx) => { html += `<tr><td>${idx+1}</td>`; columnas.forEach(c => html += `<td><input type="text" value="${fila[c] || ''}" onchange="datos[${idx}]['${c}'] = this.value" style="margin:0;"></td>`); html += `<td><button class="btn-danger" onclick="eliminarFila(${idx})">🗑</button></td></tr>`; }); html += '</tbody></table>'; document.getElementById('inventarioTable').innerHTML = html; }
+        function renderTabla() { let html = '<table><thead><tr><th>#</th>'; columnas.forEach(c => html += `<th>${c}</th>`); html += '<th>Acción</th></tr></thead><tbody>'; datos.forEach((fila, idx) => { html += `<tr><td>${idx+1}</td>`; columnas.forEach(c => html += `<td><input type="text" value="${fila[c] || ''}" onchange="datos[${idx}]['${c}'] = this.value" style="margin:0;"></td>`); html += `<td><button class="btn-danger" onclick="eliminarFila(${idx})">🗑</button><tr></tr>`; }); html += '</tbody></table>'; document.getElementById('inventarioTable').innerHTML = html; }
         function agregarFila() { datos.push(Object.fromEntries(columnas.map(c => [c, '']))); renderTabla(); }
         function eliminarFila(idx) { if (confirm('¿Eliminar fila?')) { datos.splice(idx,1); renderTabla(); } }
         async function guardarInventario() { await fetchAuth('/api/inventario/datos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos) }); alert('Inventario guardado'); }
@@ -611,14 +607,69 @@ async def usuarios():
     </form>
     <script>
         const fetchAuth = window.fetchAuth;
-        async function cargarUsuarios() { const res = await fetchAuth('/api/usuarios/'); const usuarios = await res.json(); let html = '<table><thead><tr><th>Usuario</th><th>Rol</th><th>Acción</th></tr></thead><tbody>'; if (Array.isArray(usuarios)) usuarios.forEach(u => html += `<tr><td>${u.username}</td><td>${u.role}</td><td><button class="btn-danger" onclick="eliminarUsuario(${u.id})">🗑️</button></td></tr>`); html += '</tbody></table>'; document.getElementById('usuariosList').innerHTML = html; }
-        async function eliminarUsuario(id) { if (confirm('¿Eliminar usuario?')) { await fetchAuth('/api/usuarios/' + id, { method: 'DELETE' }); cargarUsuarios(); } }
-        document.getElementById('usuarioForm').addEventListener('submit', async (e) => { e.preventDefault(); const data = Object.fromEntries(new FormData(e.target)); await fetchAuth('/api/usuarios/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }); alert('Usuario creado'); cargarUsuarios(); });
+        
+        async function cargarUsuarios() { 
+            try {
+                const res = await fetchAuth('/api/usuarios/'); 
+                const usuarios = await res.json(); 
+                let html = '<table><thead><tr><th>Usuario</th><th>Rol</th><th>Acción</th></tr></thead><tbody>'; 
+                if (Array.isArray(usuarios)) {
+                    usuarios.forEach(u => {
+                        const rolTexto = u.role === 'admin' ? '🛡 Administrador' : (u.role === 'tecnico' ? '🔧 Técnico' : '👁 Visor');
+                        html += `<tr><td>${u.username}</td><td>${rolTexto}</td><td><button class="btn-danger" onclick="eliminarUsuario(${u.id})">🗑️</button></td></tr>`;
+                    });
+                }
+                html += '</tbody></table>'; 
+                document.getElementById('usuariosList').innerHTML = html;
+            } catch (err) {
+                console.error('Error cargando usuarios:', err);
+                document.getElementById('usuariosList').innerHTML = '<p style="color:red;">Error al cargar usuarios</p>';
+            }
+        }
+        
+        async function eliminarUsuario(id) { 
+            if (confirm('¿Eliminar usuario?')) { 
+                const res = await fetchAuth('/api/usuarios/' + id, { method: 'DELETE' }); 
+                if (res.ok) cargarUsuarios();
+                else alert('Error al eliminar usuario');
+            } 
+        }
+        
+        document.getElementById('usuarioForm').addEventListener('submit', async (e) => { 
+            e.preventDefault(); 
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const role = document.getElementById('role').value;
+            
+            if (!username || !password) {
+                alert('Complete todos los campos');
+                return;
+            }
+            
+            try {
+                const res = await fetchAuth('/api/usuarios/', { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({ username, password, role }) 
+                });
+                
+                if (res.ok) {
+                    alert('Usuario creado exitosamente'); 
+                    cargarUsuarios();
+                    document.getElementById('usuarioForm').reset();
+                } else {
+                    const error = await res.json();
+                    alert('Error: ' + (error.detail || 'No se pudo crear el usuario'));
+                }
+            } catch (err) {
+                alert('Error de conexión: ' + err.message);
+            }
+        });
+        
         cargarUsuarios();
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("👥 Gestión de Usuarios", contenido, "usuarios"))
-
 # ------------------------------------------------------------
 # PANEL DE ADMINISTRACIÓN (admin)
 # ------------------------------------------------------------
@@ -644,7 +695,7 @@ async def admin():
             },
             usuarios: async () => { const res = await fetchAuth('/app/usuarios'); const html = await res.text(); const parser = new DOMParser(); const doc = parser.parseFromString(html, 'text/html'); document.getElementById('panelContenido').innerHTML = doc.querySelector('.main-content').innerHTML; },
             unidades: async () => { const res = await fetchAuth('/app/unidades'); const html = await res.text(); const parser = new DOMParser(); const doc = parser.parseFromString(html, 'text/html'); document.getElementById('panelContenido').innerHTML = doc.querySelector('.main-content').innerHTML; },
-            sql: () => { document.getElementById('panelContenido').innerHTML = `<textarea id="sqlInput" placeholder="SELECT * FROM asignaciones;" rows="6" style="width:100%;"></textarea><button class="btn-primary" onclick="ejecutarSQL()">▶️ Ejecutar</button><div id="sqlResult" style="margin-top:16px;"></div>`; window.ejecutarSQL = async () => { const sql = document.getElementById('sqlInput').value.trim(); if (!sql) return; try { const res = await fetchAuth('/api/admin/execute-sql', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sql }) }); const data = await res.json(); if (data.error) { document.getElementById('sqlResult').innerHTML = `<p style="color:red;">${data.error}</p>`; return; } if (Array.isArray(data) && data.length) { let table = '<table><thead><tr>'; Object.keys(data[0]).forEach(k => table += `<th>${k}</th>`); table += '</tr></thead><tbody>'; data.forEach(row => { table += '<tr>'; Object.values(row).forEach(v => table += `<td>${v}</td>`); table += '</tr>'; }); table += '</tbody></table>'; document.getElementById('sqlResult').innerHTML = table; } else document.getElementById('sqlResult').innerHTML = '<p>Consulta ejecutada sin resultados.</p>'; } catch (e) { alert('Error: ' + e.message); } }; }
+            sql: () => { document.getElementById('panelContenido').innerHTML = `<textarea id="sqlInput" placeholder="SELECT * FROM asignaciones;" rows="6" style="width:100%;"></textarea><button class="btn-primary" onclick="ejecutarSQL()">▶️ Ejecutar</button><div id="sqlResult" style="margin-top:16px;"></div>`; window.ejecutarSQL = async () => { const sql = document.getElementById('sqlInput').value.trim(); if (!sql) return; try { const res = await fetchAuth('/api/admin/execute-sql', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sql }) }); const data = await res.json(); if (data.error) { document.getElementById('sqlResult').innerHTML = `<p style="color:red;">${data.error}</p>`; return; } if (Array.isArray(data) && data.length) { let table = '</table><thead><tr>'; Object.keys(data[0]).forEach(k => table += `<th>${k}</th>`); table += '</tr></thead><tbody>'; data.forEach(row => { table += '<tr>'; Object.values(row).forEach(v => table += `<td>${v}</td>`); table += '</tr>'; }); table += '</tbody></tr>'; document.getElementById('sqlResult').innerHTML = table; } else document.getElementById('sqlResult').innerHTML = '<p>Consulta ejecutada sin resultados.</p>'; } catch (e) { alert('Error: ' + e.message); } }; }
         };
         function mostrarPestana(nombre) { pestanas[nombre](); }
         mostrarPestana('actividades');
