@@ -886,7 +886,61 @@ async def mis_tickets():
     <div id="ticketsList"></div>
     <script>
         const fetchAuth = window.fetchAuth;
-        async function cargarTickets() { const res = await fetchAuth('/api/tickets/'); const tickets = await res.json(); let html = ''; if (tickets.length) tickets.forEach(t => { const estado = t.atendido ? (t.reporte_enviado ? '🟢 Completado' : '🟡 Atendido (sin reporte)') : '🔴 No atendido'; const color = t.atendido ? (t.reporte_enviado ? 'var(--carrier-success)' : 'var(--carrier-warn)') : 'var(--carrier-danger)'; html += `<div style="border-left:6px solid ${color}; background:white; padding:16px; margin-bottom:12px; border-radius:0 12px 12px 0; box-shadow:0 2px 8px rgba(0,0,0,0.05);"><span style="font-size:1.5rem; font-weight:800; color:var(--carrier-blue);">#${t.ticket_num}</span><span class="badge" style="background:${color}; color:white;">${estado}</span><p><b>Unidad:</b> ${t.unit_number} | <b>VIN:</b> ${t.vin_number || 'N/D'}</p><p><b>Descripción:</b> ${t.descripcion}</p><small>Creado: ${t.fecha_creacion}</small></div>`; }); if (!html) html = '<p>🎫 No tienes tickets.</p>'; document.getElementById('ticketsList').innerHTML = html; }
+
+        async function cargarTickets() {
+            const res = await fetchAuth('/api/tickets/');
+            const tickets = await res.json();
+            let html = '';
+            if (tickets.length) {
+                tickets.forEach(t => {
+                    const estado = t.atendido
+                        ? (t.reporte_enviado ? '🟢 Completado' : '🟡 Atendido (sin reporte)')
+                        : '🔴 No atendido';
+                    const color = t.atendido
+                        ? (t.reporte_enviado ? 'var(--carrier-success)' : 'var(--carrier-warn)')
+                        : 'var(--carrier-danger)';
+
+                    let acciones = '';
+                    if (!t.atendido) {
+                        acciones = `<button class="btn-warning" onclick="atenderTicket(${t.id})" style="margin-top:10px; width:auto; padding:10px 18px;">✅ Marcar como atendido</button>`;
+                    } else if (!t.reporte_enviado) {
+                        acciones = `<button class="btn-primary" onclick="enviarReporte(${t.id})" style="margin-top:10px; width:auto; padding:10px 18px;">📤 Enviar reporte final</button>`;
+                    }
+
+                    html += `
+                        <div style="border-left:6px solid ${color}; background:white; padding:16px; margin-bottom:12px; border-radius:0 12px 12px 0; box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+                            <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px;">
+                                <div>
+                                    <span style="font-size:1.5rem; font-weight:800; color:var(--carrier-blue);">#${t.ticket_num}</span>
+                                    <span class="badge" style="background:${color}; color:white; margin-left:8px;">${estado}</span>
+                                    <p style="margin:8px 0 4px;"><b>Unidad:</b> ${t.unit_number} | <b>VIN:</b> ${t.vin_number || 'N/D'}</p>
+                                    <p style="margin:4px 0;"><b>Descripción:</b> ${t.descripcion}</p>
+                                    <small style="color:#6b7280;">Creado: ${t.fecha_creacion}</small>
+                                </div>
+                                <div style="display:flex; align-items:center;">${acciones}</div>
+                            </div>
+                        </div>`;
+                });
+            }
+            if (!html) html = '<p>🎫 No tienes tickets.</p>';
+            document.getElementById('ticketsList').innerHTML = html;
+        }
+
+        async function atenderTicket(id) {
+            if (!confirm('¿Marcar este ticket como atendido?')) return;
+            const res = await fetchAuth('/api/tickets/' + id + '/atender', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ atendido: true }) });
+            if (res.ok) { cargarTickets(); }
+            else { alert('Error al actualizar el ticket'); }
+        }
+
+        async function enviarReporte(id) {
+            const reporte = prompt('Escribe el reporte final antes de cerrar el ticket:');
+            if (!reporte || !reporte.trim()) return;
+            const res = await fetchAuth('/api/tickets/' + id + '/report', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reporte }) });
+            if (res.ok) { alert('✅ Reporte enviado. Ticket completado.'); cargarTickets(); }
+            else { alert('Error al enviar el reporte'); }
+        }
+
         cargarTickets();
     </script>
     """
