@@ -75,11 +75,29 @@ def atender_ticket(ticket_id: int, current_user=Depends(verify_token)):
 def enviar_reporte(ticket_id: int, report: TicketReport, current_user=Depends(verify_token)):
     if not report.reporte.strip():
         raise HTTPException(status_code=400, detail="El reporte no puede estar vacío")
+    ahora = datetime.now()
+
+    # 1. Guardar texto del reporte y marcar ticket como completado
     execute_write(
-        "UPDATE tickets SET reporte_enviado=TRUE, fecha_reporte=%s WHERE id=%s",
-        (datetime.now(), ticket_id)
+        """UPDATE tickets
+           SET reporte_enviado = TRUE,
+               reporte_texto   = %s,
+               fecha_reporte   = %s
+           WHERE id = %s""",
+        (report.reporte.strip(), ahora, ticket_id)
     )
-    return {"mensaje": "Reporte enviado, ticket completado"}
+
+    # 2. Cerrar la asignación vinculada (estado → completada, comentario = reporte)
+    execute_write(
+        """UPDATE asignaciones
+           SET estado     = 'completada',
+               comentario = %s,
+               fecha_fin  = %s
+           WHERE ticket_id = %s AND estado != 'completada'""",
+        (report.reporte.strip(), ahora, ticket_id)
+    )
+
+    return {"mensaje": "Reporte enviado, ticket y actividad completados"}
 
 # ── ELIMINAR (admin) ───────────────────────────────────────────────────────
 @router.delete("/{ticket_id}")
