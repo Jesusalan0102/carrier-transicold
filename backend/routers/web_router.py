@@ -868,4 +868,5 @@ async def mis_tickets():
         cargarTickets();
     </script>
     """
-    return HTMLResponse(content=pagina_con_menu("🎫 Mis Tickets", contenido, "mis-tickets"))
+    return HTMLResponse(content=pagina_con_menu("🎫 Mis Tickets", contenido, "mis-tickets")) 
+ 
