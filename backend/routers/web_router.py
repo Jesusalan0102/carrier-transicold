@@ -776,9 +776,55 @@ async def mis_tareas():
 
         async function iniciarTarea(id) { const res = await fetchAuth('/api/asignaciones/' + id + '/iniciar', { method: 'PATCH' }); if (res.ok) cargarTareas(); else alert('Error al iniciar la tarea'); }
         async function completarTarea(id) {
-            const comentario = prompt('Comentario obligatorio:'); if (!comentario) return;
+            const prev = document.getElementById('modalFinalizar');
+            if (prev) prev.remove();
+
+            const modal = document.createElement('div');
+            modal.id = 'modalFinalizar';
+            modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);display:flex;justify-content:center;align-items:center;z-index:500;';
+            modal.innerHTML = `
+                <div style="background:white;border-radius:20px;padding:32px;width:90%;max-width:520px;box-shadow:0 20px 60px rgba(0,43,91,0.25);animation:fadeInM 0.2s ease;">
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+                        <div style="background:#f0fdf4;border-radius:12px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">✅</div>
+                        <div>
+                            <h3 style="margin:0;color:var(--carrier-blue);font-size:1.2rem;font-weight:800;">Finalizar Actividad</h3>
+                            <p style="margin:2px 0 0;font-size:0.82rem;color:#6b7280;">Agrega un comentario antes de cerrar esta tarea.</p>
+                        </div>
+                    </div>
+                    <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0;">
+                    <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">📝 Comentario del técnico</label>
+                    <textarea id="comentarioTexto" rows="4" placeholder="Describe brevemente el trabajo realizado, observaciones, etc." style="width:100%;border:1.5px solid #d1d5db;border-radius:12px;padding:12px;font-size:0.95rem;resize:vertical;font-family:inherit;transition:border-color 0.2s;"></textarea>
+                    <p id="comentarioError" style="color:var(--carrier-danger);font-size:0.82rem;min-height:18px;margin:4px 0 12px;"></p>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <button onclick="document.getElementById('modalFinalizar').remove()" style="background:#f1f5f9;color:#374151;border:none;border-radius:10px;padding:13px;font-weight:600;font-size:0.95rem;cursor:pointer;">✖ Cancelar</button>
+                        <button id="btnConfirmarFinalizar" onclick="confirmarFinalizar(${id})" style="background:linear-gradient(135deg,#16a34a,#15803d);color:white;border:none;border-radius:10px;padding:13px;font-weight:700;font-size:0.95rem;cursor:pointer;">✅ Confirmar y Finalizar</button>
+                    </div>
+                </div>
+                <style>@keyframes fadeInM{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}</style>`;
+            document.body.appendChild(modal);
+            setTimeout(() => document.getElementById('comentarioTexto').focus(), 100);
+        }
+
+        async function confirmarFinalizar(id) {
+            const comentario = document.getElementById('comentarioTexto').value.trim();
+            const errorEl   = document.getElementById('comentarioError');
+            if (!comentario) { errorEl.textContent = 'El comentario no puede estar vacío.'; return; }
+            const btn = document.getElementById('btnConfirmarFinalizar');
+            btn.textContent = 'Guardando...'; btn.disabled = true;
             const res = await fetchAuth('/api/asignaciones/' + id + '/finalizar', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ comentario }) });
-            if (res.ok) cargarTareas(); else { const err = await res.json(); alert('Error: ' + (err.detail || 'No se pudo finalizar')); }
+            if (res.ok) {
+                document.getElementById('modalFinalizar').remove();
+                const toast = document.createElement('div');
+                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
+                toast.textContent = '✅ Actividad finalizada correctamente.';
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 3000);
+                cargarTareas();
+            } else {
+                const err = await res.json();
+                errorEl.textContent = err.detail || 'No se pudo finalizar. Intenta de nuevo.';
+                btn.textContent = '✅ Confirmar y Finalizar'; btn.disabled = false;
+            }
         }
 
         // ────────── EVIDENCIA ──────────
@@ -933,12 +979,57 @@ async def mis_tickets():
             else { alert('Error al actualizar el ticket'); }
         }
 
-        async function enviarReporte(id) {
-            const reporte = prompt('Escribe el reporte final antes de cerrar el ticket:');
-            if (!reporte || !reporte.trim()) return;
+        async function enviarReporte(ticketId) {
+            // Remover modal previo si existe
+            const prev = document.getElementById('modalReporte');
+            if (prev) prev.remove();
+
+            const modal = document.createElement('div');
+            modal.id = 'modalReporte';
+            modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);display:flex;justify-content:center;align-items:center;z-index:500;';
+            modal.innerHTML = `
+                <div style="background:white;border-radius:20px;padding:32px;width:90%;max-width:520px;box-shadow:0 20px 60px rgba(0,43,91,0.25);animation:fadeIn 0.2s ease;">
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+                        <div style="background:var(--carrier-light);border-radius:12px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">📋</div>
+                        <div>
+                            <h3 style="margin:0;color:var(--carrier-blue);font-size:1.2rem;font-weight:800;">Reporte Final del Ticket</h3>
+                            <p style="margin:2px 0 0;font-size:0.82rem;color:#6b7280;">Este reporte quedará registrado y cerrará el ticket en verde.</p>
+                        </div>
+                    </div>
+                    <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0;">
+                    <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">📝 Descripción del trabajo realizado</label>
+                    <textarea id="reporteTexto" rows="5" placeholder="Describe detalladamente las acciones realizadas, piezas cambiadas, diagnóstico, etc." style="width:100%;border:1.5px solid #d1d5db;border-radius:12px;padding:12px;font-size:0.95rem;resize:vertical;font-family:inherit;transition:border-color 0.2s;"></textarea>
+                    <p id="reporteError" style="color:var(--carrier-danger);font-size:0.82rem;min-height:18px;margin:4px 0 12px;"></p>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px;">
+                        <button onclick="document.getElementById('modalReporte').remove()" style="background:#f1f5f9;color:#374151;border:none;border-radius:10px;padding:13px;font-weight:600;font-size:0.95rem;cursor:pointer;">✖ Cancelar</button>
+                        <button id="btnEnviarReporte" onclick="confirmarReporte(${ticketId})" style="background:linear-gradient(135deg,var(--carrier-blue),var(--carrier-accent));color:white;border:none;border-radius:10px;padding:13px;font-weight:700;font-size:0.95rem;cursor:pointer;">📤 Enviar y Cerrar Ticket</button>
+                    </div>
+                </div>
+                <style>@keyframes fadeIn{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}</style>`;
+            document.body.appendChild(modal);
+            setTimeout(() => document.getElementById('reporteTexto').focus(), 100);
+        }
+
+        async function confirmarReporte(id) {
+            const reporte = document.getElementById('reporteTexto').value.trim();
+            const errorEl = document.getElementById('reporteError');
+            if (!reporte) { errorEl.textContent = 'El reporte no puede estar vacío.'; return; }
+            const btn = document.getElementById('btnEnviarReporte');
+            btn.textContent = 'Enviando...'; btn.disabled = true;
             const res = await fetchAuth('/api/tickets/' + id + '/report', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reporte }) });
-            if (res.ok) { alert('✅ Reporte enviado. Ticket completado.'); cargarTickets(); }
-            else { alert('Error al enviar el reporte'); }
+            if (res.ok) {
+                document.getElementById('modalReporte').remove();
+                // Mostrar confirmación breve
+                const toast = document.createElement('div');
+                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
+                toast.textContent = '✅ Reporte enviado. Ticket completado.';
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 3000);
+                cargarTickets();
+            } else {
+                errorEl.textContent = 'Error al enviar el reporte. Intenta de nuevo.';
+                btn.textContent = '📤 Enviar y Cerrar Ticket'; btn.disabled = false;
+            }
         }
 
         cargarTickets();
