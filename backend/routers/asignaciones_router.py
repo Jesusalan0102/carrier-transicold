@@ -9,7 +9,7 @@ router = APIRouter(prefix="/api/asignaciones", tags=["asignaciones"])
 # ── LISTAR (admin ve todo, técnico ve solo las suyas) ──────────────────────
 @router.get("/")
 def listar_asignaciones(estado: str = None, tecnico: str = None, current_user=Depends(verify_token)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ("admin", "visor"):
         tecnico = current_user["username"]
     query = "SELECT * FROM asignaciones WHERE 1=1"
     params = []
