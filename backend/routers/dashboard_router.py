@@ -69,41 +69,193 @@ def get_estatus_unidades(current_user: dict = Depends(verify_token)):
 def reporte_excel(current_user: dict = Depends(verify_token)):
     try:
         import openpyxl
-        from openpyxl.styles import PatternFill, Font, Alignment
+        from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
     except ImportError:
         from fastapi import HTTPException
         raise HTTPException(status_code=500, detail="openpyxl no instalado. Agrega 'openpyxl' a requirements.txt")
 
     wb = openpyxl.Workbook()
 
-    # Hoja 1: Unidades y series
-    ws1 = wb.active
-    ws1.title = "Series_Unidades"
+    # ── Estilos globales ───────────────────────────────────────────────────
+    THIN   = Side(style='thin', color="BFBFBF")
+    BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
+    HDR_FILL  = PatternFill("solid", start_color="1F4E79")
+    HDR_FONT  = Font(bold=True, color="FFFFFF", name="Arial", size=10)
+    HDR_ALIGN = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    BODY_FONT = Font(name="Arial", size=9)
+    BODY_ALIGN= Alignment(vertical="center", wrap_text=True)
+    DONE_FILL = PatternFill("solid", start_color="C6EFCE")
+    PROC_FILL = PatternFill("solid", start_color="DDEBF7")
+    PEND_FILL = PatternFill("solid", start_color="FFEB9C")
+
+    def write_sheet(ws, rows, col_widths: dict = None):
+        """Escribe encabezados + filas con estilos en una hoja."""
+        if not rows:
+            ws.append(["Sin datos"])
+            return
+        headers = list(rows[0].keys())
+        # Encabezado
+        for col_idx, h in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col_idx, value=h)
+            cell.fill = HDR_FILL
+            cell.font = HDR_FONT
+            cell.alignment = HDR_ALIGN
+            cell.border = BORDER
+        # Filas de datos
+        for row_idx, row in enumerate(rows, 2):
+            for col_idx, val in enumerate(row.values(), 1):
+                cell = ws.cell(row=row_idx, column=col_idx, value=val)
+                cell.font = BODY_FONT
+                cell.alignment = BODY_ALIGN
+                cell.border = BORDER
+        # Anchos de columna
+        for col_idx, h in enumerate(headers, 1):
+            width = (col_widths or {}).get(h, min(len(str(h)) + 6, 35))
+            ws.column_dimensions[get_column_letter(col_idx)].width = width
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = ws.dimensions
+
+    def colorear_estado(ws, rows, col_name):
+        """Aplica color a la columna de estado."""
+        if not rows:
+            return
+        headers = list(rows[0].keys())
+        if col_name not in headers:
+            return
+        col_idx = headers.index(col_name) + 1
+        COLOR_MAP = {
+            "completada": ("C6EFCE", "276221"),
+            "en_proceso": ("DDEBF7", "1F4E79"),
+            "pendiente":  ("FFEB9C", "7D6608"),
+            "solicitado": ("FFEB9C", "7D6608"),
+        }
+        for row_idx in range(2, len(rows) + 2):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            colors = COLOR_MAP.get(str(cell.value or "").lower())
+            if colors:
+                cell.fill = PatternFill("solid", start_color=colors[0])
+                cell.font = Font(name="Arial", size=9, color=colors[1], bold=True)
+
+    # ── Hoja 1: Resumen KPIs ───────────────────────────────────────────────
+    ws_kpi = wb.active
+    ws_kpi.title = "Resumen_KPIs"
+
+    total_u_rows = execute_read("SELECT id FROM unidades")
+    estados_rows = execute_read("SELECT estado FROM asignaciones")
+    comp  = sum(1 for e in estados_rows if e["estado"] == "completada")
+    proc  = sum(1 for e in estados_rows if e["estado"] == "en_proceso")
+    pend  = sum(1 for e in estados_rows if e["estado"] == "pendiente")
+    total = len(estados_rows)
+    avance_pct = round(comp / total * 100, 1) if total else 0
+    tkt_rows = execute_read("SELECT atendido, reporte_enviado FROM tickets")
+    tkt_total     = len(tkt_rows)
+    tkt_atendidos = sum(1 for t in tkt_rows if t["atendido"])
+    tkt_reporte   = sum(1 for t in tkt_rows if t["reporte_enviado"])
+
+    TITLE_FONT = Font(bold=True, color="FFFFFF", name="Arial", size=13)
+    KPI_LABEL  = Font(bold=True, name="Arial", size=10)
+    KPI_VAL    = Font(name="Arial", size=12, bold=True, color="1F4E79")
+    KPI_ALIGN_R = Alignment(horizontal="right", vertical="center")
+    KPI_ALIGN_C = Alignment(horizontal="center", vertical="center")
+
+    ws_kpi.merge_cells("B2:D2")
+    ws_kpi["B2"] = "REPORTE MAESTRO — RESUMEN EJECUTIVO"
+    ws_kpi["B2"].fill = HDR_FILL
+    ws_kpi["B2"].font = TITLE_FONT
+    ws_kpi["B2"].alignment = Alignment(horizontal="center", vertical="center")
+    ws_kpi.row_dimensions[2].height = 30
+
+    kpis = [
+        ("Unidades Registradas",      len(total_u_rows)),
+        ("Actividades Completadas",   comp),
+        ("Actividades En Proceso",    proc),
+        ("Actividades Pendientes",    pend),
+        ("% Avance General",          f"{avance_pct}%"),
+        ("Tickets Totales",           tkt_total),
+        ("Tickets Atendidos",         tkt_atendidos),
+        ("Reportes de Cierre Enviados", tkt_reporte),
+    ]
+    for i, (label, val) in enumerate(kpis, 4):
+        ws_kpi[f"B{i}"] = label
+        ws_kpi[f"B{i}"].font = KPI_LABEL
+        ws_kpi[f"B{i}"].alignment = KPI_ALIGN_R
+        ws_kpi[f"B{i}"].border = BORDER
+        ws_kpi[f"C{i}"] = val
+        ws_kpi[f"C{i}"].font = KPI_VAL
+        ws_kpi[f"C{i}"].alignment = KPI_ALIGN_C
+        ws_kpi[f"C{i}"].border = BORDER
+    ws_kpi.column_dimensions["B"].width = 34
+    ws_kpi.column_dimensions["C"].width = 18
+
+    # ── Hoja 2: Unidades y series ──────────────────────────────────────────
+    ws1 = wb.create_sheet("Series_Unidades")
     unidades = execute_read("SELECT * FROM unidades ORDER BY id_lote, unit_number")
-    if unidades:
-        headers = list(unidades[0].keys())
-        ws1.append(headers)
-        for u in unidades:
-            ws1.append(list(u.values()))
+    write_sheet(ws1, unidades, col_widths={
+        "unit_number": 14, "id_lote": 14, "vin_number": 20,
+        "engine_serial": 20, "compressor_serial": 22,
+        "reefer_serial": 20, "reefer_model": 18,
+        "evaporator_serial_mjs11": 24, "evaporator_serial_mjd22": 24,
+        "generator_serial": 20, "battery_charger_serial": 22,
+    })
 
-    # Hoja 2: Actividades
+    # ── Hoja 3: Actividades (con comentario del técnico) ───────────────────
     ws2 = wb.create_sheet("Actividades")
-    asigs = execute_read("SELECT * FROM asignaciones ORDER BY id DESC")
-    if asigs:
-        headers2 = list(asigs[0].keys())
-        ws2.append(headers2)
-        for a in asigs:
-            ws2.append(list(a.values()))
+    asigs = execute_read("""
+        SELECT id, unidad, actividad_id, tecnico, estado,
+               comentario,
+               fecha_asignacion, fecha_inicio, fecha_fin, ticket_id
+        FROM asignaciones
+        ORDER BY id DESC
+    """)
+    write_sheet(ws2, asigs, col_widths={
+        "actividad_id": 22, "tecnico": 18, "estado": 14,
+        "comentario": 50, "fecha_asignacion": 20,
+        "fecha_inicio": 20, "fecha_fin": 20,
+    })
+    colorear_estado(ws2, asigs, "estado")
 
-    # Hoja 3: Tickets
+    # ── Hoja 4: Tickets ────────────────────────────────────────────────────
     ws3 = wb.create_sheet("Tickets")
     tickets = execute_read("SELECT * FROM tickets ORDER BY ticket_num DESC")
-    if tickets:
-        headers3 = list(tickets[0].keys())
-        ws3.append(headers3)
-        for t in tickets:
-            ws3.append(list(t.values()))
+    write_sheet(ws3, tickets, col_widths={
+        "descripcion": 35, "creado_por": 18,
+        "fecha_creacion": 20, "fecha_atencion": 20, "fecha_reporte": 20,
+    })
 
+    # ── Hoja 5: Reporte Cierre Tickets ─────────────────────────────────────
+    ws4 = wb.create_sheet("Reporte_Cierre_Tickets")
+    cierre = execute_read("""
+        SELECT
+            t.ticket_num        AS `Ticket #`,
+            t.unit_number       AS `Unidad`,
+            t.vin_number        AS `VIN`,
+            t.descripcion       AS `Problema Reportado`,
+            t.creado_por        AS `Creado Por`,
+            t.fecha_creacion    AS `Fecha Creación`,
+            t.fecha_atencion    AS `Fecha Atención`,
+            a.actividad_id      AS `Actividad`,
+            a.tecnico           AS `Técnico`,
+            a.estado            AS `Estado`,
+            a.fecha_inicio      AS `Inicio Trabajo`,
+            a.fecha_fin         AS `Fin Trabajo`,
+            a.comentario        AS `Comentario Técnico`,
+            t.reporte_enviado   AS `Reporte Enviado`
+        FROM tickets t
+        LEFT JOIN asignaciones a ON a.ticket_id = t.id
+        ORDER BY t.ticket_num DESC
+    """)
+    write_sheet(ws4, cierre, col_widths={
+        "Ticket #": 10, "Unidad": 12, "VIN": 18,
+        "Problema Reportado": 35, "Creado Por": 18,
+        "Fecha Creación": 20, "Fecha Atención": 20,
+        "Actividad": 22, "Técnico": 18, "Estado": 14,
+        "Inicio Trabajo": 20, "Fin Trabajo": 20,
+        "Comentario Técnico": 55, "Reporte Enviado": 16,
+    })
+    colorear_estado(ws4, cierre, "Estado")
+
+    # ── Stream del archivo ─────────────────────────────────────────────────
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
