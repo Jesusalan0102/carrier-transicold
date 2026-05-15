@@ -615,80 +615,141 @@ async def unidades():
 async def usuarios():
     contenido = """
     <script> if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; } </script>
+
     <div class="section-title">👥 Usuarios Registrados</div>
     <div id="usuariosList"></div>
-    <div class="section-title admin-only">➕ Crear Nuevo Usuario</div>
-    <form id="usuarioForm" class="admin-only" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px;">
+
+    <div class="section-title admin-only" style="margin-top:28px;">➕ Crear Nuevo Usuario</div>
+    <div class="admin-only" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px;">
         <input type="text" id="username" placeholder="Nombre de usuario" required>
-        <input type="password" id="password" placeholder="Contraseña" required>
+        <input type="password" id="newUserPassword" placeholder="Contraseña" required>
         <select id="role" required>
             <option value="tecnico">Técnico</option>
             <option value="admin">Administrador</option>
             <option value="visor">Visor (solo lectura)</option>
         </select>
-        <button type="submit" class="btn-primary" style="grid-column: span 3;">👤 Crear Usuario</button>
-    </form>
+        <button onclick="crearUsuario()" class="btn-primary" style="grid-column: span 3;">👤 Crear Usuario</button>
+    </div>
+
     <script>
         const fetchAuth = window.fetchAuth;
-        
-        async function cargarUsuarios() { 
+
+        async function cargarUsuarios() {
             try {
-                const res = await fetchAuth('/api/usuarios/'); 
-                const usuarios = await res.json(); 
-                let html = '<table><thead><tr><th>Usuario</th><th>Rol</th><th>Acción</th></tr></thead><tbody>'; 
+                const res = await fetchAuth('/api/usuarios/');
+                const usuarios = await res.json();
+                let html = '<table><thead><tr><th>Usuario</th><th>Rol</th><th style="text-align:center;">Acciones</th></tr></thead><tbody>';
                 if (Array.isArray(usuarios)) {
                     usuarios.forEach(u => {
                         const rolTexto = u.role === 'admin' ? '🛡 Administrador' : (u.role === 'tecnico' ? '🔧 Técnico' : '👁 Visor');
-                        html += `<tr><td>${u.username}</td><td>${rolTexto}</td><td><button class="btn-danger" onclick="eliminarUsuario(${u.id})">🗑️</button></td></tr>`;
+                        const acciones = window.role === 'admin' ? `
+                            <button class="btn-warning" onclick="abrirModalPassword(${u.id}, '${u.username}')" style="padding:6px 14px;font-size:0.82rem;margin-right:6px;">🔑 Cambiar Contraseña</button>
+                            <button class="btn-danger" onclick="eliminarUsuario(${u.id}, '${u.username}')" style="padding:6px 14px;font-size:0.82rem;">🗑️ Eliminar</button>
+                        ` : '—';
+                        html += `<tr><td><b>${u.username}</b></td><td>${rolTexto}</td><td style="text-align:center;">${acciones}</td></tr>`;
                     });
                 }
-                html += '</tbody></table>'; 
+                html += '</tbody></table>';
                 document.getElementById('usuariosList').innerHTML = html;
             } catch (err) {
-                console.error('Error cargando usuarios:', err);
                 document.getElementById('usuariosList').innerHTML = '<p style="color:red;">Error al cargar usuarios</p>';
             }
         }
-        
-        async function eliminarUsuario(id) { 
-            if (confirm('¿Eliminar usuario?')) { 
-                const res = await fetchAuth('/api/usuarios/' + id, { method: 'DELETE' }); 
-                if (res.ok) cargarUsuarios();
-                else alert('Error al eliminar usuario');
-            } 
+
+        function abrirModalPassword(userId, username) {
+            const prev = document.getElementById('modalPassword');
+            if (prev) prev.remove();
+            const modal = document.createElement('div');
+            modal.id = 'modalPassword';
+            modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);display:flex;justify-content:center;align-items:center;z-index:500;';
+            modal.innerHTML = `
+                <div style="background:white;border-radius:20px;padding:32px;width:90%;max-width:460px;box-shadow:0 20px 60px rgba(0,43,91,0.25);animation:fadeInP 0.2s ease;">
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+                        <div style="background:#fef3c7;border-radius:12px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">🔑</div>
+                        <div>
+                            <h3 style="margin:0;color:var(--carrier-blue);font-size:1.1rem;font-weight:800;">Cambiar Contraseña</h3>
+                            <p style="margin:2px 0 0;font-size:0.82rem;color:#6b7280;">Usuario: <b>${username}</b></p>
+                        </div>
+                    </div>
+                    <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0;">
+                    <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">Nueva contraseña</label>
+                    <div style="position:relative;">
+                        <input id="inputNuevaPwd" type="password" placeholder="Escribe la nueva contraseña" style="width:100%;border:1.5px solid #d1d5db;border-radius:12px;padding:12px 44px 12px 12px;font-size:0.95rem;font-family:inherit;">
+                        <span onclick="togglePwd()" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:1.1rem;" title="Mostrar/ocultar">👁</span>
+                    </div>
+                    <p id="pwdError" style="color:var(--carrier-danger);font-size:0.82rem;min-height:18px;margin:4px 0 12px;"></p>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <button onclick="document.getElementById('modalPassword').remove()" style="background:#f1f5f9;color:#374151;border:none;border-radius:10px;padding:13px;font-weight:600;font-size:0.95rem;cursor:pointer;">✖ Cancelar</button>
+                        <button id="btnGuardarPwd" onclick="guardarPassword(${userId})" style="background:linear-gradient(135deg,var(--carrier-blue),var(--carrier-accent));color:white;border:none;border-radius:10px;padding:13px;font-weight:700;font-size:0.95rem;cursor:pointer;">💾 Guardar</button>
+                    </div>
+                </div>
+                <style>@keyframes fadeInP{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}</style>`;
+            document.body.appendChild(modal);
+            setTimeout(() => document.getElementById('inputNuevaPwd').focus(), 100);
         }
-        
-        document.getElementById('usuarioForm').addEventListener('submit', async (e) => { 
-            e.preventDefault(); 
+
+        function togglePwd() {
+            const input = document.getElementById('inputNuevaPwd');
+            input.type = input.type === 'password' ? 'text' : 'password';
+        }
+
+        async function guardarPassword(userId) {
+            const pwd = document.getElementById('inputNuevaPwd').value.trim();
+            const errorEl = document.getElementById('pwdError');
+            if (!pwd || pwd.length < 4) { errorEl.textContent = 'Mínimo 4 caracteres.'; return; }
+            const btn = document.getElementById('btnGuardarPwd');
+            btn.textContent = 'Guardando...'; btn.disabled = true;
+            const res = await fetchAuth('/api/usuarios/' + userId + '/password', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ new_password: pwd })
+            });
+            if (res.ok) {
+                document.getElementById('modalPassword').remove();
+                const toast = document.createElement('div');
+                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#1F4E79;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
+                toast.textContent = '✅ Contraseña actualizada correctamente.';
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 3000);
+            } else {
+                const err = await res.json();
+                errorEl.textContent = err.detail || 'Error al guardar.';
+                btn.textContent = '💾 Guardar'; btn.disabled = false;
+            }
+        }
+
+        async function crearUsuario() {
             const username = document.getElementById('username').value.trim();
-            const password = document.getElementById('password').value;
-            const role = document.getElementById('role').value;
-            
-            if (!username || !password) {
-                alert('Complete todos los campos');
-                return;
+            const password = document.getElementById('newUserPassword').value;
+            const role     = document.getElementById('role').value;
+            if (!username || !password) return alert('Completa todos los campos');
+            const res = await fetchAuth('/api/usuarios/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password, role })
+            });
+            if (res.ok) {
+                document.getElementById('username').value = '';
+                document.getElementById('newUserPassword').value = '';
+                cargarUsuarios();
+                const toast = document.createElement('div');
+                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
+                toast.textContent = '✅ Usuario creado exitosamente.';
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 3000);
+            } else {
+                const err = await res.json();
+                alert('Error: ' + (err.detail || 'No se pudo crear el usuario'));
             }
-            
-            try {
-                const res = await fetchAuth('/api/usuarios/', { 
-                    method: 'POST', 
-                    headers: { 'Content-Type': 'application/json' }, 
-                    body: JSON.stringify({ username, password, role }) 
-                });
-                
-                if (res.ok) {
-                    alert('Usuario creado exitosamente'); 
-                    cargarUsuarios();
-                    document.getElementById('usuarioForm').reset();
-                } else {
-                    const error = await res.json();
-                    alert('Error: ' + (error.detail || 'No se pudo crear el usuario'));
-                }
-            } catch (err) {
-                alert('Error de conexión: ' + err.message);
-            }
-        });
-        
+        }
+
+        async function eliminarUsuario(id, nombre) {
+            if (!confirm(`¿Eliminar al usuario "${nombre}"? Esta acción no se puede deshacer.`)) return;
+            const res = await fetchAuth('/api/usuarios/' + id, { method: 'DELETE' });
+            if (res.ok) cargarUsuarios();
+            else alert('Error al eliminar usuario');
+        }
+
         cargarUsuarios();
     </script>
     """
