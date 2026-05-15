@@ -188,6 +188,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/inventario', label: '📦 Inventarios' }},
                     {{ href: '/app/unidades', label: '📸 Registro de Unidades' }},
                     {{ href: '/app/usuarios', label: '👥 Gestión de Usuarios' }},
+                    {{ href: '/app/cluster', label: '⚡ Asignación por Cluster' }},
                     {{ href: '/app/admin', label: '🛠 Panel de Administración' }},
                 ];
                 const visorMenu = [
@@ -1097,3 +1098,176 @@ async def mis_tickets():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("🎫 Mis Tickets", contenido, "mis-tickets"))
+
+
+# ── PANEL DE ASIGNACIÓN POR CLUSTER ────────────────────────────────────────
+@router.get("/app/cluster")
+def panel_cluster(request: Request, current_user: dict = Depends(verify_token_cookie)):
+    if current_user.get("role") != "admin":
+        return RedirectResponse("/app/dashboard")
+
+    contenido = """
+    <div id="resumenCluster" style="display:none; background:var(--color-background-secondary); border-radius:var(--border-radius-lg); padding:16px; margin-bottom:20px;"></div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; align-items:start;">
+
+        <!-- Columna 1: Técnicos -->
+        <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:16px;">
+            <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">🔧 Técnicos</div>
+            <div style="margin-bottom:8px; display:flex; gap:6px;">
+                <button onclick="seleccionarTodos('tecnicos')" style="font-size:11px;padding:4px 10px;">Todos</button>
+                <button onclick="limpiarTodos('tecnicos')" style="font-size:11px;padding:4px 10px;">Ninguno</button>
+            </div>
+            <div id="listaTecnicos" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
+        </div>
+
+        <!-- Columna 2: Actividades -->
+        <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:16px;">
+            <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">🎯 Actividades</div>
+            <div style="margin-bottom:8px; display:flex; gap:6px;">
+                <button onclick="seleccionarTodos('actividades')" style="font-size:11px;padding:4px 10px;">Todas</button>
+                <button onclick="limpiarTodos('actividades')" style="font-size:11px;padding:4px 10px;">Ninguna</button>
+            </div>
+            <div id="listaActividades" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
+        </div>
+
+        <!-- Columna 3: Unidades -->
+        <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:16px;">
+            <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">🚛 Unidades</div>
+            <div style="margin-bottom:8px; display:flex; gap:6px;">
+                <button onclick="seleccionarTodos('unidades')" style="font-size:11px;padding:4px 10px;">Todas</button>
+                <button onclick="limpiarTodos('unidades')" style="font-size:11px;padding:4px 10px;">Ninguna</button>
+            </div>
+            <div id="filtroLote" style="margin-bottom:8px;"></div>
+            <div id="listaUnidades" style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
+        </div>
+    </div>
+
+    <!-- Resumen y botón -->
+    <div style="margin-top:20px; background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+            <div id="contadorResumen" style="font-size:13px; color:var(--color-text-secondary);">Selecciona técnicos, actividades y unidades</div>
+            <button id="btnAsignar" onclick="ejecutarAsignacion()" style="padding:12px 32px; font-size:0.95rem; font-weight:600; background:linear-gradient(135deg,var(--carrier-blue),var(--carrier-accent)); color:white; border:none; border-radius:10px; cursor:pointer;">⚡ Asignar Cluster</button>
+        </div>
+    </div>
+
+    <script>
+        const fetchAuth = window.fetchAuth;
+        let todosTecnicos = [], todasActividades = [], todasUnidades = [];
+        let lotes = [];
+
+        function checkItem(tipo, valor) {
+            return `<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;cursor:pointer;border:0.5px solid var(--color-border-tertiary);font-size:13px;color:var(--color-text-primary);transition:background 0.15s;" onmouseover="this.style.background='var(--color-background-secondary)'" onmouseout="this.style.background='transparent'">
+                <input type="checkbox" data-tipo="${tipo}" data-valor="${encodeURIComponent(valor)}" onchange="actualizarContador()" style="width:15px;height:15px;cursor:pointer;">
+                ${valor}
+            </label>`;
+        }
+
+        function seleccionarTodos(tipo) {
+            document.querySelectorAll(`input[data-tipo="${tipo}"]`).forEach(c => c.checked = true);
+            actualizarContador();
+        }
+        function limpiarTodos(tipo) {
+            document.querySelectorAll(`input[data-tipo="${tipo}"]`).forEach(c => c.checked = false);
+            actualizarContador();
+        }
+
+        function getSeleccionados(tipo) {
+            return [...document.querySelectorAll(`input[data-tipo="${tipo}"]:checked`)].map(c => decodeURIComponent(c.dataset.valor));
+        }
+
+        function actualizarContador() {
+            const t = getSeleccionados('tecnicos').length;
+            const a = getSeleccionados('actividades').length;
+            const u = getSeleccionados('unidades').length;
+            const total = t * a * u;
+            const el = document.getElementById('contadorResumen');
+            if (total === 0) {
+                el.innerHTML = 'Selecciona técnicos, actividades y unidades';
+                el.style.color = 'var(--color-text-secondary)';
+            } else {
+                el.innerHTML = `<b>${t}</b> técnico(s) × <b>${a}</b> actividad(es) × <b>${u}</b> unidad(es) = <b style="color:var(--carrier-blue);">${total} asignaciones</b>`;
+                el.style.color = 'var(--color-text-primary)';
+            }
+        }
+
+        function filtrarPorLote(lote) {
+            const items = document.querySelectorAll('[data-lote]');
+            items.forEach(i => {
+                i.style.display = (!lote || i.dataset.lote === lote) ? 'flex' : 'none';
+            });
+        }
+
+        async function cargarDatos() {
+            const [resTec, resAct, resUni] = await Promise.all([
+                fetchAuth('/api/cluster/tecnicos'),
+                fetchAuth('/api/cluster/actividades'),
+                fetchAuth('/api/cluster/unidades')
+            ]);
+            todosTecnicos  = await resTec.json();
+            todasActividades = await resAct.json();
+            todasUnidades  = await resUni.json();
+
+            document.getElementById('listaTecnicos').innerHTML = todosTecnicos.map(t => checkItem('tecnicos', t.username)).join('');
+            document.getElementById('listaActividades').innerHTML = todasActividades.map(a => checkItem('actividades', a.nombre)).join('');
+
+            // Filtro por lote
+            lotes = [...new Set(todasUnidades.map(u => u.id_lote).filter(Boolean))].sort();
+            let filtroHtml = '<select onchange="filtrarPorLote(this.value)" style="width:100%;margin-bottom:6px;font-size:12px;padding:5px;"><option value="">— Todos los lotes —</option>';
+            lotes.forEach(l => filtroHtml += `<option value="${l}">${l}</option>`);
+            filtroHtml += '</select>';
+            document.getElementById('filtroLote').innerHTML = filtroHtml;
+
+            document.getElementById('listaUnidades').innerHTML = todasUnidades.map(u =>
+                `<label data-lote="${u.id_lote || ''}" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;cursor:pointer;border:0.5px solid var(--color-border-tertiary);font-size:13px;color:var(--color-text-primary);transition:background 0.15s;" onmouseover="this.style.background='var(--color-background-secondary)'" onmouseout="this.style.background='transparent'">
+                    <input type="checkbox" data-tipo="unidades" data-valor="${encodeURIComponent(u.unit_number)}" onchange="actualizarContador()" style="width:15px;height:15px;cursor:pointer;">
+                    <span>${u.unit_number}</span><span style="font-size:11px;color:var(--color-text-secondary);margin-left:auto;">${u.id_lote || ''}</span>
+                </label>`
+            ).join('');
+        }
+
+        async function ejecutarAsignacion() {
+            const tecnicos   = getSeleccionados('tecnicos');
+            const actividades = getSeleccionados('actividades');
+            const unidades   = getSeleccionados('unidades');
+            if (!tecnicos.length || !actividades.length || !unidades.length) {
+                return alert('Selecciona al menos un técnico, una actividad y una unidad.');
+            }
+            const total = tecnicos.length * actividades.length * unidades.length;
+            if (!confirm(`¿Crear ${total} asignaciones? Esta acción no se puede deshacer.`)) return;
+
+            const btn = document.getElementById('btnAsignar');
+            btn.textContent = 'Asignando...'; btn.disabled = true;
+
+            const res = await fetchAuth('/api/cluster/asignar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tecnicos, actividades, unidades })
+            });
+            const data = await res.json();
+
+            btn.textContent = '⚡ Asignar Cluster'; btn.disabled = false;
+
+            const resumen = document.getElementById('resumenCluster');
+            resumen.style.display = 'block';
+            resumen.innerHTML = res.ok
+                ? `<div style="color:var(--color-text-success);font-weight:500;">✅ ${data.mensaje}</div>`
+                : `<div style="color:var(--color-text-danger);font-weight:500;">❌ Error: ${data.detail || 'No se pudo completar'}</div>`;
+
+            if (res.ok) {
+                // Toast
+                const toast = document.createElement('div');
+                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
+                toast.textContent = `✅ ${data.creadas} asignaciones creadas correctamente.`;
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 4000);
+                // Limpiar selección
+                limpiarTodos('tecnicos'); limpiarTodos('actividades'); limpiarTodos('unidades');
+                actualizarContador();
+            }
+        }
+
+        cargarDatos();
+    </script>
+    """
+    return HTMLResponse(content=pagina_con_menu("⚡ Asignación por Cluster", contenido, "cluster"))
