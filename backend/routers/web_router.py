@@ -931,7 +931,7 @@ async def mis_tareas():
                 const tarea = Array.isArray(tareas) ? tareas.find(t => t.id == tareaId) : null; if (!tarea) return alert('Tarea no encontrada');
                 const keys = [...document.querySelectorAll('[id^="serie_key_"]')].map(el => el.value); const values = { unit_number: tarea.unidad };
                 keys.forEach((key,i) => values[key] = document.getElementById('serie_'+i).value);
-                await fetchAuth('/api/unidades/series', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) }); alert('Series guardadas'); cerrarModal();
+                const resSeries = await fetchAuth('/api/unidades/series/update', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) }); if (resSeries.ok) { cerrarModal(); cargarTareas(); const t = document.createElement('div'); t.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;z-index:600;'; t.textContent = '✅ Series guardadas correctamente.'; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); } else { alert('Error al guardar las series.'); }
             };
         }
 
