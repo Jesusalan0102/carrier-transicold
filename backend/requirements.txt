@@ -3,6 +3,8 @@ uvicorn[standard]
 pymysql
 python-jose[cryptography]
 passlib[bcrypt]
+bcrypt
 python-multipart
 pydantic
 openpyxl
+python-dotenv
