@@ -45,7 +45,14 @@ app.include_router(toma_valores_router)
 app.include_router(comentarios_router)
 app.include_router(ws_router)
 app.include_router(web_router)
-
+@app.get("/test-onedrive")
+def test_onedrive():
+    try:
+        from onedrive_service import _get_token
+        token = _get_token()
+        return {"status": "OK", "token_preview": token[:20] + "..."}
+    except Exception as e:
+        return {"status": "ERROR", "detalle": str(e)}
 @app.get("/")
 def root():
     return {"mensaje": "API Carrier Transicold operativa", "docs": "/docs"}
