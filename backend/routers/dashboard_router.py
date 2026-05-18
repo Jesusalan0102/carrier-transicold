@@ -3,6 +3,16 @@ from fastapi.responses import StreamingResponse
 from db import execute_read
 from auth import verify_token
 import io
+import logging
+
+# ── Importación opcional de OneDrive ────────────────────────────────────────
+try:
+    from onedrive_service import sync_reporte_maestro
+    ONEDRIVE_ENABLED = True
+except ImportError:
+    ONEDRIVE_ENABLED = False
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
@@ -50,7 +60,7 @@ def get_stats_tecnicos(current_user: dict = Depends(verify_token)):
         ORDER BY completadas DESC
     """)
 
-# ── ESTATUS POR UNIDAD (tabla de progreso) ─────────────────────────────────
+# ── ESTATUS POR UNIDAD ─────────────────────────────────────────────────────
 @router.get("/estatus_unidades")
 def get_estatus_unidades(current_user: dict = Depends(verify_token)):
     completadas = execute_read("SELECT unidad, actividad_id FROM asignaciones WHERE estado='completada'")
@@ -64,7 +74,7 @@ def get_estatus_unidades(current_user: dict = Depends(verify_token)):
         resultado.append(row)
     return resultado
 
-# ── DESCARGAR REPORTE EXCEL ────────────────────────────────────────────────
+# ── DESCARGAR REPORTE EXCEL (+ auto-sync a OneDrive) ──────────────────────
 @router.get("/reporte-excel")
 def reporte_excel(current_user: dict = Depends(verify_token)):
     try:
@@ -85,31 +95,24 @@ def reporte_excel(current_user: dict = Depends(verify_token)):
     HDR_ALIGN = Alignment(horizontal="center", vertical="center", wrap_text=True)
     BODY_FONT = Font(name="Arial", size=9)
     BODY_ALIGN= Alignment(vertical="center", wrap_text=True)
-    DONE_FILL = PatternFill("solid", start_color="C6EFCE")
-    PROC_FILL = PatternFill("solid", start_color="DDEBF7")
-    PEND_FILL = PatternFill("solid", start_color="FFEB9C")
 
     def write_sheet(ws, rows, col_widths: dict = None):
-        """Escribe encabezados + filas con estilos en una hoja."""
         if not rows:
             ws.append(["Sin datos"])
             return
         headers = list(rows[0].keys())
-        # Encabezado
         for col_idx, h in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col_idx, value=h)
             cell.fill = HDR_FILL
             cell.font = HDR_FONT
             cell.alignment = HDR_ALIGN
             cell.border = BORDER
-        # Filas de datos
         for row_idx, row in enumerate(rows, 2):
             for col_idx, val in enumerate(row.values(), 1):
                 cell = ws.cell(row=row_idx, column=col_idx, value=val)
                 cell.font = BODY_FONT
                 cell.alignment = BODY_ALIGN
                 cell.border = BORDER
-        # Anchos de columna
         for col_idx, h in enumerate(headers, 1):
             width = (col_widths or {}).get(h, min(len(str(h)) + 6, 35))
             ws.column_dimensions[get_column_letter(col_idx)].width = width
@@ -117,7 +120,6 @@ def reporte_excel(current_user: dict = Depends(verify_token)):
         ws.auto_filter.ref = ws.dimensions
 
     def colorear_estado(ws, rows, col_name):
-        """Aplica color a la columna de estado."""
         if not rows:
             return
         headers = list(rows[0].keys())
@@ -137,6 +139,24 @@ def reporte_excel(current_user: dict = Depends(verify_token)):
                 cell.fill = PatternFill("solid", start_color=colors[0])
                 cell.font = Font(name="Arial", size=9, color=colors[1], bold=True)
 
+    def colorear_semaforo_tickets(ws, rows):
+        if not rows:
+            return
+        headers = list(rows[0].keys())
+        n_cols = len(headers)
+        atendido_idx  = headers.index("Atendido")        + 1 if "Atendido"        in headers else None
+        reporte_idx   = headers.index("Reporte Enviado") + 1 if "Reporte Enviado" in headers else None
+        ROJO     = PatternFill("solid", start_color="FFCCCC")
+        AMARILLO = PatternFill("solid", start_color="FFFACD")
+        VERDE    = PatternFill("solid", start_color="C6EFCE")
+        for row_idx, row in enumerate(rows, 2):
+            vals = list(row.values())
+            atendido    = bool(vals[atendido_idx - 1])  if atendido_idx else False
+            reporte_env = bool(vals[reporte_idx - 1])   if reporte_idx  else False
+            fill = VERDE if reporte_env else (AMARILLO if atendido else ROJO)
+            for col_idx in range(1, n_cols + 1):
+                ws.cell(row=row_idx, column=col_idx).fill = fill
+
     # ── Hoja 1: Resumen KPIs ───────────────────────────────────────────────
     ws_kpi = wb.active
     ws_kpi.title = "Resumen_KPIs"
@@ -153,9 +173,9 @@ def reporte_excel(current_user: dict = Depends(verify_token)):
     tkt_atendidos = sum(1 for t in tkt_rows if t["atendido"])
     tkt_reporte   = sum(1 for t in tkt_rows if t["reporte_enviado"])
 
-    TITLE_FONT = Font(bold=True, color="FFFFFF", name="Arial", size=13)
-    KPI_LABEL  = Font(bold=True, name="Arial", size=10)
-    KPI_VAL    = Font(name="Arial", size=12, bold=True, color="1F4E79")
+    TITLE_FONT  = Font(bold=True, color="FFFFFF", name="Arial", size=13)
+    KPI_LABEL   = Font(bold=True, name="Arial", size=10)
+    KPI_VAL     = Font(name="Arial", size=12, bold=True, color="1F4E79")
     KPI_ALIGN_R = Alignment(horizontal="right", vertical="center")
     KPI_ALIGN_C = Alignment(horizontal="center", vertical="center")
 
@@ -167,13 +187,13 @@ def reporte_excel(current_user: dict = Depends(verify_token)):
     ws_kpi.row_dimensions[2].height = 30
 
     kpis = [
-        ("Unidades Registradas",      len(total_u_rows)),
-        ("Actividades Completadas",   comp),
-        ("Actividades En Proceso",    proc),
-        ("Actividades Pendientes",    pend),
-        ("% Avance General",          f"{avance_pct}%"),
-        ("Tickets Totales",           tkt_total),
-        ("Tickets Atendidos",         tkt_atendidos),
+        ("Unidades Registradas",        len(total_u_rows)),
+        ("Actividades Completadas",     comp),
+        ("Actividades En Proceso",      proc),
+        ("Actividades Pendientes",      pend),
+        ("% Avance General",            f"{avance_pct}%"),
+        ("Tickets Totales",             tkt_total),
+        ("Tickets Atendidos",           tkt_atendidos),
         ("Reportes de Cierre Enviados", tkt_reporte),
     ]
     for i, (label, val) in enumerate(kpis, 4):
@@ -188,7 +208,7 @@ def reporte_excel(current_user: dict = Depends(verify_token)):
     ws_kpi.column_dimensions["B"].width = 34
     ws_kpi.column_dimensions["C"].width = 18
 
-    # ── Hoja 2: Unidades y series ──────────────────────────────────────────
+    # ── Hoja 2: Series Unidades ────────────────────────────────────────────
     ws1 = wb.create_sheet("Series_Unidades")
     unidades = execute_read("SELECT * FROM unidades ORDER BY id_lote, unit_number")
     write_sheet(ws1, unidades, col_widths={
@@ -199,7 +219,7 @@ def reporte_excel(current_user: dict = Depends(verify_token)):
         "generator_serial": 20, "battery_charger_serial": 22,
     })
 
-    # ── Hoja 3: Actividades (con comentario del técnico) ───────────────────
+    # ── Hoja 3: Actividades ────────────────────────────────────────────────
     ws2 = wb.create_sheet("Actividades")
     asigs = execute_read("""
         SELECT id, unidad, actividad_id, tecnico, estado,
@@ -217,52 +237,101 @@ def reporte_excel(current_user: dict = Depends(verify_token)):
 
     # ── Hoja 4: Tickets ────────────────────────────────────────────────────
     ws3 = wb.create_sheet("Tickets")
-    tickets = execute_read("SELECT * FROM tickets ORDER BY ticket_num DESC")
+    tickets = execute_read("""
+        SELECT
+            ticket_num          AS `Ticket #`,
+            unit_number         AS `Unidad`,
+            vin_number          AS `VIN`,
+            descripcion         AS `Problema Reportado`,
+            creado_por          AS `Creado Por`,
+            tecnico             AS `Técnico Asignado`,
+            atendido            AS `Atendido`,
+            reporte_enviado     AS `Reporte Enviado`,
+            COALESCE(reporte_texto, '—') AS `Reporte Final del Técnico`,
+            fecha_creacion      AS `Fecha Creación`,
+            fecha_atencion      AS `Fecha Atención`,
+            fecha_reporte       AS `Fecha Reporte`
+        FROM tickets
+        ORDER BY ticket_num DESC
+    """)
     write_sheet(ws3, tickets, col_widths={
-        "descripcion": 35, "creado_por": 18,
-        "fecha_creacion": 20, "fecha_atencion": 20, "fecha_reporte": 20,
+        "Ticket #": 10, "Unidad": 14, "VIN": 20,
+        "Problema Reportado": 35, "Creado Por": 18,
+        "Técnico Asignado": 20, "Atendido": 12,
+        "Reporte Enviado": 16,
+        "Reporte Final del Técnico": 60,
+        "Fecha Creación": 20, "Fecha Atención": 20, "Fecha Reporte": 20,
     })
+    colorear_semaforo_tickets(ws3, tickets)
 
-    # ── Hoja 5: Reporte Cierre Tickets ─────────────────────────────────────
+    # ── Hoja 5: Reporte Cierre ─────────────────────────────────────────────
     ws4 = wb.create_sheet("Reporte_Cierre_Tickets")
     cierre = execute_read("""
         SELECT
-            t.ticket_num        AS `Ticket #`,
-            t.unit_number       AS `Unidad`,
-            t.vin_number        AS `VIN`,
-            t.descripcion       AS `Problema Reportado`,
-            t.creado_por        AS `Creado Por`,
-            t.fecha_creacion    AS `Fecha Creación`,
-            t.fecha_atencion    AS `Fecha Atención`,
-            a.actividad_id      AS `Actividad`,
-            a.tecnico           AS `Técnico`,
-            a.estado            AS `Estado`,
-            a.fecha_inicio      AS `Inicio Trabajo`,
-            a.fecha_fin         AS `Fin Trabajo`,
-            a.comentario        AS `Comentario Técnico`,
-            t.reporte_enviado   AS `Reporte Enviado`
+            t.ticket_num                        AS `Ticket #`,
+            t.unit_number                       AS `Unidad`,
+            t.vin_number                        AS `VIN`,
+            t.descripcion                       AS `Problema Reportado`,
+            t.creado_por                        AS `Creado Por`,
+            t.tecnico                           AS `Técnico Asignado`,
+            t.fecha_creacion                    AS `Fecha Creación`,
+            t.fecha_atencion                    AS `Fecha Atención`,
+            a.actividad_id                      AS `Actividad`,
+            a.estado                            AS `Estado Actividad`,
+            a.fecha_inicio                      AS `Inicio Trabajo`,
+            a.fecha_fin                         AS `Fin Trabajo`,
+            a.comentario                        AS `Comentario Técnico`,
+            COALESCE(t.reporte_texto, '—')      AS `Reporte Final del Técnico`,
+            t.fecha_reporte                     AS `Fecha Reporte Final`,
+            t.reporte_enviado                   AS `Ticket Cerrado`
         FROM tickets t
         LEFT JOIN asignaciones a ON a.ticket_id = t.id
         ORDER BY t.ticket_num DESC
     """)
     write_sheet(ws4, cierre, col_widths={
-        "Ticket #": 10, "Unidad": 12, "VIN": 18,
+        "Ticket #": 10, "Unidad": 12, "VIN": 20,
         "Problema Reportado": 35, "Creado Por": 18,
-        "Fecha Creación": 20, "Fecha Atención": 20,
-        "Actividad": 22, "Técnico": 18, "Estado": 14,
-        "Inicio Trabajo": 20, "Fin Trabajo": 20,
-        "Comentario Técnico": 55, "Reporte Enviado": 16,
+        "Técnico Asignado": 20, "Fecha Creación": 20,
+        "Fecha Atención": 20, "Actividad": 22,
+        "Estado Actividad": 16, "Inicio Trabajo": 20,
+        "Fin Trabajo": 20, "Comentario Técnico": 45,
+        "Reporte Final del Técnico": 60,
+        "Fecha Reporte Final": 22, "Ticket Cerrado": 15,
     })
-    colorear_estado(ws4, cierre, "Estado")
+    colorear_estado(ws4, cierre, "Estado Actividad")
 
-    # ── Stream del archivo ─────────────────────────────────────────────────
+    if cierre:
+        headers_cierre = list(cierre[0].keys())
+        if "Reporte Final del Técnico" in headers_cierre:
+            col_rf = headers_cierre.index("Reporte Final del Técnico") + 1
+            RF_FILL = PatternFill("solid", start_color="EEF4FB")
+            RF_FONT = Font(name="Arial", size=9, color="1F4E79", italic=True)
+            for row_idx in range(2, len(cierre) + 2):
+                cell = ws4.cell(row=row_idx, column=col_rf)
+                cell.fill = RF_FILL
+                cell.font = RF_FONT
+                cell.alignment = Alignment(vertical="center", wrap_text=True)
+
+    # ── Generar bytes del Excel ────────────────────────────────────────────
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
+    excel_bytes = buf.getvalue()
+
     from datetime import datetime
     fecha = datetime.now().strftime("%Y-%m-%d")
+
+    # ── Auto-sync a OneDrive cada vez que se descarga el reporte ──────────
+    if ONEDRIVE_ENABLED:
+        try:
+            web_url = sync_reporte_maestro(excel_bytes, fecha)
+            logger.info(f"[OneDrive] Reporte guardado: {web_url}")
+        except Exception as e:
+            # No bloquear la descarga si OneDrive falla
+            logger.warning(f"[OneDrive] No se pudo sincronizar reporte: {e}")
+
     return StreamingResponse(
-        buf,
+        io.BytesIO(excel_bytes),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename=Carrier_Reporte_{fecha}.xlsx"}
     )
