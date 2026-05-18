@@ -72,3 +72,33 @@ def test_onedrive():
             "variables": vars_presentes,
             "detalle": str(e)
         }
+
+@app.get("/auth/onedrive/callback")
+def onedrive_callback(code: str = None, error: str = None):
+    if error:
+        return {"error": error}
+    if not code:
+        return {"error": "No se recibió código"}
+    import requests, os
+    client_id     = "dc1c0d4f-0f48-44db-9fde-a63178fb8ab0"
+    client_secret = os.getenv("MS_CLIENT_SECRET_PERSONAL", "")
+    redirect_uri  = "https://carrier-transicold.onrender.com/auth/onedrive/callback"
+    resp = requests.post(
+        "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        data={
+            "client_id":     client_id,
+            "client_secret": client_secret,
+            "code":          code,
+            "redirect_uri":  redirect_uri,
+            "grant_type":    "authorization_code",
+            "scope":         "https://graph.microsoft.com/Files.ReadWrite offline_access User.Read",
+        }
+    )
+    data = resp.json()
+    if "refresh_token" in data:
+        return {
+            "status": "✅ ÉXITO — Copia este refresh_token y guárdalo en Render como MS_REFRESH_TOKEN",
+            "refresh_token": data["refresh_token"],
+            "access_token_preview": data.get("access_token", "")[:30] + "..."
+        }
+    return {"error": data}
