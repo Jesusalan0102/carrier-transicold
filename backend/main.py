@@ -12,7 +12,6 @@ from routers.toma_valores_router import router as toma_valores_router
 from routers.comentarios_router import router as comentarios_router
 from routers.ws import router as ws_router
 from db import init_db
-from routers.cluster_router import router as cluster_router
 from routers.web_router import router as web_router
 
 app = FastAPI(
@@ -44,7 +43,6 @@ app.include_router(evidencias_router)
 app.include_router(toma_valores_router)
 app.include_router(comentarios_router)
 app.include_router(ws_router)
-app.include_router(cluster_router)
 app.include_router(web_router)
 
 @app.get("/")
