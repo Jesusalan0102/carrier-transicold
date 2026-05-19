@@ -8,3 +8,4 @@ pydantic
 openpyxl
 msal==1.31.1
 requests==2.32.3
+DBUtils>=3.0  
