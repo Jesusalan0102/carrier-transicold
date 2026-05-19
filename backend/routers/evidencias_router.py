@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from auth import verify_token
 from db import execute_read, execute_write
@@ -8,9 +8,8 @@ import io
 import logging
 
 # ── Importación opcional de OneDrive ────────────────────────────────────────
-# Si las variables MS_* no están configuradas, la app sigue funcionando normal
 try:
-    from onedrive_service import sync_evidencia, sync_zip_evidencias
+    from onedrive_service import sync_evidencias_lote, sync_zip_evidencias
     ONEDRIVE_ENABLED = True
 except ImportError:
     ONEDRIVE_ENABLED = False
@@ -44,6 +43,7 @@ def total_por_unidad(unit_number: str, current_user=Depends(verify_token)):
 # ── SUBIR FOTOS ────────────────────────────────────────────────────────────
 @router.post("/upload")
 async def subir_evidencias(
+    background_tasks: BackgroundTasks,          # NUEVO: para subir a OneDrive en background
     unidad: str = Form(...),
     tecnico: str = Form(...),
     files: List[UploadFile] = File(...),
@@ -64,41 +64,61 @@ async def subir_evidencias(
 
     files_a_guardar = files[:disponibles]
     guardadas        = 0
-    subidas_onedrive = 0
+
+    # FIX: Leer todos los archivos primero y guardar en TiDB
+    # Antes: se leía y subía a OneDrive dentro del mismo loop → bloqueaba la respuesta
+    archivos_para_onedrive = []  # acumular para subir en lote después
 
     for file in files_a_guardar:
         contenido = await file.read()
 
-        # 1. Guardar en TiDB (comportamiento original sin cambios)
         ok = execute_write(
             "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico) VALUES (%s,%s,%s,%s)",
             (unidad, file.filename, contenido, tecnico)
         )
         if ok:
             guardadas += 1
-
-            # 2. Sincronizar con OneDrive automáticamente
+            # Acumular para subida en lote a OneDrive
             if ONEDRIVE_ENABLED:
-                try:
-                    sync_evidencia(unidad, file.filename, contenido)
-                    subidas_onedrive += 1
-                except Exception as e:
-                    # No fallar si OneDrive falla — TiDB ya tiene la foto
-                    logger.warning(f"[OneDrive] No se pudo subir {file.filename}: {e}")
+                archivos_para_onedrive.append((file.filename, contenido))
 
-    respuesta = {
-        "mensaje": f"{guardadas} foto(s) guardada(s)",
+    # FIX: Subir a OneDrive en background (no bloquea la respuesta al usuario)
+    # Antes: la respuesta tardaba porque esperaba que terminara cada subida a OneDrive
+    # Ahora: TiDB responde al usuario de inmediato y OneDrive se sincroniza en paralelo
+    if ONEDRIVE_ENABLED and archivos_para_onedrive:
+        background_tasks.add_task(
+            _sync_lote_background, unidad, archivos_para_onedrive
+        )
+
+    return {
+        "mensaje":  f"{guardadas} foto(s) guardada(s)",
         "guardadas": guardadas,
+        "onedrive": f"Sincronizando {len(archivos_para_onedrive)} foto(s) en segundo plano..." if ONEDRIVE_ENABLED else "OneDrive no configurado",
     }
-    if ONEDRIVE_ENABLED:
-        respuesta["onedrive"] = f"{subidas_onedrive}/{guardadas} foto(s) sincronizadas con OneDrive"
 
-    return respuesta
+
+def _sync_lote_background(unidad: str, archivos: list):
+    """
+    Tarea de background: sube todas las fotos a OneDrive en paralelo.
+    Si alguna falla, reintenta automáticamente (ver onedrive_service._upload_with_retry).
+    """
+    try:
+        resultado = sync_evidencias_lote(unidad, archivos, max_workers=4)
+        logger.info(
+            f"[OneDrive] Lote {unidad}: "
+            f"{len(resultado['subidas'])} subidas, "
+            f"{len(resultado['errores'])} errores"
+        )
+        if resultado["errores"]:
+            for err in resultado["errores"]:
+                logger.error(f"[OneDrive] Falló {err['archivo']}: {err['error']}")
+    except Exception as e:
+        logger.error(f"[OneDrive] Error en sync background para {unidad}: {e}")
 
 
 # ── DESCARGAR ZIP DE TODAS LAS FOTOS DE UNA UNIDAD ────────────────────────
 @router.get("/download/{unit_number}")
-def descargar_evidencias(unit_number: str, current_user=Depends(verify_token)):
+def descargar_evidencias(unit_number: str, background_tasks: BackgroundTasks, current_user=Depends(verify_token)):
     meta = execute_read(
         "SELECT id, nombre_archivo FROM evidencias WHERE unit_number=%s",
         (unit_number,)
@@ -131,10 +151,7 @@ def descargar_evidencias(unit_number: str, current_user=Depends(verify_token)):
 
     # Sincronizar ZIP con OneDrive en background (no bloquea la descarga)
     if ONEDRIVE_ENABLED:
-        try:
-            sync_zip_evidencias(unit_number, zip_bytes)
-        except Exception as e:
-            logger.warning(f"[OneDrive] No se pudo subir ZIP de {unit_number}: {e}")
+        background_tasks.add_task(sync_zip_evidencias, unit_number, zip_bytes)
 
     return StreamingResponse(
         io.BytesIO(zip_bytes),
@@ -147,38 +164,33 @@ def descargar_evidencias(unit_number: str, current_user=Depends(verify_token)):
 
 
 # ── SINCRONIZAR TODAS LAS EVIDENCIAS DE UNA UNIDAD A ONEDRIVE ─────────────
-# Endpoint manual para migrar fotos históricas que ya estaban en TiDB
 @router.post("/sync-onedrive/{unit_number}")
-def sync_unidad_onedrive(unit_number: str, current_user=Depends(verify_token)):
+def sync_unidad_onedrive(unit_number: str, background_tasks: BackgroundTasks, current_user=Depends(verify_token)):
     """
     Sube a OneDrive todas las fotos de una unidad que ya están en TiDB.
     Útil para migrar el historial existente.
+    Ahora corre en background: responde de inmediato y sincroniza en paralelo.
     """
     if not ONEDRIVE_ENABLED:
         raise HTTPException(status_code=503, detail="OneDrive no está configurado")
 
     meta = execute_read(
-        "SELECT id, nombre_archivo FROM evidencias WHERE unit_number=%s",
+        "SELECT id, nombre_archivo, contenido FROM evidencias WHERE unit_number=%s",
         (unit_number,)
     )
     if not meta:
         raise HTTPException(status_code=404, detail="No hay evidencias para esta unidad")
 
-    subidas = 0
-    errores = 0
-    for m in meta:
-        fila = execute_read("SELECT contenido FROM evidencias WHERE id=%s", (m["id"],))
-        if not fila or not fila[0]["contenido"]:
-            continue
-        try:
-            sync_evidencia(unit_number, m["nombre_archivo"] or f"foto_{m['id']}.jpg", fila[0]["contenido"])
-            subidas += 1
-        except Exception as e:
-            logger.error(f"[OneDrive] Error en foto id={m['id']}: {e}")
-            errores += 1
+    archivos = [
+        (m["nombre_archivo"] or f"foto_{m['id']}.jpg", m["contenido"])
+        for m in meta
+        if m.get("contenido")
+    ]
+
+    background_tasks.add_task(_sync_lote_background, unit_number, archivos)
 
     return {
-        "mensaje": f"Sincronización completada para {unit_number}",
-        "subidas": subidas,
-        "errores": errores,
+        "mensaje":  f"Sincronización iniciada para {unit_number}",
+        "total":    len(archivos),
+        "estado":   "Corriendo en segundo plano (revisa logs para resultado)",
     }
