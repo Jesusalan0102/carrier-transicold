@@ -52,25 +52,22 @@ def root():
 @app.get("/test-onedrive")
 def test_onedrive():
     import os
-    vars_presentes = {
-        "MS_CLIENT_ID":     bool(os.getenv("MS_CLIENT_ID")),
-        "MS_CLIENT_SECRET": bool(os.getenv("MS_CLIENT_SECRET")),
-        "MS_TENANT_ID":     bool(os.getenv("MS_TENANT_ID")),
-        "MS_USER_EMAIL":    os.getenv("MS_USER_EMAIL", "NO DEFINIDO"),
-    }
     try:
-        from onedrive_service import _get_token
-        token = _get_token()
+        import onedrive_service
         return {
-            "status": "OK ✅ — Conexión con OneDrive exitosa",
-            "variables": vars_presentes,
-            "token_preview": token[:20] + "..."
+            "status": "OK ✅",
+            "onedrive_enabled": True,
+            "MS_REFRESH_TOKEN": bool(os.getenv("MS_REFRESH_TOKEN")),
+            "MS_CLIENT_ID_PERSONAL": bool(os.getenv("MS_CLIENT_ID_PERSONAL")),
+            "MS_CLIENT_SECRET_PERSONAL": bool(os.getenv("MS_CLIENT_SECRET_PERSONAL")),
         }
     except Exception as e:
         return {
             "status": "ERROR ❌",
-            "variables": vars_presentes,
-            "detalle": str(e)
+            "error": str(e),
+            "MS_REFRESH_TOKEN": bool(os.getenv("MS_REFRESH_TOKEN")),
+            "MS_CLIENT_ID_PERSONAL": bool(os.getenv("MS_CLIENT_ID_PERSONAL")),
+            "MS_CLIENT_SECRET_PERSONAL": bool(os.getenv("MS_CLIENT_SECRET_PERSONAL")),
         }
 
 @app.get("/auth/onedrive/callback")
