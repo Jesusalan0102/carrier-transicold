@@ -1101,10 +1101,12 @@ async def mis_tickets():
 
 
 # ── PANEL DE ASIGNACIÓN POR CLUSTER ────────────────────────────────────────
-@router.get("/app/cluster", response_class=HTMLResponse)
-async def cluster():
+@router.get("/app/cluster")
+def panel_cluster(request: Request, current_user: dict = Depends(verify_token_cookie)):
+    if current_user.get("role") != "admin":
+        return RedirectResponse("/app/dashboard")
+
     contenido = """
-    <script> if (window.role !== 'admin') { window.location.href = '/app/dashboard'; } </script>
     <div id="resumenCluster" style="display:none; background:var(--color-background-secondary); border-radius:var(--border-radius-lg); padding:16px; margin-bottom:20px;"></div>
 
     <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; align-items:start;">

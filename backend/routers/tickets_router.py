@@ -107,4 +107,3 @@ def eliminar_ticket(ticket_id: int, current_user=Depends(verify_token)):
     execute_write("DELETE FROM asignaciones WHERE ticket_id=%s", (ticket_id,))
     execute_write("DELETE FROM tickets WHERE id=%s", (ticket_id,))
     return {"mensaje": "Ticket eliminado"}
-
