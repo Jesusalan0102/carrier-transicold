@@ -1,5 +1,6 @@
-from fastapi import APIRouter
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Request, Depends
+from fastapi.responses import HTMLResponse, RedirectResponse
+from auth import verify_token_cookie
 
 router = APIRouter()
 
@@ -65,17 +66,21 @@ BASE_STYLE = """
     .btn-danger { background: var(--carrier-danger); color: white; border: none; border-radius: 10px; padding: 14px 20px; font-weight: 600; font-size: 1rem; cursor: pointer; width: 100%; text-align: center; }
     .btn-success { background: var(--carrier-success); color: white; border: none; border-radius: 10px; padding: 14px 20px; font-weight: 600; font-size: 1rem; cursor: pointer; width: 100%; text-align: center; }
     .btn-warning { background: var(--carrier-warn); color: white; border: none; border-radius: 10px; padding: 14px 20px; font-weight: 600; font-size: 1rem; cursor: pointer; width: 100%; text-align: center; }
+    .btn-ghost { background: transparent; border: 1px solid #cbd5e1; border-radius: 10px; padding: 10px 16px; font-weight: 500; cursor: pointer; }
     input, textarea, select { border: 1px solid #d1d5db; border-radius: 10px; padding: 12px; font-size: 16px; transition: border-color 0.2s; width: 100%; margin-bottom: 12px; }
     input:focus, textarea:focus, select:focus { outline: none; border-color: var(--carrier-accent); box-shadow: 0 0 0 3px rgba(0,87,168,0.1); }
     table { width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,43,91,0.08); }
     th { background: #f8fafc; padding: 12px; text-align: left; font-weight: 600; color: var(--carrier-blue); border-bottom: 2px solid #e5e7eb; }
     td { padding: 12px; border-bottom: 1px solid #f0f0f0; }
     .badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+    .badge-pending { background: #fef3c7; color: #92400e; }
+    .badge-done { background: #d1fae5; color: #065f46; }
+    .badge-req { background: #dbeafe; color: #1e40af; }
+    .badge-cancel { background: #fee2e2; color: #991b1b; }
     .bloqueo-card { background: #fef2f2; border: 1.5px solid #fca5a5; border-left: 5px solid var(--carrier-danger); border-radius: 10px; padding: 14px 18px; margin: 8px 0; }
     .evidencia-info { background: #eff6ff; border: 1px solid #bfdbfe; border-left: 5px solid #3b82f6; border-radius: 10px; padding: 12px 18px; margin-bottom: 14px; }
     .inv-info-bar { background: linear-gradient(90deg, var(--carrier-blue) 0%, var(--carrier-accent) 100%); color: white; padding: 14px 20px; border-radius: 12px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
     .tv-field-badge { background: var(--carrier-light); border: 1px solid #c3d4f0; border-radius: 8px; padding: 6px 12px; font-size: 0.82rem; color: var(--carrier-blue); font-weight: 600; display: inline-block; margin-bottom: 8px; }
-    /* Visor: ocultar botones de acción */
     body.visor-mode .btn-primary,
     body.visor-mode .btn-danger,
     body.visor-mode .btn-success,
@@ -242,6 +247,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
     </html>
     """
 
+
 # ------------------------------------------------------------
 # LOGIN
 # ------------------------------------------------------------
@@ -257,15 +263,7 @@ async def login():
         <style>
             * { box-sizing: border-box; font-family: 'Inter', system-ui, sans-serif; }
             body { background: linear-gradient(135deg, #EEF2F9 0%, #F5F7FB 60%, #EAF0FB 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; margin: 0; padding: 20px; }
-            /* Visor: ocultar botones de acción */
-    body.visor-mode .btn-primary,
-    body.visor-mode .btn-danger,
-    body.visor-mode .btn-success,
-    body.visor-mode .btn-warning,
-    body.visor-mode button:not(.logout-btn):not(.hamburger) { display: none !important; }
-    body.visor-mode input, body.visor-mode select, body.visor-mode textarea { pointer-events: none; background: #f9fafb; }
-    .visor-banner { background: #fef3c7; border: 1px solid #f59e0b; color: #92400e; padding: 8px 16px; border-radius: 8px; font-size: 0.82rem; font-weight: 600; text-align: center; margin-bottom: 16px; }
-    .login-card { background: white; padding: 40px 32px; border-radius: 20px; box-shadow: 0 12px 40px rgba(0,43,91,0.18); max-width: 400px; width: 100%; text-align: center; }
+            .login-card { background: white; padding: 40px 32px; border-radius: 20px; box-shadow: 0 12px 40px rgba(0,43,91,0.18); max-width: 400px; width: 100%; text-align: center; }
             .login-card img { width: 280px; max-width: 100%; border-radius: 12px; margin-bottom: 20px; }
             .login-card h2 { color: #002B5B; font-weight: 800; font-size: 1.5rem; margin-bottom: 4px; }
             .login-card p { color: #6b7280; font-size: 0.9rem; margin-bottom: 24px; }
@@ -310,6 +308,7 @@ async def login():
     </body>
     </html>
     """
+
 
 # ------------------------------------------------------------
 # DASHBOARD (solo admin) - TABLA DE ESTADÍSTICAS ELIMINADA
@@ -360,7 +359,7 @@ async def dashboard():
                     const unidadesRes = await fetchAuth('/api/unidades/'); const unidades = await unidadesRes.json();
                     if (unidades.length) {
                         const completadasSet = new Set(asignaciones.filter(a => a.estado === 'completada').map(a => a.unidad + '||' + a.actividad_id));
-                        let headers = '<table><th>LOTE</th><th>#Económico</th>'; actividades.forEach(a => headers += `<th>${a}</th>`); headers += '</tr>';
+                        let headers = '<tr><th>LOTE</th><th>#Económico</th>'; actividades.forEach(a => headers += `<th>${a}</th>`); headers += '</tr>';
                         let body = ''; unidades.forEach(u => { body += `<tr><td>${u.id_lote || ''}</td><td>${u.unit_number}</td>`; actividades.forEach(act => body += `<td>${completadasSet.has(u.unit_number + '||' + act) ? '✔' : '–'}</td>`); body += '</tr>'; });
                         document.getElementById('statusTable').innerHTML = `<table><thead>${headers}</thead><tbody>${body}</tbody></table>`;
                         const lotesMap = {}; unidades.forEach(u => { const lote = u.id_lote || 'Sin lote'; if (!lotesMap[lote]) lotesMap[lote] = []; lotesMap[lote].push(u); });
@@ -377,6 +376,7 @@ async def dashboard():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("📊 Panel de Rendimiento Operativo", contenido, "dashboard"))
+
 
 # ------------------------------------------------------------
 # ASIGNACIONES (admin)
@@ -473,6 +473,7 @@ async def asignaciones():
     """
     return HTMLResponse(content=pagina_con_menu("🎯 Control de Asignaciones", contenido, "asignaciones"))
 
+
 # ------------------------------------------------------------
 # TICKETS (admin)
 # ------------------------------------------------------------
@@ -522,6 +523,7 @@ async def tickets():
     """
     return HTMLResponse(content=pagina_con_menu("🎫 Gestión de Tickets", contenido, "tickets"))
 
+
 # ------------------------------------------------------------
 # INVENTARIO (admin)
 # ------------------------------------------------------------
@@ -549,7 +551,7 @@ async def inventario():
             document.getElementById('infoBar').innerHTML = `🗄 Inventario Principal &nbsp;·&nbsp; ${datos.length} registros &nbsp;·&nbsp; ${columnas.length} columnas`;
             renderTabla();
         }
-        function renderTabla() { let html = '<table><thead><tr><th>#</th>'; columnas.forEach(c => html += `<th>${c}</th>`); html += '<th>Acción</th></tr></thead><tbody>'; datos.forEach((fila, idx) => { html += `<tr><td>${idx+1}</td>`; columnas.forEach(c => html += `<td><input type="text" value="${fila[c] || ''}" onchange="datos[${idx}]['${c}'] = this.value" style="margin:0;"></td>`); html += `<td><button class="btn-danger" onclick="eliminarFila(${idx})">🗑</button><tr></tr>`; }); html += '</tbody></table>'; document.getElementById('inventarioTable').innerHTML = html; }
+        function renderTabla() { let html = '<table class="admin-table"><thead><tr><th>#</th>'; columnas.forEach(c => html += `<th>${c}</th>`); html += '<th>Acción</th></tr></thead><tbody>'; datos.forEach((fila, idx) => { html += `<tr><td>${idx+1}</td>`; columnas.forEach(c => html += `<td><input type="text" value="${fila[c] || ''}" onchange="datos[${idx}]['${c}'] = this.value" style="margin:0;"></td>`); html += `<td><button class="btn-danger" onclick="eliminarFila(${idx})">🗑</button></td></tr>`; }); html += '</tbody></table>'; document.getElementById('inventarioTable').innerHTML = html; }
         function agregarFila() { datos.push(Object.fromEntries(columnas.map(c => [c, '']))); renderTabla(); }
         function eliminarFila(idx) { if (confirm('¿Eliminar fila?')) { datos.splice(idx,1); renderTabla(); } }
         async function guardarInventario() { await fetchAuth('/api/inventario/datos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos) }); alert('Inventario guardado'); }
@@ -563,6 +565,7 @@ async def inventario():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("📦 Gestión de Inventarios", contenido, "inventario"))
+
 
 # ------------------------------------------------------------
 # REGISTRO DE UNIDADES (admin)
@@ -584,7 +587,7 @@ async def unidades():
     <div id="unidadesList"></div>
     <script>
         const fetchAuth = window.fetchAuth;
-        async function cargarUnidades() { const res = await fetchAuth('/api/unidades/'); const unidades = await res.json(); let html = '<table><thead><tr><th>#Económico</th><th>Lote</th><th>VIN</th><th>Reefer Serial</th><th>Modelo</th><th>Motor</th><th>Compresor</th></tr></thead><tbody>'; if (Array.isArray(unidades)) unidades.forEach(u => html += `<tr><td>${u.unit_number}</td><td>${u.id_lote||''}</td><td>${u.vin_number||''}</td><td>${u.reefer_serial||''}</td><td>${u.reefer_model||''}</td><td>${u.engine_serial||''}</td><td>${u.compressor_serial||''}</td></tr>`); html += '</tbody></table>'; document.getElementById('unidadesList').innerHTML = html; }
+        async function cargarUnidades() { const res = await fetchAuth('/api/unidades/'); const unidades = await res.json(); let html = '<table class="admin-table"><thead><tr><th>#Económico</th><th>Lote</th><th>VIN</th><th>Reefer Serial</th><th>Modelo</th><th>Motor</th><th>Compresor</th></tr></thead><tbody>'; if (Array.isArray(unidades)) unidades.forEach(u => html += `<tr><td>${u.unit_number}</td><td>${u.id_lote||''}</td><td>${u.vin_number||''}</td><td>${u.reefer_serial||''}</td><td>${u.reefer_model||''}</td><td>${u.engine_serial||''}</td><td>${u.compressor_serial||''}</td></tr>`); html += '</tbody></table>'; document.getElementById('unidadesList').innerHTML = html; }
         document.getElementById('unidadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const data = {
@@ -609,17 +612,16 @@ async def unidades():
     """
     return HTMLResponse(content=pagina_con_menu("📸 Registro de Unidades", contenido, "unidades"))
 
+
 # ------------------------------------------------------------
-# GESTIÓN DE USUARIOS (admin) - CORREGIDO: se añadió opción "visor"
+# GESTIÓN DE USUARIOS (admin)
 # ------------------------------------------------------------
 @router.get("/app/usuarios", response_class=HTMLResponse)
 async def usuarios():
     contenido = """
     <script> if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; } </script>
-
     <div class="section-title">👥 Usuarios Registrados</div>
     <div id="usuariosList"></div>
-
     <div class="section-title admin-only" style="margin-top:28px;">➕ Crear Nuevo Usuario</div>
     <div class="admin-only" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px;">
         <input type="text" id="username" placeholder="Nombre de usuario" required>
@@ -631,15 +633,13 @@ async def usuarios():
         </select>
         <button onclick="crearUsuario()" class="btn-primary" style="grid-column: span 3;">👤 Crear Usuario</button>
     </div>
-
     <script>
         const fetchAuth = window.fetchAuth;
-
         async function cargarUsuarios() {
             try {
                 const res = await fetchAuth('/api/usuarios/');
                 const usuarios = await res.json();
-                let html = '<table><thead><tr><th>Usuario</th><th>Rol</th><th style="text-align:center;">Acciones</th></tr></thead><tbody>';
+                let html = '<table class="admin-table"><thead><tr><th>Usuario</th><th>Rol</th><th style="text-align:center;">Acciones</th></tr></thead><tbody>';
                 if (Array.isArray(usuarios)) {
                     usuarios.forEach(u => {
                         const rolTexto = u.role === 'admin' ? '🛡 Administrador' : (u.role === 'tecnico' ? '🔧 Técnico' : '👁 Visor');
@@ -656,7 +656,6 @@ async def usuarios():
                 document.getElementById('usuariosList').innerHTML = '<p style="color:red;">Error al cargar usuarios</p>';
             }
         }
-
         function abrirModalPassword(userId, username) {
             const prev = document.getElementById('modalPassword');
             if (prev) prev.remove();
@@ -688,12 +687,10 @@ async def usuarios():
             document.body.appendChild(modal);
             setTimeout(() => document.getElementById('inputNuevaPwd').focus(), 100);
         }
-
         function togglePwd() {
             const input = document.getElementById('inputNuevaPwd');
             input.type = input.type === 'password' ? 'text' : 'password';
         }
-
         async function guardarPassword(userId) {
             const pwd = document.getElementById('inputNuevaPwd').value.trim();
             const errorEl = document.getElementById('pwdError');
@@ -718,7 +715,6 @@ async def usuarios():
                 btn.textContent = '💾 Guardar'; btn.disabled = false;
             }
         }
-
         async function crearUsuario() {
             const username = document.getElementById('username').value.trim();
             const password = document.getElementById('newUserPassword').value;
@@ -743,50 +739,751 @@ async def usuarios():
                 alert('Error: ' + (err.detail || 'No se pudo crear el usuario'));
             }
         }
-
         async function eliminarUsuario(id, nombre) {
             if (!confirm(`¿Eliminar al usuario "${nombre}"? Esta acción no se puede deshacer.`)) return;
             const res = await fetchAuth('/api/usuarios/' + id, { method: 'DELETE' });
             if (res.ok) cargarUsuarios();
             else alert('Error al eliminar usuario');
         }
-
         cargarUsuarios();
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("👥 Gestión de Usuarios", contenido, "usuarios"))
+
+
 # ------------------------------------------------------------
-# PANEL DE ADMINISTRACIÓN (admin)
+# PANEL DE ADMINISTRACIÓN (admin) - VERSIÓN COMPLETA
 # ------------------------------------------------------------
 @router.get("/app/admin", response_class=HTMLResponse)
-async def admin():
+async def admin_panel():
     contenido = """
-    <script> if (window.role !== 'admin') { window.location.href = '/app/mis-tareas'; } </script>
-    <div style="display:flex; gap:8px; margin-bottom:16px;">
-        <button class="btn-primary" onclick="mostrarPestana('actividades')">🗂 Actividades</button>
-        <button class="btn-primary" onclick="mostrarPestana('usuarios')">👥 Usuarios</button>
-        <button class="btn-primary" onclick="mostrarPestana('unidades')">🚛 Unidades</button>
-        <button class="btn-primary" onclick="mostrarPestana('sql')">🗄 SQL Directo</button>
+    <style>
+        .admin-panel-container {
+            background: white;
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        .admin-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 1.25rem;
+            flex-wrap: wrap;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 0.5rem;
+        }
+        .admin-tab-btn {
+            background: #f1f5f9;
+            color: #1e293b;
+            border: none;
+            border-radius: 10px;
+            padding: 8px 18px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            transition: all 0.2s;
+        }
+        .admin-tab-btn:hover { background: #e2e8f0; }
+        .admin-tab-btn.active {
+            background: #0f2d6b;
+            color: white;
+        }
+        .admin-section { display: none; }
+        .admin-section.active { display: block; }
+        .admin-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .admin-table th {
+            background: #0f2d6b;
+            color: white;
+            padding: 10px 12px;
+            text-align: left;
+            font-weight: 500;
+            font-size: 12px;
+        }
+        .admin-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .admin-table tr:hover td { background: #f1f5f9; }
+        .admin-table tr.selected td { background: #dbeafe; }
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+        .toolbar input, .toolbar select {
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 13px;
+        }
+        .btn-icon {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 5px;
+            border-radius: 6px;
+            font-size: 16px;
+        }
+        .btn-icon.edit:hover { background: #dbeafe; color: #2563eb; }
+        .btn-icon.del:hover { background: #fee2e2; color: #dc2626; }
+        .editor-sidebar {
+            width: 320px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 1rem;
+            position: sticky;
+            top: 20px;
+        }
+        .main-layout {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+        }
+        .table-wrap { flex: 1; overflow-x: auto; }
+        .bulk-bar {
+            display: none;
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
+            border-radius: 10px;
+            padding: 10px 16px;
+            margin-bottom: 16px;
+            align-items: center;
+            gap: 12px;
+        }
+        .bulk-bar.visible { display: flex; }
+        .pagination {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+            justify-content: flex-end;
+        }
+        .pagination button {
+            background: #f1f5f9;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 4px 10px;
+            cursor: pointer;
+        }
+        .field-group { margin-bottom: 12px; }
+        .field-group label {
+            display: block;
+            font-size: 11px;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+        .field-group input, .field-group select, .field-group textarea {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 13px;
+        }
+        .sql-area {
+            width: 100%;
+            font-family: monospace;
+            padding: 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
+            background: #f8fafc;
+        }
+        .sql-result {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 12px;
+            border-radius: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            overflow-x: auto;
+            display: none;
+            margin-top: 12px;
+        }
+        .sql-result.visible { display: block; }
+        .notice {
+            background: #f1f5f9;
+            border-left: 3px solid #0f2d6b;
+            padding: 10px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 13px;
+        }
+    </style>
+
+    <div class="admin-panel-container">
+        <div class="admin-tabs">
+            <button class="admin-tab-btn active" onclick="mostrarAdminTab('actividades')">
+                <i class="ri-task-line"></i> Actividades
+            </button>
+            <button class="admin-tab-btn" onclick="mostrarAdminTab('usuarios')">
+                <i class="ri-user-line"></i> Usuarios
+            </button>
+            <button class="admin-tab-btn" onclick="mostrarAdminTab('unidades')">
+                <i class="ri-truck-line"></i> Unidades
+            </button>
+            <button class="admin-tab-btn" onclick="mostrarAdminTab('sql')">
+                <i class="ri-terminal-box-line"></i> SQL Directo
+            </button>
+        </div>
+
+        <!-- ACTIVIDADES -->
+        <div id="admin-actividades" class="admin-section active">
+            <div class="toolbar">
+                <input type="text" id="search-act" placeholder="Buscar..." oninput="filtrarActividades()">
+                <select id="filter-estado-act" onchange="filtrarActividades()">
+                    <option value="">Todos los estados</option>
+                    <option value="pendiente">Pendiente</option>
+                    <option value="completado">Completado</option>
+                    <option value="solicitado">Solicitado</option>
+                    <option value="cancelado">Cancelado</option>
+                </select>
+                <button class="btn-primary" style="padding:8px 16px;" onclick="nuevaActividad()">
+                    <i class="ri-add-line"></i> Nueva
+                </button>
+            </div>
+            <div class="bulk-bar" id="bulk-act-bar">
+                <i class="ri-checkbox-line"></i>
+                <span id="bulk-act-count">0</span> seleccionados
+                <button class="btn-danger" style="margin-left:auto; padding:6px 12px;" onclick="eliminarActividadesSeleccionadas()">
+                    <i class="ri-delete-bin-line"></i> Eliminar
+                </button>
+            </div>
+            <div class="main-layout">
+                <div class="table-wrap">
+                    <table class="admin-table" id="admin-table-act">
+                        <thead>
+                            <tr><th><input type="checkbox" id="checkAllAct" onchange="toggleAllActividades()"></th>
+                                <th>ID</th><th>Vehículo</th><th>Tipo</th><th>Técnico</th><th>Estado</th><th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-tbody-act"><tr><td colspan="7" style="text-align:center;">Cargando...</td></tr></tbody>
+                    </table>
+                    <div class="pagination" id="pag-act"></div>
+                </div>
+                <div class="editor-sidebar" id="editor-act" style="display:none;">
+                    <h4 style="margin:0 0 12px 0; display:flex; justify-content:space-between;">
+                        <span><i class="ri-edit-box-line"></i> Editar actividad</span>
+                        <button onclick="cerrarEditorAct()" style="background:none; border:none; font-size:18px; cursor:pointer;">&times;</button>
+                    </h4>
+                    <div id="edit-act-id" style="font-size:11px; color:#666; margin-bottom:12px;"></div>
+                    <div class="field-group"><label>Vehículo</label><input type="text" id="edit-act-vehiculo" class="form-control"></div>
+                    <div class="field-group"><label>Tipo</label><select id="edit-act-tipo" class="form-control"><option>Ticket</option><option>Accesorios</option><option>Mantenimiento</option><option>Revisión</option></select></div>
+                    <div class="field-group"><label>Técnico</label><input type="text" id="edit-act-tecnico" class="form-control"></div>
+                    <div class="field-group"><label>Estado</label><select id="edit-act-estado" class="form-control"><option value="pendiente">Pendiente</option><option value="solicitado">Solicitado</option><option value="completado">Completado</option><option value="cancelado">Cancelado</option></select></div>
+                    <div class="field-group"><label>Notas</label><textarea id="edit-act-notas" rows="3" class="form-control"></textarea></div>
+                    <div style="display:flex; gap:8px; margin-top:12px;">
+                        <button class="btn-primary" style="flex:1;" onclick="guardarActividad()">Guardar</button>
+                        <button class="btn-ghost" style="flex:1;" onclick="cerrarEditorAct()">Cancelar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- USUARIOS -->
+        <div id="admin-usuarios" class="admin-section">
+            <div class="toolbar">
+                <input type="text" id="search-usr" placeholder="Buscar..." oninput="filtrarUsuarios()">
+                <select id="filter-rol-usr" onchange="filtrarUsuarios()">
+                    <option value="">Todos los roles</option>
+                    <option value="administrador">Administrador</option>
+                    <option value="tecnico">Técnico</option>
+                    <option value="operador">Operador</option>
+                </select>
+                <button class="btn-primary" onclick="nuevoUsuario()"><i class="ri-add-line"></i> Nuevo</button>
+            </div>
+            <div class="bulk-bar" id="bulk-usr-bar">
+                <i class="ri-checkbox-line"></i>
+                <span id="bulk-usr-count">0</span> seleccionados
+                <button class="btn-danger" style="margin-left:auto;" onclick="eliminarUsuariosSeleccionados()">Eliminar</button>
+            </div>
+            <div class="table-wrap">
+                <table class="admin-table" id="admin-table-usr">
+                    <thead><tr><th><input type="checkbox" id="checkAllUsr" onchange="toggleAllUsuarios()"></th><th>ID</th><th>Nombre</th><th>Email</th><th>Rol</th><th>Acciones</th></tr></thead>
+                    <tbody id="admin-tbody-usr"><tr><td colspan="6">Cargando...</td></tr></tbody>
+                </table>
+                <div class="pagination" id="pag-usr"></div>
+            </div>
+        </div>
+
+        <!-- UNIDADES -->
+        <div id="admin-unidades" class="admin-section">
+            <div class="toolbar">
+                <input type="text" id="search-uni" placeholder="Buscar..." oninput="filtrarUnidades()">
+                <button class="btn-primary" onclick="nuevaUnidad()"><i class="ri-add-line"></i> Nueva</button>
+            </div>
+            <div class="bulk-bar" id="bulk-uni-bar">
+                <i class="ri-checkbox-line"></i>
+                <span id="bulk-uni-count">0</span> seleccionados
+                <button class="btn-danger" style="margin-left:auto;" onclick="eliminarUnidadesSeleccionadas()">Eliminar</button>
+            </div>
+            <div class="table-wrap">
+                <table class="admin-table" id="admin-table-uni">
+                    <thead><tr><th><input type="checkbox" id="checkAllUni" onchange="toggleAllUnidades()"></th><th>ID</th><th>Placa</th><th>Modelo</th><th>Año</th><th>Estado</th><th>Acciones</th></tr></thead>
+                    <tbody id="admin-tbody-uni"><tr><td colspan="7">Cargando...</td></tr></tbody>
+                </table>
+                <div class="pagination" id="pag-uni"></div>
+            </div>
+        </div>
+
+        <!-- SQL DIRECTO -->
+        <div id="admin-sql" class="admin-section">
+            <div class="notice"><i class="ri-information-line"></i> Solo consultas SELECT permitidas por seguridad.</div>
+            <div style="margin-bottom:12px; display:flex; gap:6px; flex-wrap:wrap;">
+                <button class="btn-ghost" onclick="setSQL('SELECT * FROM asignaciones ORDER BY id DESC LIMIT 20;')">asignaciones</button>
+                <button class="btn-ghost" onclick="setSQL('SELECT id, username, role FROM users;')">usuarios</button>
+                <button class="btn-ghost" onclick="setSQL('SELECT id, unit_number, reefer_model FROM unidades;')">unidades</button>
+                <button class="btn-ghost" onclick="setSQL('SELECT * FROM tickets ORDER BY id DESC LIMIT 10;')">tickets</button>
+            </div>
+            <textarea id="sqlQuery" class="sql-area" rows="4" placeholder="SELECT * FROM asignaciones LIMIT 10;">SELECT * FROM asignaciones ORDER BY id DESC LIMIT 20;</textarea>
+            <div style="display:flex; gap:10px;">
+                <button class="btn-primary" onclick="ejecutarSQLAdmin()"><i class="ri-play-line"></i> Ejecutar</button>
+                <button class="btn-ghost" onclick="document.getElementById('sqlQuery').value=''">Limpiar</button>
+            </div>
+            <div id="sqlResultado" class="sql-result"></div>
+        </div>
     </div>
-    <div id="panelContenido"></div>
+
     <script>
-        const fetchAuth = window.fetchAuth;
-        const pestanas = {
-            actividades: async () => {
-                document.getElementById('panelContenido').innerHTML = `<div class="section-title">Filtrar por estado</div><select id="filtroEstado" onchange="cargarActividades()"><option value="Todos">Todos</option><option value="solicitado">Solicitado</option><option value="pendiente">Pendiente</option><option value="en_proceso">En Proceso</option><option value="completada">Completada</option></select><div id="listaActividades"></div>`;
-                window.cargarActividades = async () => { const estado = document.getElementById('filtroEstado').value; const url = estado === 'Todos' ? '/api/asignaciones/' : `/api/asignaciones/?estado=${estado}`; const [asigRes, usuariosRes] = await Promise.all([fetchAuth(url), fetchAuth('/api/usuarios/')]); const asigs = await asigRes.json(); const usuarios = await usuariosRes.json(); const tecnicosSet = new Set(usuarios.filter(u => u.role === 'tecnico').map(u => u.username)); const huerfanas = asigs.filter(a => !tecnicosSet.has(a.tecnico)); let h = ''; if (huerfanas.length) h += `<div class="bloqueo-card"><p>⚠️ Existen <b>${huerfanas.length}</b> asignaciones con usuarios no técnicos (ej: ${[...new Set(huerfanas.map(a => a.tecnico))].join(', ')}).</p></div>`; asigs.forEach(a => { const esTecnico = tecnicosSet.has(a.tecnico); const borderColor = esTecnico ? '#e5e7eb' : '#fca5a5', bg = esTecnico ? 'white' : '#fff5f5'; const warning = esTecnico ? '' : ' <span style="color:#dc2626;">⚠️ No es técnico</span>'; h += `<div style="background:${bg}; border-left:5px solid ${borderColor}; padding:10px; margin-bottom:6px; border-radius:8px;"><b>ID ${a.id}</b> · ${a.unidad} — ${a.actividad_id} (<b>${a.tecnico}</b>${warning}) [${a.estado}]<button class="btn-danger" onclick="eliminarActividad(${a.id})" style="float:right;">🗑️</button></div>`; }); document.getElementById('listaActividades').innerHTML = h || 'Sin actividades.'; };
-                window.eliminarActividad = async (id) => { if (confirm('¿Eliminar actividad?')) { await fetchAuth('/api/asignaciones/' + id, { method: 'DELETE' }); cargarActividades(); } };
-                cargarActividades();
-            },
-            usuarios: async () => { const res = await fetchAuth('/app/usuarios'); const html = await res.text(); const parser = new DOMParser(); const doc = parser.parseFromString(html, 'text/html'); document.getElementById('panelContenido').innerHTML = doc.querySelector('.main-content').innerHTML; },
-            unidades: async () => { const res = await fetchAuth('/app/unidades'); const html = await res.text(); const parser = new DOMParser(); const doc = parser.parseFromString(html, 'text/html'); document.getElementById('panelContenido').innerHTML = doc.querySelector('.main-content').innerHTML; },
-            sql: () => { document.getElementById('panelContenido').innerHTML = `<textarea id="sqlInput" placeholder="SELECT * FROM asignaciones;" rows="6" style="width:100%;"></textarea><button class="btn-primary" onclick="ejecutarSQL()">▶️ Ejecutar</button><div id="sqlResult" style="margin-top:16px;"></div>`; window.ejecutarSQL = async () => { const sql = document.getElementById('sqlInput').value.trim(); if (!sql) return; try { const res = await fetchAuth('/api/admin/execute-sql', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sql }) }); const data = await res.json(); if (data.error) { document.getElementById('sqlResult').innerHTML = `<p style="color:red;">${data.error}</p>`; return; } if (Array.isArray(data) && data.length) { let table = '</table><thead><tr>'; Object.keys(data[0]).forEach(k => table += `<th>${k}</th>`); table += '</tr></thead><tbody>'; data.forEach(row => { table += '<tr>'; Object.values(row).forEach(v => table += `<td>${v}</td>`); table += '</tr>'; }); table += '</tbody></tr>'; document.getElementById('sqlResult').innerHTML = table; } else document.getElementById('sqlResult').innerHTML = '<p>Consulta ejecutada sin resultados.</p>'; } catch (e) { alert('Error: ' + e.message); } }; }
-        };
-        function mostrarPestana(nombre) { pestanas[nombre](); }
-        mostrarPestana('actividades');
+        // ========== VARIABLES GLOBALES ==========
+        let actividadesData = [];
+        let usuariosData = [];
+        let unidadesData = [];
+        let actividadesFiltradas = [];
+        let usuariosFiltrados = [];
+        let unidadesFiltradas = [];
+        let paginaAct = 1, paginaUsr = 1, paginaUni = 1;
+        const POR_PAGINA = 6;
+        let selectedAct = new Set();
+        let selectedUsr = new Set();
+        let selectedUni = new Set();
+        let editandoAct = null;
+        
+        const API_BASE = "/api/panel";
+        const token = localStorage.getItem('access_token');
+        
+        // ========== FUNCIONES DE API ==========
+        async function apiCall(endpoint, options = {}) {
+            const res = await fetch(API_BASE + endpoint, {
+                ...options,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token,
+                    ...options.headers
+                }
+            });
+            if (res.status === 401) {
+                localStorage.clear();
+                window.location.href = '/app';
+                throw new Error('Sesión expirada');
+            }
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || 'Error');
+            }
+            return res.json();
+        }
+        
+        // ========== ACTIVIDADES ==========
+        async function cargarActividades() {
+            try {
+                const data = await apiCall('/actividades');
+                actividadesData = data;
+                actividadesFiltradas = [...data];
+                paginaAct = 1;
+                renderActividades();
+            } catch(e) {
+                document.getElementById('admin-tbody-act').innerHTML = `<tr><td colspan="7">Error: ${e.message}</td></tr>`;
+            }
+        }
+        
+        function renderActividades() {
+            const start = (paginaAct - 1) * POR_PAGINA;
+            const paginadas = actividadesFiltradas.slice(start, start + POR_PAGINA);
+            const tbody = document.getElementById('admin-tbody-act');
+            tbody.innerHTML = paginadas.map(a => `
+                <tr class="${selectedAct.has(a.id) ? 'selected' : ''}">
+                    <td><input type="checkbox" data-id="${a.id}" onchange="toggleSelectAct(this)" ${selectedAct.has(a.id) ? 'checked' : ''}></td>
+                    <td>${a.id}</td>
+                    <td>${a.vehiculo}</td>
+                    <td>${a.tipo}</td>
+                    <td>${a.tecnico}</td>
+                    <td><span class="badge badge-${a.estado === 'completado' ? 'done' : a.estado === 'solicitado' ? 'req' : a.estado === 'cancelado' ? 'cancel' : 'pending'}">${a.estado}</span></td>
+                    <td>
+                        <button class="btn-icon edit" onclick="editarActividad(${a.id})"><i class="ri-edit-line"></i></button>
+                        <button class="btn-icon del" onclick="eliminarActividad(${a.id})"><i class="ri-delete-bin-line"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+            actualizarPaginacion('pag-act', actividadesFiltradas.length, paginaAct, (dir) => { paginaAct += dir; renderActividades(); });
+            document.getElementById('bulk-act-count').textContent = selectedAct.size;
+            document.getElementById('bulk-act-bar').classList.toggle('visible', selectedAct.size > 0);
+            document.getElementById('checkAllAct').checked = selectedAct.size === actividadesFiltradas.length && actividadesFiltradas.length > 0;
+        }
+        
+        function filtrarActividades() {
+            const busqueda = document.getElementById('search-act').value.toLowerCase();
+            const estado = document.getElementById('filter-estado-act').value;
+            actividadesFiltradas = actividadesData.filter(a => {
+                const matchBusq = !busqueda || (a.vehiculo + a.tecnico + a.tipo + a.id).toLowerCase().includes(busqueda);
+                const matchEstado = !estado || a.estado === estado;
+                return matchBusq && matchEstado;
+            });
+            paginaAct = 1;
+            selectedAct.clear();
+            renderActividades();
+        }
+        
+        function toggleSelectAct(cb) {
+            const id = parseInt(cb.dataset.id);
+            if (cb.checked) selectedAct.add(id);
+            else selectedAct.delete(id);
+            renderActividades();
+        }
+        
+        function toggleAllActividades() {
+            const cbAll = document.getElementById('checkAllAct');
+            if (cbAll.checked) {
+                actividadesFiltradas.forEach(a => selectedAct.add(a.id));
+            } else {
+                selectedAct.clear();
+            }
+            renderActividades();
+        }
+        
+        async function editarActividad(id) {
+            const actividad = actividadesData.find(a => a.id === id);
+            if (!actividad) return;
+            editandoAct = id;
+            document.getElementById('edit-act-id').textContent = `ID: ${id}`;
+            document.getElementById('edit-act-vehiculo').value = actividad.vehiculo;
+            document.getElementById('edit-act-tipo').value = actividad.tipo;
+            document.getElementById('edit-act-tecnico').value = actividad.tecnico;
+            document.getElementById('edit-act-estado').value = actividad.estado;
+            document.getElementById('edit-act-notas').value = actividad.notas || '';
+            document.getElementById('editor-act').style.display = 'block';
+        }
+        
+        function cerrarEditorAct() {
+            editandoAct = null;
+            document.getElementById('editor-act').style.display = 'none';
+        }
+        
+        async function guardarActividad() {
+            if (!editandoAct) return;
+            const data = {
+                vehiculo: document.getElementById('edit-act-vehiculo').value,
+                tipo: document.getElementById('edit-act-tipo').value,
+                tecnico: document.getElementById('edit-act-tecnico').value,
+                estado: document.getElementById('edit-act-estado').value,
+                notas: document.getElementById('edit-act-notas').value
+            };
+            try {
+                await apiCall(`/actividades/${editandoAct}`, { method: 'PUT', body: JSON.stringify(data) });
+                cerrarEditorAct();
+                await cargarActividades();
+            } catch(e) { alert('Error: ' + e.message); }
+        }
+        
+        async function eliminarActividad(id) {
+            if (!confirm('¿Eliminar esta actividad?')) return;
+            await apiCall(`/actividades/${id}`, { method: 'DELETE' });
+            selectedAct.delete(id);
+            await cargarActividades();
+        }
+        
+        async function nuevaActividad() {
+            const nueva = { vehiculo: '', tipo: 'Ticket', tecnico: '', estado: 'pendiente', notas: '' };
+            try {
+                const res = await apiCall('/actividades', { method: 'POST', body: JSON.stringify(nueva) });
+                await cargarActividades();
+                setTimeout(() => editarActividad(res.id), 100);
+            } catch(e) { alert('Error: ' + e.message); }
+        }
+        
+        async function eliminarActividadesSeleccionadas() {
+            if (selectedAct.size === 0) return;
+            if (!confirm(`¿Eliminar ${selectedAct.size} actividades?`)) return;
+            for (let id of selectedAct) {
+                await apiCall(`/actividades/${id}`, { method: 'DELETE' });
+            }
+            selectedAct.clear();
+            await cargarActividades();
+        }
+        
+        // ========== USUARIOS ==========
+        async function cargarUsuarios() {
+            try {
+                const data = await apiCall('/usuarios');
+                usuariosData = data;
+                usuariosFiltrados = [...data];
+                paginaUsr = 1;
+                renderUsuarios();
+            } catch(e) {
+                document.getElementById('admin-tbody-usr').innerHTML = `<tr><td colspan="6">Error: ${e.message}</td></tr>`;
+            }
+        }
+        
+        function renderUsuarios() {
+            const start = (paginaUsr - 1) * POR_PAGINA;
+            const paginadas = usuariosFiltrados.slice(start, start + POR_PAGINA);
+            const tbody = document.getElementById('admin-tbody-usr');
+            tbody.innerHTML = paginadas.map(u => `
+                <tr class="${selectedUsr.has(u.id) ? 'selected' : ''}">
+                    <td><input type="checkbox" data-id="${u.id}" onchange="toggleSelectUsr(this)" ${selectedUsr.has(u.id) ? 'checked' : ''}></td>
+                    <td>${u.id}</td>
+                    <td>${u.nombre}</td>
+                    <td>${u.email}</td>
+                    <td>${u.rol === 'administrador' ? '🛡 Administrador' : u.rol === 'tecnico' ? '🔧 Técnico' : '👁 Operador'}</td>
+                    <td><button class="btn-icon edit" onclick="editarUsuario(${u.id})"><i class="ri-edit-line"></i></button></td>
+                </tr>
+            `).join('');
+            actualizarPaginacion('pag-usr', usuariosFiltrados.length, paginaUsr, (dir) => { paginaUsr += dir; renderUsuarios(); });
+            document.getElementById('bulk-usr-count').textContent = selectedUsr.size;
+            document.getElementById('bulk-usr-bar').classList.toggle('visible', selectedUsr.size > 0);
+            document.getElementById('checkAllUsr').checked = selectedUsr.size === usuariosFiltrados.length && usuariosFiltrados.length > 0;
+        }
+        
+        function filtrarUsuarios() {
+            const busqueda = document.getElementById('search-usr').value.toLowerCase();
+            const rol = document.getElementById('filter-rol-usr').value;
+            usuariosFiltrados = usuariosData.filter(u => {
+                const matchBusq = !busqueda || (u.nombre + u.email).toLowerCase().includes(busqueda);
+                const matchRol = !rol || u.rol === rol;
+                return matchBusq && matchRol;
+            });
+            paginaUsr = 1;
+            selectedUsr.clear();
+            renderUsuarios();
+        }
+        
+        function toggleSelectUsr(cb) {
+            const id = parseInt(cb.dataset.id);
+            if (cb.checked) selectedUsr.add(id);
+            else selectedUsr.delete(id);
+            renderUsuarios();
+        }
+        
+        function toggleAllUsuarios() {
+            const cbAll = document.getElementById('checkAllUsr');
+            if (cbAll.checked) {
+                usuariosFiltrados.forEach(u => selectedUsr.add(u.id));
+            } else {
+                selectedUsr.clear();
+            }
+            renderUsuarios();
+        }
+        
+        async function editarUsuario(id) {
+            const usuario = usuariosData.find(u => u.id === id);
+            if (!usuario) return;
+            const nuevoNombre = prompt('Nuevo nombre:', usuario.nombre);
+            if (!nuevoNombre) return;
+            const nuevoRol = prompt('Nuevo rol (administrador/tecnico/operador):', usuario.rol);
+            if (!nuevoRol) return;
+            const nuevaPass = prompt('Nueva contraseña (dejar vacío para no cambiar):', '');
+            await apiCall(`/usuarios/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ nombre: nuevoNombre, email: usuario.email, rol: nuevoRol, password: nuevaPass })
+            });
+            await cargarUsuarios();
+        }
+        
+        async function nuevoUsuario() {
+            const nombre = prompt('Nombre de usuario:');
+            if (!nombre) return;
+            const rol = prompt('Rol (administrador/tecnico/operador):', 'tecnico');
+            const pass = prompt('Contraseña:');
+            if (!pass) return;
+            await apiCall('/usuarios', {
+                method: 'POST',
+                body: JSON.stringify({ nombre, email: `${nombre}@transicold.mx`, rol, password: pass })
+            });
+            await cargarUsuarios();
+        }
+        
+        async function eliminarUsuariosSeleccionados() {
+            if (selectedUsr.size === 0) return;
+            if (!confirm(`¿Eliminar ${selectedUsr.size} usuarios?`)) return;
+            for (let id of selectedUsr) {
+                await apiCall(`/usuarios/${id}`, { method: 'DELETE' });
+            }
+            selectedUsr.clear();
+            await cargarUsuarios();
+        }
+        
+        // ========== UNIDADES ==========
+        async function cargarUnidades() {
+            try {
+                const data = await apiCall('/unidades');
+                unidadesData = data;
+                unidadesFiltradas = [...data];
+                paginaUni = 1;
+                renderUnidades();
+            } catch(e) {
+                document.getElementById('admin-tbody-uni').innerHTML = `<tr><td colspan="7">Error: ${e.message}</td></tr>`;
+            }
+        }
+        
+        function renderUnidades() {
+            const start = (paginaUni - 1) * POR_PAGINA;
+            const paginadas = unidadesFiltradas.slice(start, start + POR_PAGINA);
+            const tbody = document.getElementById('admin-tbody-uni');
+            tbody.innerHTML = paginadas.map(u => `
+                <tr class="${selectedUni.has(u.id) ? 'selected' : ''}">
+                    <td><input type="checkbox" data-id="${u.id}" onchange="toggleSelectUni(this)" ${selectedUni.has(u.id) ? 'checked' : ''}></td>
+                    <td>${u.id}</td>
+                    <td>${u.placa}</td>
+                    <td>${u.modelo}</td>
+                    <td>${u.año}</td>
+                    <td><span class="badge ${u.estado === 'activo' ? 'badge-done' : 'badge-cancel'}">${u.estado}</span></td>
+                    <td><button class="btn-icon edit" onclick="editarUnidad(${u.id})"><i class="ri-edit-line"></i></button></td>
+                </tr>
+            `).join('');
+            actualizarPaginacion('pag-uni', unidadesFiltradas.length, paginaUni, (dir) => { paginaUni += dir; renderUnidades(); });
+            document.getElementById('bulk-uni-count').textContent = selectedUni.size;
+            document.getElementById('bulk-uni-bar').classList.toggle('visible', selectedUni.size > 0);
+            document.getElementById('checkAllUni').checked = selectedUni.size === unidadesFiltradas.length && unidadesFiltradas.length > 0;
+        }
+        
+        function filtrarUnidades() {
+            const busqueda = document.getElementById('search-uni').value.toLowerCase();
+            unidadesFiltradas = unidadesData.filter(u => {
+                return !busqueda || (u.placa + u.modelo).toLowerCase().includes(busqueda);
+            });
+            paginaUni = 1;
+            selectedUni.clear();
+            renderUnidades();
+        }
+        
+        function toggleSelectUni(cb) {
+            const id = parseInt(cb.dataset.id);
+            if (cb.checked) selectedUni.add(id);
+            else selectedUni.delete(id);
+            renderUnidades();
+        }
+        
+        function toggleAllUnidades() {
+            const cbAll = document.getElementById('checkAllUni');
+            if (cbAll.checked) {
+                unidadesFiltradas.forEach(u => selectedUni.add(u.id));
+            } else {
+                selectedUni.clear();
+            }
+            renderUnidades();
+        }
+        
+        async function editarUnidad(id) {
+            const unidad = unidadesData.find(u => u.id === id);
+            if (!unidad) return;
+            const nuevaPlaca = prompt('Nueva placa:', unidad.placa);
+            if (!nuevaPlaca) return;
+            const nuevoModelo = prompt('Nuevo modelo:', unidad.modelo);
+            const nuevoAnio = prompt('Nuevo año:', unidad.año);
+            const nuevoEstado = prompt('Nuevo estado (activo/inactivo/mantenimiento):', unidad.estado);
+            await apiCall(`/unidades/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ placa: nuevaPlaca, modelo: nuevoModelo, año: parseInt(nuevoAnio), estado: nuevoEstado })
+            });
+            await cargarUnidades();
+        }
+        
+        async function nuevaUnidad() {
+            const placa = prompt('Placa:');
+            if (!placa) return;
+            const modelo = prompt('Modelo:');
+            const anio = prompt('Año:', new Date().getFullYear());
+            const estado = prompt('Estado (activo/inactivo/mantenimiento):', 'activo');
+            await apiCall('/unidades', {
+                method: 'POST',
+                body: JSON.stringify({ placa, modelo, año: parseInt(anio), estado })
+            });
+            await cargarUnidades();
+        }
+        
+        async function eliminarUnidadesSeleccionadas() {
+            if (selectedUni.size === 0) return;
+            if (!confirm(`¿Eliminar ${selectedUni.size} unidades?`)) return;
+            for (let id of selectedUni) {
+                await apiCall(`/unidades/${id}`, { method: 'DELETE' });
+            }
+            selectedUni.clear();
+            await cargarUnidades();
+        }
+        
+        // ========== SQL ==========
+        function setSQL(query) {
+            document.getElementById('sqlQuery').value = query;
+        }
+        
+        async function ejecutarSQLAdmin() {
+            const query = document.getElementById('sqlQuery').value.trim();
+            const resultDiv = document.getElementById('sqlResultado');
+            if (!query) {
+                resultDiv.textContent = 'Error: Consulta vacía';
+                resultDiv.classList.add('visible');
+                return;
+            }
+            try {
+                const data = await apiCall('/sql', { method: 'POST', body: JSON.stringify({ query }) });
+                if (data.results && data.results.length > 0) {
+                    const columns = data.columns;
+                    let output = columns.join(' | ') + '\\n';
+                    output += '-'.repeat(60) + '\\n';
+                    data.results.forEach(row => {
+                        output += columns.map(c => String(row[c] || '')).join(' | ') + '\\n';
+                    });
+                    output += `\\n${data.row_count} filas encontradas`;
+                    resultDiv.textContent = output;
+                } else {
+                    resultDiv.textContent = 'Sin resultados';
+                }
+                resultDiv.classList.add('visible');
+            } catch(e) {
+                resultDiv.textContent = `Error: ${e.message}`;
+                resultDiv.classList.add('visible');
+            }
+        }
+        
+        // ========== UTILIDADES ==========
+        function actualizarPaginacion(divId, total, pagina, onCambio) {
+            const totalPaginas = Math.ceil(total / POR_PAGINA) || 1;
+            const div = document.getElementById(divId);
+            if (div) {
+                div.innerHTML = `
+                    <button onclick="if(${pagina} > 1) onCambio(-1)" ${pagina <= 1 ? 'disabled' : ''}>‹</button>
+                    <span>Pág ${pagina} de ${totalPaginas} · ${total} registros</span>
+                    <button onclick="if(${pagina} < ${totalPaginas}) onCambio(1)" ${pagina >= totalPaginas ? 'disabled' : ''}>›</button>
+                `;
+            }
+        }
+        
+        function mostrarAdminTab(tab) {
+            document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
+            document.getElementById(`admin-${tab}`).classList.add('active');
+            document.querySelectorAll('.admin-tab-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+        
+        // ========== INICIALIZACIÓN ==========
+        cargarActividades();
+        cargarUsuarios();
+        cargarUnidades();
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("🛠 Panel de Administración", contenido, "admin"))
+
 
 # ------------------------------------------------------------
 # MIS TAREAS (modales con botones grandes y scroll)
@@ -941,6 +1638,7 @@ async def mis_tareas():
     """
     return HTMLResponse(content=pagina_con_menu("🎯 Mis Tareas", contenido, "mis-tareas"))
 
+
 # ------------------------------------------------------------
 # NUEVA SOLICITUD
 # ------------------------------------------------------------
@@ -984,6 +1682,7 @@ async def solicitud():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("🔔 Nueva Solicitud", contenido, "solicitud"))
+
 
 # ------------------------------------------------------------
 # MIS TICKETS
@@ -1042,7 +1741,6 @@ async def mis_tickets():
         }
 
         async function enviarReporte(ticketId) {
-            // Remover modal previo si existe
             const prev = document.getElementById('modalReporte');
             if (prev) prev.remove();
 
@@ -1081,7 +1779,6 @@ async def mis_tickets():
             const res = await fetchAuth('/api/tickets/' + id + '/report', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reporte }) });
             if (res.ok) {
                 document.getElementById('modalReporte').remove();
-                // Mostrar confirmación breve
                 const toast = document.createElement('div');
                 toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
                 toast.textContent = '✅ Reporte enviado. Ticket completado.';
@@ -1100,16 +1797,18 @@ async def mis_tickets():
     return HTMLResponse(content=pagina_con_menu("🎫 Mis Tickets", contenido, "mis-tickets"))
 
 
-# ── PANEL DE ASIGNACIÓN POR CLUSTER ────────────────────────────────────────
+# ------------------------------------------------------------
+# PANEL DE ASIGNACIÓN POR CLUSTER
+# ------------------------------------------------------------
 @router.get("/app/cluster", response_class=HTMLResponse)
-async def cluster():
+async def panel_cluster(request: Request, current_user: dict = Depends(verify_token_cookie)):
+    if current_user.get("role") != "admin":
+        return RedirectResponse("/app/dashboard")
+
     contenido = """
-    <script> if (window.role !== 'admin') { window.location.href = '/app/dashboard'; } </script>
     <div id="resumenCluster" style="display:none; background:var(--color-background-secondary); border-radius:var(--border-radius-lg); padding:16px; margin-bottom:20px;"></div>
 
     <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; align-items:start;">
-
-        <!-- Columna 1: Técnicos -->
         <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:16px;">
             <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">🔧 Técnicos</div>
             <div style="margin-bottom:8px; display:flex; gap:6px;">
@@ -1119,7 +1818,6 @@ async def cluster():
             <div id="listaTecnicos" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
         </div>
 
-        <!-- Columna 2: Actividades -->
         <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:16px;">
             <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">🎯 Actividades</div>
             <div style="margin-bottom:8px; display:flex; gap:6px;">
@@ -1129,7 +1827,6 @@ async def cluster():
             <div id="listaActividades" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
         </div>
 
-        <!-- Columna 3: Unidades -->
         <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:16px;">
             <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">🚛 Unidades</div>
             <div style="margin-bottom:8px; display:flex; gap:6px;">
@@ -1141,7 +1838,6 @@ async def cluster():
         </div>
     </div>
 
-    <!-- Resumen y botón -->
     <div style="margin-top:20px; background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:20px;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
             <div id="contadorResumen" style="font-size:13px; color:var(--color-text-secondary);">Selecciona técnicos, actividades y unidades</div>
@@ -1209,7 +1905,6 @@ async def cluster():
             document.getElementById('listaTecnicos').innerHTML = todosTecnicos.map(t => checkItem('tecnicos', t.username)).join('');
             document.getElementById('listaActividades').innerHTML = todasActividades.map(a => checkItem('actividades', a.nombre)).join('');
 
-            // Filtro por lote
             lotes = [...new Set(todasUnidades.map(u => u.id_lote).filter(Boolean))].sort();
             let filtroHtml = '<select onchange="filtrarPorLote(this.value)" style="width:100%;margin-bottom:6px;font-size:12px;padding:5px;"><option value="">— Todos los lotes —</option>';
             lotes.forEach(l => filtroHtml += `<option value="${l}">${l}</option>`);
@@ -1253,13 +1948,11 @@ async def cluster():
                 : `<div style="color:var(--color-text-danger);font-weight:500;">❌ Error: ${data.detail || 'No se pudo completar'}</div>`;
 
             if (res.ok) {
-                // Toast
                 const toast = document.createElement('div');
                 toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
                 toast.textContent = `✅ ${data.creadas} asignaciones creadas correctamente.`;
                 document.body.appendChild(toast);
                 setTimeout(() => toast.remove(), 4000);
-                // Limpiar selección
                 limpiarTodos('tecnicos'); limpiarTodos('actividades'); limpiarTodos('unidades');
                 actualizarContador();
             }
