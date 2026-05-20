@@ -5,7 +5,7 @@ from auth import verify_token_cookie
 router = APIRouter()
 
 # ------------------------------------------------------------
-# ESTILOS GLOBALES PREMIUM (botones grandes y modales con scroll)
+# ESTILOS GLOBALES PREMIUM
 # ------------------------------------------------------------
 BASE_STYLE = """
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -66,7 +66,8 @@ BASE_STYLE = """
     .btn-danger { background: var(--carrier-danger); color: white; border: none; border-radius: 10px; padding: 14px 20px; font-weight: 600; font-size: 1rem; cursor: pointer; width: 100%; text-align: center; }
     .btn-success { background: var(--carrier-success); color: white; border: none; border-radius: 10px; padding: 14px 20px; font-weight: 600; font-size: 1rem; cursor: pointer; width: 100%; text-align: center; }
     .btn-warning { background: var(--carrier-warn); color: white; border: none; border-radius: 10px; padding: 14px 20px; font-weight: 600; font-size: 1rem; cursor: pointer; width: 100%; text-align: center; }
-    .btn-ghost { background: transparent; border: 1px solid #cbd5e1; border-radius: 10px; padding: 10px 16px; font-weight: 500; cursor: pointer; }
+    .btn-ghost { background: transparent; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 16px; cursor: pointer; font-weight: 500; }
+    .btn-ghost:hover { background: #f1f5f9; }
     input, textarea, select { border: 1px solid #d1d5db; border-radius: 10px; padding: 12px; font-size: 16px; transition: border-color 0.2s; width: 100%; margin-bottom: 12px; }
     input:focus, textarea:focus, select:focus { outline: none; border-color: var(--carrier-accent); box-shadow: 0 0 0 3px rgba(0,87,168,0.1); }
     table { width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,43,91,0.08); }
@@ -117,7 +118,7 @@ BASE_STYLE = """
 """
 
 # ------------------------------------------------------------
-# FUNCIÓN AUXILIAR CON SIDEBAR, MENÚ Y CIERRE DE SESIÓN SIEMPRE VISIBLE
+# FUNCIÓN AUXILIAR CON SIDEBAR
 # ------------------------------------------------------------
 def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_scripts: str = "") -> str:
     return f"""
@@ -311,7 +312,7 @@ async def login():
 
 
 # ------------------------------------------------------------
-# DASHBOARD (solo admin) - TABLA DE ESTADÍSTICAS ELIMINADA
+# DASHBOARD
 # ------------------------------------------------------------
 @router.get("/app/dashboard", response_class=HTMLResponse)
 async def dashboard():
@@ -359,7 +360,7 @@ async def dashboard():
                     const unidadesRes = await fetchAuth('/api/unidades/'); const unidades = await unidadesRes.json();
                     if (unidades.length) {
                         const completadasSet = new Set(asignaciones.filter(a => a.estado === 'completada').map(a => a.unidad + '||' + a.actividad_id));
-                        let headers = '<tr><th>LOTE</th><th>#Económico</th>'; actividades.forEach(a => headers += `<th>${a}</th>`); headers += '</tr>';
+                        let headers = '<tr><th>LOTE</th><th>#Económico</th>'; actividades.forEach(a => headers += `<th>${a}</th>`); headers += '<tr>';
                         let body = ''; unidades.forEach(u => { body += `<tr><td>${u.id_lote || ''}</td><td>${u.unit_number}</td>`; actividades.forEach(act => body += `<td>${completadasSet.has(u.unit_number + '||' + act) ? '✔' : '–'}</td>`); body += '</tr>'; });
                         document.getElementById('statusTable').innerHTML = `<table><thead>${headers}</thead><tbody>${body}</tbody></table>`;
                         const lotesMap = {}; unidades.forEach(u => { const lote = u.id_lote || 'Sin lote'; if (!lotesMap[lote]) lotesMap[lote] = []; lotesMap[lote].push(u); });
@@ -379,7 +380,7 @@ async def dashboard():
 
 
 # ------------------------------------------------------------
-# ASIGNACIONES (admin)
+# ASIGNACIONES
 # ------------------------------------------------------------
 @router.get("/app/asignaciones", response_class=HTMLResponse)
 async def asignaciones():
@@ -475,7 +476,7 @@ async def asignaciones():
 
 
 # ------------------------------------------------------------
-# TICKETS (admin)
+# TICKETS
 # ------------------------------------------------------------
 @router.get("/app/tickets", response_class=HTMLResponse)
 async def tickets():
@@ -525,7 +526,7 @@ async def tickets():
 
 
 # ------------------------------------------------------------
-# INVENTARIO (admin)
+# INVENTARIO
 # ------------------------------------------------------------
 @router.get("/app/inventario", response_class=HTMLResponse)
 async def inventario():
@@ -568,7 +569,7 @@ async def inventario():
 
 
 # ------------------------------------------------------------
-# REGISTRO DE UNIDADES (admin)
+# REGISTRO DE UNIDADES
 # ------------------------------------------------------------
 @router.get("/app/unidades", response_class=HTMLResponse)
 async def unidades():
@@ -614,7 +615,7 @@ async def unidades():
 
 
 # ------------------------------------------------------------
-# GESTIÓN DE USUARIOS (admin)
+# GESTIÓN DE USUARIOS
 # ------------------------------------------------------------
 @router.get("/app/usuarios", response_class=HTMLResponse)
 async def usuarios():
@@ -650,7 +651,7 @@ async def usuarios():
                         html += `<tr><td><b>${u.username}</b></td><td>${rolTexto}</td><td style="text-align:center;">${acciones}</td></tr>`;
                     });
                 }
-                html += '</tbody></table>';
+                html += '</tbody><table>';
                 document.getElementById('usuariosList').innerHTML = html;
             } catch (err) {
                 document.getElementById('usuariosList').innerHTML = '<p style="color:red;">Error al cargar usuarios</p>';
@@ -752,7 +753,7 @@ async def usuarios():
 
 
 # ------------------------------------------------------------
-# PANEL DE ADMINISTRACIÓN (admin) - VERSIÓN COMPLETA
+# PANEL DE ADMINISTRACIÓN (COMPLETO)
 # ------------------------------------------------------------
 @router.get("/app/admin", response_class=HTMLResponse)
 async def admin_panel():
@@ -920,22 +921,27 @@ async def admin_panel():
             margin-bottom: 16px;
             font-size: 13px;
         }
+        .badge-pending { background: #fef3c7; color: #92400e; }
+        .badge-done { background: #d1fae5; color: #065f46; }
+        .badge-req { background: #dbeafe; color: #1e40af; }
+        .badge-cancel { background: #fee2e2; color: #991b1b; }
+        .btn-ghost {
+            background: transparent;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .btn-ghost:hover { background: #f1f5f9; }
     </style>
 
     <div class="admin-panel-container">
         <div class="admin-tabs">
-            <button class="admin-tab-btn active" onclick="mostrarAdminTab('actividades')">
-                <i class="ri-task-line"></i> Actividades
-            </button>
-            <button class="admin-tab-btn" onclick="mostrarAdminTab('usuarios')">
-                <i class="ri-user-line"></i> Usuarios
-            </button>
-            <button class="admin-tab-btn" onclick="mostrarAdminTab('unidades')">
-                <i class="ri-truck-line"></i> Unidades
-            </button>
-            <button class="admin-tab-btn" onclick="mostrarAdminTab('sql')">
-                <i class="ri-terminal-box-line"></i> SQL Directo
-            </button>
+            <button class="admin-tab-btn active" onclick="mostrarAdminTab('actividades')">📋 Actividades</button>
+            <button class="admin-tab-btn" onclick="mostrarAdminTab('usuarios')">👥 Usuarios</button>
+            <button class="admin-tab-btn" onclick="mostrarAdminTab('unidades')">🚛 Unidades</button>
+            <button class="admin-tab-btn" onclick="mostrarAdminTab('sql')">🗄 SQL Directo</button>
         </div>
 
         <!-- ACTIVIDADES -->
@@ -949,16 +955,11 @@ async def admin_panel():
                     <option value="solicitado">Solicitado</option>
                     <option value="cancelado">Cancelado</option>
                 </select>
-                <button class="btn-primary" style="padding:8px 16px;" onclick="nuevaActividad()">
-                    <i class="ri-add-line"></i> Nueva
-                </button>
+                <button class="btn-primary" style="padding:8px 16px; width:auto;" onclick="nuevaActividad()">+ Nueva</button>
             </div>
             <div class="bulk-bar" id="bulk-act-bar">
-                <i class="ri-checkbox-line"></i>
-                <span id="bulk-act-count">0</span> seleccionados
-                <button class="btn-danger" style="margin-left:auto; padding:6px 12px;" onclick="eliminarActividadesSeleccionadas()">
-                    <i class="ri-delete-bin-line"></i> Eliminar
-                </button>
+                ☑ <span id="bulk-act-count">0</span> seleccionados
+                <button class="btn-danger" style="margin-left:auto; padding:6px 12px; width:auto;" onclick="eliminarActividadesSeleccionadas()">🗑 Eliminar</button>
             </div>
             <div class="main-layout">
                 <div class="table-wrap">
@@ -968,24 +969,24 @@ async def admin_panel():
                                 <th>ID</th><th>Vehículo</th><th>Tipo</th><th>Técnico</th><th>Estado</th><th>Acciones</th>
                             </tr>
                         </thead>
-                        <tbody id="admin-tbody-act"><tr><td colspan="7" style="text-align:center;">Cargando...</td></tr></tbody>
+                        <tbody id="admin-tbody-act"><tr><td colspan="7" style="text-align:center;">Cargando......</tbody>
                     </table>
                     <div class="pagination" id="pag-act"></div>
                 </div>
                 <div class="editor-sidebar" id="editor-act" style="display:none;">
                     <h4 style="margin:0 0 12px 0; display:flex; justify-content:space-between;">
-                        <span><i class="ri-edit-box-line"></i> Editar actividad</span>
+                        <span>✏ Editar actividad</span>
                         <button onclick="cerrarEditorAct()" style="background:none; border:none; font-size:18px; cursor:pointer;">&times;</button>
                     </h4>
                     <div id="edit-act-id" style="font-size:11px; color:#666; margin-bottom:12px;"></div>
-                    <div class="field-group"><label>Vehículo</label><input type="text" id="edit-act-vehiculo" class="form-control"></div>
-                    <div class="field-group"><label>Tipo</label><select id="edit-act-tipo" class="form-control"><option>Ticket</option><option>Accesorios</option><option>Mantenimiento</option><option>Revisión</option></select></div>
-                    <div class="field-group"><label>Técnico</label><input type="text" id="edit-act-tecnico" class="form-control"></div>
-                    <div class="field-group"><label>Estado</label><select id="edit-act-estado" class="form-control"><option value="pendiente">Pendiente</option><option value="solicitado">Solicitado</option><option value="completado">Completado</option><option value="cancelado">Cancelado</option></select></div>
-                    <div class="field-group"><label>Notas</label><textarea id="edit-act-notas" rows="3" class="form-control"></textarea></div>
+                    <div class="field-group"><label>Vehículo</label><input type="text" id="edit-act-vehiculo"></div>
+                    <div class="field-group"><label>Tipo</label><select id="edit-act-tipo"><option>Ticket</option><option>Accesorios</option><option>Mantenimiento</option><option>Revisión</option></select></div>
+                    <div class="field-group"><label>Técnico</label><input type="text" id="edit-act-tecnico"></div>
+                    <div class="field-group"><label>Estado</label><select id="edit-act-estado"><option value="pendiente">Pendiente</option><option value="solicitado">Solicitado</option><option value="completado">Completado</option><option value="cancelado">Cancelado</option></select></div>
+                    <div class="field-group"><label>Notas</label><textarea id="edit-act-notas" rows="3"></textarea></div>
                     <div style="display:flex; gap:8px; margin-top:12px;">
-                        <button class="btn-primary" style="flex:1;" onclick="guardarActividad()">Guardar</button>
-                        <button class="btn-ghost" style="flex:1;" onclick="cerrarEditorAct()">Cancelar</button>
+                        <button class="btn-primary" style="flex:1; width:auto;" onclick="guardarActividad()">Guardar</button>
+                        <button class="btn-ghost" style="flex:1; width:auto;" onclick="cerrarEditorAct()">Cancelar</button>
                     </div>
                 </div>
             </div>
@@ -1001,17 +1002,16 @@ async def admin_panel():
                     <option value="tecnico">Técnico</option>
                     <option value="operador">Operador</option>
                 </select>
-                <button class="btn-primary" onclick="nuevoUsuario()"><i class="ri-add-line"></i> Nuevo</button>
+                <button class="btn-primary" style="padding:8px 16px; width:auto;" onclick="nuevoUsuario()">+ Nuevo</button>
             </div>
             <div class="bulk-bar" id="bulk-usr-bar">
-                <i class="ri-checkbox-line"></i>
-                <span id="bulk-usr-count">0</span> seleccionados
-                <button class="btn-danger" style="margin-left:auto;" onclick="eliminarUsuariosSeleccionados()">Eliminar</button>
+                ☑ <span id="bulk-usr-count">0</span> seleccionados
+                <button class="btn-danger" style="margin-left:auto; padding:6px 12px; width:auto;" onclick="eliminarUsuariosSeleccionados()">🗑 Eliminar</button>
             </div>
             <div class="table-wrap">
                 <table class="admin-table" id="admin-table-usr">
                     <thead><tr><th><input type="checkbox" id="checkAllUsr" onchange="toggleAllUsuarios()"></th><th>ID</th><th>Nombre</th><th>Email</th><th>Rol</th><th>Acciones</th></tr></thead>
-                    <tbody id="admin-tbody-usr"><tr><td colspan="6">Cargando...</td></tr></tbody>
+                    <tbody id="admin-tbody-usr"><tr><td colspan="6">Cargando......</tbody>
                 </table>
                 <div class="pagination" id="pag-usr"></div>
             </div>
@@ -1021,17 +1021,16 @@ async def admin_panel():
         <div id="admin-unidades" class="admin-section">
             <div class="toolbar">
                 <input type="text" id="search-uni" placeholder="Buscar..." oninput="filtrarUnidades()">
-                <button class="btn-primary" onclick="nuevaUnidad()"><i class="ri-add-line"></i> Nueva</button>
+                <button class="btn-primary" style="padding:8px 16px; width:auto;" onclick="nuevaUnidad()">+ Nueva</button>
             </div>
             <div class="bulk-bar" id="bulk-uni-bar">
-                <i class="ri-checkbox-line"></i>
-                <span id="bulk-uni-count">0</span> seleccionados
-                <button class="btn-danger" style="margin-left:auto;" onclick="eliminarUnidadesSeleccionadas()">Eliminar</button>
+                ☑ <span id="bulk-uni-count">0</span> seleccionados
+                <button class="btn-danger" style="margin-left:auto; padding:6px 12px; width:auto;" onclick="eliminarUnidadesSeleccionadas()">🗑 Eliminar</button>
             </div>
             <div class="table-wrap">
                 <table class="admin-table" id="admin-table-uni">
                     <thead><tr><th><input type="checkbox" id="checkAllUni" onchange="toggleAllUnidades()"></th><th>ID</th><th>Placa</th><th>Modelo</th><th>Año</th><th>Estado</th><th>Acciones</th></tr></thead>
-                    <tbody id="admin-tbody-uni"><tr><td colspan="7">Cargando...</td></tr></tbody>
+                    <tbody id="admin-tbody-uni"><tr><td colspan="7">Cargando......</tbody>
                 </table>
                 <div class="pagination" id="pag-uni"></div>
             </div>
@@ -1039,7 +1038,7 @@ async def admin_panel():
 
         <!-- SQL DIRECTO -->
         <div id="admin-sql" class="admin-section">
-            <div class="notice"><i class="ri-information-line"></i> Solo consultas SELECT permitidas por seguridad.</div>
+            <div class="notice">ℹ Solo consultas SELECT permitidas por seguridad.</div>
             <div style="margin-bottom:12px; display:flex; gap:6px; flex-wrap:wrap;">
                 <button class="btn-ghost" onclick="setSQL('SELECT * FROM asignaciones ORDER BY id DESC LIMIT 20;')">asignaciones</button>
                 <button class="btn-ghost" onclick="setSQL('SELECT id, username, role FROM users;')">usuarios</button>
@@ -1048,7 +1047,7 @@ async def admin_panel():
             </div>
             <textarea id="sqlQuery" class="sql-area" rows="4" placeholder="SELECT * FROM asignaciones LIMIT 10;">SELECT * FROM asignaciones ORDER BY id DESC LIMIT 20;</textarea>
             <div style="display:flex; gap:10px;">
-                <button class="btn-primary" onclick="ejecutarSQLAdmin()"><i class="ri-play-line"></i> Ejecutar</button>
+                <button class="btn-primary" style="width:auto;" onclick="ejecutarSQLAdmin()">▶ Ejecutar</button>
                 <button class="btn-ghost" onclick="document.getElementById('sqlQuery').value=''">Limpiar</button>
             </div>
             <div id="sqlResultado" class="sql-result"></div>
@@ -1119,10 +1118,10 @@ async def admin_panel():
                     <td>${a.vehiculo}</td>
                     <td>${a.tipo}</td>
                     <td>${a.tecnico}</td>
-                    <td><span class="badge badge-${a.estado === 'completado' ? 'done' : a.estado === 'solicitado' ? 'req' : a.estado === 'cancelado' ? 'cancel' : 'pending'}">${a.estado}</span></td>
+                    <td><span class="badge ${a.estado === 'completado' ? 'badge-done' : a.estado === 'solicitado' ? 'badge-req' : a.estado === 'cancelado' ? 'badge-cancel' : 'badge-pending'}">${a.estado}</span></td>
                     <td>
-                        <button class="btn-icon edit" onclick="editarActividad(${a.id})"><i class="ri-edit-line"></i></button>
-                        <button class="btn-icon del" onclick="eliminarActividad(${a.id})"><i class="ri-delete-bin-line"></i></button>
+                        <button class="btn-icon edit" onclick="editarActividad(${a.id})">✏</button>
+                        <button class="btn-icon del" onclick="eliminarActividad(${a.id})">🗑</button>
                     </td>
                 </tr>
             `).join('');
@@ -1246,7 +1245,7 @@ async def admin_panel():
                     <td>${u.nombre}</td>
                     <td>${u.email}</td>
                     <td>${u.rol === 'administrador' ? '🛡 Administrador' : u.rol === 'tecnico' ? '🔧 Técnico' : '👁 Operador'}</td>
-                    <td><button class="btn-icon edit" onclick="editarUsuario(${u.id})"><i class="ri-edit-line"></i></button></td>
+                    <td><button class="btn-icon edit" onclick="editarUsuario(${u.id})">✏</button></td>
                 </tr>
             `).join('');
             actualizarPaginacion('pag-usr', usuariosFiltrados.length, paginaUsr, (dir) => { paginaUsr += dir; renderUsuarios(); });
@@ -1332,633 +1331,4 @@ async def admin_panel():
                 paginaUni = 1;
                 renderUnidades();
             } catch(e) {
-                document.getElementById('admin-tbody-uni').innerHTML = `<tr><td colspan="7">Error: ${e.message}</td></tr>`;
-            }
-        }
-        
-        function renderUnidades() {
-            const start = (paginaUni - 1) * POR_PAGINA;
-            const paginadas = unidadesFiltradas.slice(start, start + POR_PAGINA);
-            const tbody = document.getElementById('admin-tbody-uni');
-            tbody.innerHTML = paginadas.map(u => `
-                <tr class="${selectedUni.has(u.id) ? 'selected' : ''}">
-                    <td><input type="checkbox" data-id="${u.id}" onchange="toggleSelectUni(this)" ${selectedUni.has(u.id) ? 'checked' : ''}></td>
-                    <td>${u.id}</td>
-                    <td>${u.placa}</td>
-                    <td>${u.modelo}</td>
-                    <td>${u.año}</td>
-                    <td><span class="badge ${u.estado === 'activo' ? 'badge-done' : 'badge-cancel'}">${u.estado}</span></td>
-                    <td><button class="btn-icon edit" onclick="editarUnidad(${u.id})"><i class="ri-edit-line"></i></button></td>
-                </tr>
-            `).join('');
-            actualizarPaginacion('pag-uni', unidadesFiltradas.length, paginaUni, (dir) => { paginaUni += dir; renderUnidades(); });
-            document.getElementById('bulk-uni-count').textContent = selectedUni.size;
-            document.getElementById('bulk-uni-bar').classList.toggle('visible', selectedUni.size > 0);
-            document.getElementById('checkAllUni').checked = selectedUni.size === unidadesFiltradas.length && unidadesFiltradas.length > 0;
-        }
-        
-        function filtrarUnidades() {
-            const busqueda = document.getElementById('search-uni').value.toLowerCase();
-            unidadesFiltradas = unidadesData.filter(u => {
-                return !busqueda || (u.placa + u.modelo).toLowerCase().includes(busqueda);
-            });
-            paginaUni = 1;
-            selectedUni.clear();
-            renderUnidades();
-        }
-        
-        function toggleSelectUni(cb) {
-            const id = parseInt(cb.dataset.id);
-            if (cb.checked) selectedUni.add(id);
-            else selectedUni.delete(id);
-            renderUnidades();
-        }
-        
-        function toggleAllUnidades() {
-            const cbAll = document.getElementById('checkAllUni');
-            if (cbAll.checked) {
-                unidadesFiltradas.forEach(u => selectedUni.add(u.id));
-            } else {
-                selectedUni.clear();
-            }
-            renderUnidades();
-        }
-        
-        async function editarUnidad(id) {
-            const unidad = unidadesData.find(u => u.id === id);
-            if (!unidad) return;
-            const nuevaPlaca = prompt('Nueva placa:', unidad.placa);
-            if (!nuevaPlaca) return;
-            const nuevoModelo = prompt('Nuevo modelo:', unidad.modelo);
-            const nuevoAnio = prompt('Nuevo año:', unidad.año);
-            const nuevoEstado = prompt('Nuevo estado (activo/inactivo/mantenimiento):', unidad.estado);
-            await apiCall(`/unidades/${id}`, {
-                method: 'PUT',
-                body: JSON.stringify({ placa: nuevaPlaca, modelo: nuevoModelo, año: parseInt(nuevoAnio), estado: nuevoEstado })
-            });
-            await cargarUnidades();
-        }
-        
-        async function nuevaUnidad() {
-            const placa = prompt('Placa:');
-            if (!placa) return;
-            const modelo = prompt('Modelo:');
-            const anio = prompt('Año:', new Date().getFullYear());
-            const estado = prompt('Estado (activo/inactivo/mantenimiento):', 'activo');
-            await apiCall('/unidades', {
-                method: 'POST',
-                body: JSON.stringify({ placa, modelo, año: parseInt(anio), estado })
-            });
-            await cargarUnidades();
-        }
-        
-        async function eliminarUnidadesSeleccionadas() {
-            if (selectedUni.size === 0) return;
-            if (!confirm(`¿Eliminar ${selectedUni.size} unidades?`)) return;
-            for (let id of selectedUni) {
-                await apiCall(`/unidades/${id}`, { method: 'DELETE' });
-            }
-            selectedUni.clear();
-            await cargarUnidades();
-        }
-        
-        // ========== SQL ==========
-        function setSQL(query) {
-            document.getElementById('sqlQuery').value = query;
-        }
-        
-        async function ejecutarSQLAdmin() {
-            const query = document.getElementById('sqlQuery').value.trim();
-            const resultDiv = document.getElementById('sqlResultado');
-            if (!query) {
-                resultDiv.textContent = 'Error: Consulta vacía';
-                resultDiv.classList.add('visible');
-                return;
-            }
-            try {
-                const data = await apiCall('/sql', { method: 'POST', body: JSON.stringify({ query }) });
-                if (data.results && data.results.length > 0) {
-                    const columns = data.columns;
-                    let output = columns.join(' | ') + '\\n';
-                    output += '-'.repeat(60) + '\\n';
-                    data.results.forEach(row => {
-                        output += columns.map(c => String(row[c] || '')).join(' | ') + '\\n';
-                    });
-                    output += `\\n${data.row_count} filas encontradas`;
-                    resultDiv.textContent = output;
-                } else {
-                    resultDiv.textContent = 'Sin resultados';
-                }
-                resultDiv.classList.add('visible');
-            } catch(e) {
-                resultDiv.textContent = `Error: ${e.message}`;
-                resultDiv.classList.add('visible');
-            }
-        }
-        
-        // ========== UTILIDADES ==========
-        function actualizarPaginacion(divId, total, pagina, onCambio) {
-            const totalPaginas = Math.ceil(total / POR_PAGINA) || 1;
-            const div = document.getElementById(divId);
-            if (div) {
-                div.innerHTML = `
-                    <button onclick="if(${pagina} > 1) onCambio(-1)" ${pagina <= 1 ? 'disabled' : ''}>‹</button>
-                    <span>Pág ${pagina} de ${totalPaginas} · ${total} registros</span>
-                    <button onclick="if(${pagina} < ${totalPaginas}) onCambio(1)" ${pagina >= totalPaginas ? 'disabled' : ''}>›</button>
-                `;
-            }
-        }
-        
-        function mostrarAdminTab(tab) {
-            document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
-            document.getElementById(`admin-${tab}`).classList.add('active');
-            document.querySelectorAll('.admin-tab-btn').forEach(b => b.classList.remove('active'));
-            event.target.classList.add('active');
-        }
-        
-        // ========== INICIALIZACIÓN ==========
-        cargarActividades();
-        cargarUsuarios();
-        cargarUnidades();
-    </script>
-    """
-    return HTMLResponse(content=pagina_con_menu("🛠 Panel de Administración", contenido, "admin"))
-
-
-# ------------------------------------------------------------
-# MIS TAREAS (modales con botones grandes y scroll)
-# ------------------------------------------------------------
-@router.get("/app/mis-tareas", response_class=HTMLResponse)
-async def mis_tareas():
-    contenido = """
-    <script> if (window.role === 'visor') { window.location.href = '/app/dashboard'; } </script>
-    <div id="tareasList"></div>
-    <script>
-        const fetchAuth = window.fetchAuth, username = window.username;
-
-        function mostrarModal(html) {
-            const modal = document.createElement('div');
-            modal.className = 'modal';
-            modal.style.display = 'flex';
-            modal.innerHTML = html;
-            document.body.appendChild(modal);
-            return modal;
-        }
-        function cerrarModal() {
-            const modal = document.querySelector('.modal');
-            if (modal) document.body.removeChild(modal);
-        }
-
-        async function cargarTareas() {
-            const res = await fetchAuth('/api/asignaciones/?tecnico=' + username);
-            if (!res.ok) { document.getElementById('tareasList').innerHTML = '<p style="color:red;">Error al cargar tareas.</p>'; return; }
-            const tareas = await res.json();
-            const activas = Array.isArray(tareas) ? tareas.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso') : [];
-            let html = '';
-            if (activas.length === 0) {
-                html = '<p>✅ No tienes tareas activas.</p>';
-            } else {
-                activas.forEach(t => {
-                    let btn = '';
-                    if (t.estado === 'pendiente') btn = `<button class="btn-primary" onclick="iniciarTarea(${t.id})">▶️ Iniciar Actividad</button>`;
-                    else if (t.estado === 'en_proceso') {
-                        btn = `<button class="btn-success" onclick="completarTarea(${t.id})">✅ Finalizar</button>`;
-                        if (t.actividad_id === 'Evidencia') btn += `<button class="btn-primary" onclick="subirEvidencia(${t.id}, '${t.unidad}')">📸 Subir Fotos</button>`;
-                        if (t.actividad_id === 'Toma de Valores') btn += `<button class="btn-primary" onclick="tomarValores(${t.id})">📊 Ingresar Valores</button>`;
-                        if (t.actividad_id === 'Toma de Series') btn += `<button class="btn-primary" onclick="tomarSeries(${t.id})">🔢 Ingresar Series</button>`;
-                    }
-                    html += `<div style="background:white; border-radius:12px; padding:16px; margin-bottom:12px; box-shadow:0 2px 8px rgba(0,0,0,0.05); display:flex; justify-content:space-between; align-items:center;"><div><b>${t.actividad_id}</b> — Unidad: <b>${t.unidad}</b><br><span class="badge" style="background:${t.estado === 'pendiente' ? 'var(--carrier-warn)' : 'var(--carrier-success)'}; color:white;">${t.estado}</span></div><div>${btn}</div></div>`;
-                });
-            }
-            document.getElementById('tareasList').innerHTML = html;
-        }
-
-        async function iniciarTarea(id) { const res = await fetchAuth('/api/asignaciones/' + id + '/iniciar', { method: 'PATCH' }); if (res.ok) cargarTareas(); else alert('Error al iniciar la tarea'); }
-        async function completarTarea(id) {
-            const prev = document.getElementById('modalFinalizar');
-            if (prev) prev.remove();
-
-            const modal = document.createElement('div');
-            modal.id = 'modalFinalizar';
-            modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);display:flex;justify-content:center;align-items:center;z-index:500;';
-            modal.innerHTML = `
-                <div style="background:white;border-radius:20px;padding:32px;width:90%;max-width:520px;box-shadow:0 20px 60px rgba(0,43,91,0.25);animation:fadeInM 0.2s ease;">
-                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
-                        <div style="background:#f0fdf4;border-radius:12px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">✅</div>
-                        <div>
-                            <h3 style="margin:0;color:var(--carrier-blue);font-size:1.2rem;font-weight:800;">Finalizar Actividad</h3>
-                            <p style="margin:2px 0 0;font-size:0.82rem;color:#6b7280;">Agrega un comentario antes de cerrar esta tarea.</p>
-                        </div>
-                    </div>
-                    <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0;">
-                    <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">📝 Comentario del técnico</label>
-                    <textarea id="comentarioTexto" rows="4" placeholder="Describe brevemente el trabajo realizado, observaciones, etc." style="width:100%;border:1.5px solid #d1d5db;border-radius:12px;padding:12px;font-size:0.95rem;resize:vertical;font-family:inherit;transition:border-color 0.2s;"></textarea>
-                    <p id="comentarioError" style="color:var(--carrier-danger);font-size:0.82rem;min-height:18px;margin:4px 0 12px;"></p>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                        <button onclick="document.getElementById('modalFinalizar').remove()" style="background:#f1f5f9;color:#374151;border:none;border-radius:10px;padding:13px;font-weight:600;font-size:0.95rem;cursor:pointer;">✖ Cancelar</button>
-                        <button id="btnConfirmarFinalizar" onclick="confirmarFinalizar(${id})" style="background:linear-gradient(135deg,#16a34a,#15803d);color:white;border:none;border-radius:10px;padding:13px;font-weight:700;font-size:0.95rem;cursor:pointer;">✅ Confirmar y Finalizar</button>
-                    </div>
-                </div>
-                <style>@keyframes fadeInM{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}</style>`;
-            document.body.appendChild(modal);
-            setTimeout(() => document.getElementById('comentarioTexto').focus(), 100);
-        }
-
-        async function confirmarFinalizar(id) {
-            const comentario = document.getElementById('comentarioTexto').value.trim();
-            const errorEl   = document.getElementById('comentarioError');
-            if (!comentario) { errorEl.textContent = 'El comentario no puede estar vacío.'; return; }
-            const btn = document.getElementById('btnConfirmarFinalizar');
-            btn.textContent = 'Guardando...'; btn.disabled = true;
-            const res = await fetchAuth('/api/asignaciones/' + id + '/finalizar', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ comentario }) });
-            if (res.ok) {
-                document.getElementById('modalFinalizar').remove();
-                const toast = document.createElement('div');
-                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
-                toast.textContent = '✅ Actividad finalizada correctamente.';
-                document.body.appendChild(toast);
-                setTimeout(() => toast.remove(), 3000);
-                cargarTareas();
-            } else {
-                const err = await res.json();
-                errorEl.textContent = err.detail || 'No se pudo finalizar. Intenta de nuevo.';
-                btn.textContent = '✅ Confirmar y Finalizar'; btn.disabled = false;
-            }
-        }
-
-        // ────────── EVIDENCIA ──────────
-        async function subirEvidencia(tareaId, unidad) {
-            const cntRes = await fetchAuth(`/api/evidencias/count?unit_number=${unidad}&tecnico=${username}`); const cnt = await cntRes.json();
-            const totalPrev = cnt.total || 0; const restantes = 100 - totalPrev;
-            if (restantes <= 0) return alert('Límite de 100 fotos alcanzado');
-            const modal = mostrarModal(`<div class="modal-content"><h3>📸 Subir Evidencia – ${unidad}</h3><p>Guardadas: <b>${totalPrev}</b> · Disponibles: <b>${restantes}</b></p><input type="file" id="fotosInput" multiple accept="image/*"><div id="previewFotos" style="display:flex; flex-wrap:wrap; gap:8px; margin:12px 0;"></div><button class="btn-primary" id="btnGuardarFotos">💾 Guardar Fotos</button><button class="btn-danger" onclick="cerrarModal()">Cancelar</button></div>`);
-            document.getElementById('fotosInput').addEventListener('change', e => {
-                const files = Array.from(e.target.files).slice(0, restantes), previewDiv = document.getElementById('previewFotos'); previewDiv.innerHTML = '';
-                files.forEach(f => { const r = new FileReader(); r.onload = ev => { const img = document.createElement('img'); img.src = ev.target.result; img.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:8px;'; previewDiv.appendChild(img); }; r.readAsDataURL(f); });
-            });
-            document.getElementById('btnGuardarFotos').onclick = async () => {
-                const input = document.getElementById('fotosInput'); if (!input.files.length) return alert('Selecciona fotos');
-                const fd = new FormData(); fd.append('unidad', unidad); fd.append('tecnico', username); for (let f of input.files) fd.append('files', f);
-                await fetchAuth('/api/evidencias/upload', { method: 'POST', body: fd }); alert('Fotos guardadas'); cerrarModal();
-            };
-        }
-
-        // ────────── VALORES ──────────
-        async function tomarValores(tareaId) {
-            const camposRes = await fetchAuth('/api/toma-valores/campos'); const campos = await camposRes.json();
-            let camposHTML = campos.length ? campos.map((c,i) => `<input type="text" id="campo_${i}" placeholder="${c.campo_nombre}">`).join('') : '<p>No hay campos configurados.</p>';
-            const modal = mostrarModal(`<div class="modal-content"><h3>📊 Toma de Valores</h3><div id="camposValores">${camposHTML}</div><button class="btn-primary" id="btnGuardarValores">💾 Guardar Valores</button><button class="btn-danger" onclick="cerrarModal()">Cancelar</button></div>`);
-            document.getElementById('btnGuardarValores').onclick = async () => {
-                const valores = {}; campos.forEach((c,i) => valores[c.campo_nombre] = document.getElementById('campo_'+i).value);
-                await fetchAuth('/api/toma-valores/guardar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ asignacion_id: tareaId, valores }) }); alert('Valores guardados'); cerrarModal();
-            };
-        }
-
-        // ────────── SERIES ──────────
-        async function tomarSeries(tareaId) {
-            const camposSeries = [
-                { key: 'vin_number', label: 'VIN Number' },{ key: 'reefer_serial', label: 'Serie del Reefer' },{ key: 'reefer_model', label: 'Modelo del Reefer' },
-                { key: 'evaporator_serial_mjs11', label: 'Evaporador MJS11' },{ key: 'evaporator_serial_mjd22', label: 'Evaporador MJD22' },
-                { key: 'engine_serial', label: 'Motor' },{ key: 'compressor_serial', label: 'Compresor' },{ key: 'generator_serial', label: 'Generador' },
-                { key: 'battery_charger_serial', label: 'Cargador de Batería' }
-            ];
-            let inputs = camposSeries.map((c,i) => `<input type="text" id="serie_${i}" placeholder="${c.label}"><input type="hidden" id="serie_key_${i}" value="${c.key}">`).join('');
-            const modal = mostrarModal(`<div class="modal-content"><h3>🔢 Toma de Series</h3><div id="camposSeries">${inputs}</div><button class="btn-primary" id="btnGuardarSeries">💾 Guardar Series</button><button class="btn-danger" onclick="cerrarModal()">Cancelar</button></div>`);
-            document.getElementById('btnGuardarSeries').onclick = async () => {
-                const tareasRes = await fetchAuth('/api/asignaciones/?tecnico=' + username + '&estado=en_proceso'); const tareas = await tareasRes.json();
-                const tarea = Array.isArray(tareas) ? tareas.find(t => t.id == tareaId) : null; if (!tarea) return alert('Tarea no encontrada');
-                const keys = [...document.querySelectorAll('[id^="serie_key_"]')].map(el => el.value); const values = { unit_number: tarea.unidad };
-                keys.forEach((key,i) => values[key] = document.getElementById('serie_'+i).value);
-                const resSeries = await fetchAuth('/api/unidades/series/update', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) }); if (resSeries.ok) { cerrarModal(); cargarTareas(); const t = document.createElement('div'); t.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;z-index:600;'; t.textContent = '✅ Series guardadas correctamente.'; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); } else { alert('Error al guardar las series.'); }
-            };
-        }
-
-        cargarTareas();
-    </script>
-    """
-    return HTMLResponse(content=pagina_con_menu("🎯 Mis Tareas", contenido, "mis-tareas"))
-
-
-# ------------------------------------------------------------
-# NUEVA SOLICITUD
-# ------------------------------------------------------------
-@router.get("/app/solicitud", response_class=HTMLResponse)
-async def solicitud():
-    contenido = """
-    <form id="solicitudForm">
-        <select id="unidad" required><option value="">Unidad</option></select>
-        <select id="actividad" required><option value="">Actividad</option></select>
-        <button type="submit" class="btn-primary">📤 Enviar Solicitud</button>
-        <div id="msgSolicitud" style="font-size:0.85rem;"></div>
-    </form>
-    <div class="section-title">📋 Mis Solicitudes Recientes</div>
-    <div id="historialSolicitudes" style="margin-top:16px;"></div>
-    <script>
-        const fetchAuth = window.fetchAuth, username = window.username;
-        document.getElementById('unidad').addEventListener('change', () => document.getElementById('msgSolicitud').innerHTML = '');
-        document.getElementById('actividad').addEventListener('change', () => document.getElementById('msgSolicitud').innerHTML = '');
-        async function cargarOpciones() {
-            const unidadesRes = await fetchAuth('/api/unidades/'); const unidades = await unidadesRes.json();
-            document.getElementById('unidad').innerHTML = '<option value="">Unidad</option>' + (Array.isArray(unidades) ? unidades.map(u => `<option value="${u.unit_number}">${u.unit_number} (${u.id_lote})</option>`).join('') : '');
-            document.getElementById('actividad').innerHTML = '<option value="">Actividad</option>' + ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series'].map(a => `<option value="${a}">${a}</option>`).join('');
-            const histRes = await fetchAuth('/api/asignaciones/?tecnico=' + username + '&limit=20'); const historial = await histRes.json();
-            let hHtml = '';
-            if (Array.isArray(historial)) historial.forEach(h => { const color = h.estado === 'solicitado' ? '#fef9c3' : h.estado === 'pendiente' ? '#fff7ed' : h.estado === 'en_proceso' ? '#eff6ff' : '#f0fdf4'; const borderColor = h.estado === 'solicitado' ? '#854d0e' : h.estado === 'pendiente' ? '#9a3412' : h.estado === 'en_proceso' ? '#1e40af' : '#166534'; hHtml += `<div style="background:${color};border-left:4px solid ${borderColor};padding:10px 16px;margin-bottom:6px;border-radius:8px;"><b>${h.actividad_id}</b> — Unidad: ${h.unidad} · ${h.estado}</div>`; });
-            document.getElementById('historialSolicitudes').innerHTML = hHtml || '<p>Sin solicitudes recientes.</p>';
-        }
-        document.getElementById('solicitudForm').addEventListener('submit', async (e) => {
-            e.preventDefault(); const unidad = document.getElementById('unidad').value, actividad = document.getElementById('actividad').value;
-            if (!unidad || !actividad) return alert('Selecciona unidad y actividad');
-            const msgDiv = document.getElementById('msgSolicitud'); msgDiv.innerHTML = '<p style="color:var(--carrier-warn);">Verificando...</p>';
-            const res = await fetchAuth('/api/asignaciones/?estado=solicitado,pendiente,en_proceso');
-            if (!res.ok) { msgDiv.innerHTML = '<p style="color:var(--carrier-danger);">Error al verificar.</p>'; return; }
-            const todas = await res.json(); const activa = todas.find(a => a.unidad === unidad && a.actividad_id === actividad);
-            if (activa) { msgDiv.innerHTML = `<p style="color:var(--carrier-danger);">Ya existe una tarea activa para esta combinación (técnico: ${activa.tecnico}). Solo un administrador puede autorizarla.</p>`; return; }
-            const crearRes = await fetchAuth('/api/asignaciones/solicitar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ unidad, actividad_id: actividad, tecnico: username }) });
-            if (!crearRes.ok) { const err = await crearRes.json(); msgDiv.innerHTML = `<p style="color:var(--carrier-danger);">${err.detail || 'Error al enviar solicitud'}</p>`; return; }
-            msgDiv.innerHTML = '<p style="color:var(--carrier-success);">Solicitud enviada correctamente.</p>'; cargarOpciones();
-        });
-        cargarOpciones();
-    </script>
-    """
-    return HTMLResponse(content=pagina_con_menu("🔔 Nueva Solicitud", contenido, "solicitud"))
-
-
-# ------------------------------------------------------------
-# MIS TICKETS
-# ------------------------------------------------------------
-@router.get("/app/mis-tickets", response_class=HTMLResponse)
-async def mis_tickets():
-    contenido = """
-    <div id="ticketsList"></div>
-    <script>
-        const fetchAuth = window.fetchAuth;
-
-        async function cargarTickets() {
-            const res = await fetchAuth('/api/tickets/');
-            const tickets = await res.json();
-            let html = '';
-            if (tickets.length) {
-                tickets.forEach(t => {
-                    const estado = t.atendido
-                        ? (t.reporte_enviado ? '🟢 Completado' : '🟡 Atendido (sin reporte)')
-                        : '🔴 No atendido';
-                    const color = t.atendido
-                        ? (t.reporte_enviado ? 'var(--carrier-success)' : 'var(--carrier-warn)')
-                        : 'var(--carrier-danger)';
-
-                    let acciones = '';
-                    if (!t.atendido) {
-                        acciones = `<button class="btn-warning" onclick="atenderTicket(${t.id})" style="margin-top:10px; width:auto; padding:10px 18px;">✅ Marcar como atendido</button>`;
-                    } else if (!t.reporte_enviado) {
-                        acciones = `<button class="btn-primary" onclick="enviarReporte(${t.id})" style="margin-top:10px; width:auto; padding:10px 18px;">📤 Enviar reporte final</button>`;
-                    }
-
-                    html += `
-                        <div style="border-left:6px solid ${color}; background:white; padding:16px; margin-bottom:12px; border-radius:0 12px 12px 0; box-shadow:0 2px 8px rgba(0,0,0,0.05);">
-                            <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px;">
-                                <div>
-                                    <span style="font-size:1.5rem; font-weight:800; color:var(--carrier-blue);">#${t.ticket_num}</span>
-                                    <span class="badge" style="background:${color}; color:white; margin-left:8px;">${estado}</span>
-                                    <p style="margin:8px 0 4px;"><b>Unidad:</b> ${t.unit_number} | <b>VIN:</b> ${t.vin_number || 'N/D'}</p>
-                                    <p style="margin:4px 0;"><b>Descripción:</b> ${t.descripcion}</p>
-                                    <small style="color:#6b7280;">Creado: ${t.fecha_creacion}</small>
-                                </div>
-                                <div style="display:flex; align-items:center;">${acciones}</div>
-                            </div>
-                        </div>`;
-                });
-            }
-            if (!html) html = '<p>🎫 No tienes tickets.</p>';
-            document.getElementById('ticketsList').innerHTML = html;
-        }
-
-        async function atenderTicket(id) {
-            if (!confirm('¿Marcar este ticket como atendido?')) return;
-            const res = await fetchAuth('/api/tickets/' + id + '/atender', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ atendido: true }) });
-            if (res.ok) { cargarTickets(); }
-            else { alert('Error al actualizar el ticket'); }
-        }
-
-        async function enviarReporte(ticketId) {
-            const prev = document.getElementById('modalReporte');
-            if (prev) prev.remove();
-
-            const modal = document.createElement('div');
-            modal.id = 'modalReporte';
-            modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);display:flex;justify-content:center;align-items:center;z-index:500;';
-            modal.innerHTML = `
-                <div style="background:white;border-radius:20px;padding:32px;width:90%;max-width:520px;box-shadow:0 20px 60px rgba(0,43,91,0.25);animation:fadeIn 0.2s ease;">
-                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
-                        <div style="background:var(--carrier-light);border-radius:12px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">📋</div>
-                        <div>
-                            <h3 style="margin:0;color:var(--carrier-blue);font-size:1.2rem;font-weight:800;">Reporte Final del Ticket</h3>
-                            <p style="margin:2px 0 0;font-size:0.82rem;color:#6b7280;">Este reporte quedará registrado y cerrará el ticket en verde.</p>
-                        </div>
-                    </div>
-                    <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0;">
-                    <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">📝 Descripción del trabajo realizado</label>
-                    <textarea id="reporteTexto" rows="5" placeholder="Describe detalladamente las acciones realizadas, piezas cambiadas, diagnóstico, etc." style="width:100%;border:1.5px solid #d1d5db;border-radius:12px;padding:12px;font-size:0.95rem;resize:vertical;font-family:inherit;transition:border-color 0.2s;"></textarea>
-                    <p id="reporteError" style="color:var(--carrier-danger);font-size:0.82rem;min-height:18px;margin:4px 0 12px;"></p>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px;">
-                        <button onclick="document.getElementById('modalReporte').remove()" style="background:#f1f5f9;color:#374151;border:none;border-radius:10px;padding:13px;font-weight:600;font-size:0.95rem;cursor:pointer;">✖ Cancelar</button>
-                        <button id="btnEnviarReporte" onclick="confirmarReporte(${ticketId})" style="background:linear-gradient(135deg,var(--carrier-blue),var(--carrier-accent));color:white;border:none;border-radius:10px;padding:13px;font-weight:700;font-size:0.95rem;cursor:pointer;">📤 Enviar y Cerrar Ticket</button>
-                    </div>
-                </div>
-                <style>@keyframes fadeIn{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}</style>`;
-            document.body.appendChild(modal);
-            setTimeout(() => document.getElementById('reporteTexto').focus(), 100);
-        }
-
-        async function confirmarReporte(id) {
-            const reporte = document.getElementById('reporteTexto').value.trim();
-            const errorEl = document.getElementById('reporteError');
-            if (!reporte) { errorEl.textContent = 'El reporte no puede estar vacío.'; return; }
-            const btn = document.getElementById('btnEnviarReporte');
-            btn.textContent = 'Enviando...'; btn.disabled = true;
-            const res = await fetchAuth('/api/tickets/' + id + '/report', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reporte }) });
-            if (res.ok) {
-                document.getElementById('modalReporte').remove();
-                const toast = document.createElement('div');
-                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
-                toast.textContent = '✅ Reporte enviado. Ticket completado.';
-                document.body.appendChild(toast);
-                setTimeout(() => toast.remove(), 3000);
-                cargarTickets();
-            } else {
-                errorEl.textContent = 'Error al enviar el reporte. Intenta de nuevo.';
-                btn.textContent = '📤 Enviar y Cerrar Ticket'; btn.disabled = false;
-            }
-        }
-
-        cargarTickets();
-    </script>
-    """
-    return HTMLResponse(content=pagina_con_menu("🎫 Mis Tickets", contenido, "mis-tickets"))
-
-
-# ------------------------------------------------------------
-# PANEL DE ASIGNACIÓN POR CLUSTER
-# ------------------------------------------------------------
-@router.get("/app/cluster", response_class=HTMLResponse)
-async def panel_cluster(request: Request, current_user: dict = Depends(verify_token_cookie)):
-    if current_user.get("role") != "admin":
-        return RedirectResponse("/app/dashboard")
-
-    contenido = """
-    <div id="resumenCluster" style="display:none; background:var(--color-background-secondary); border-radius:var(--border-radius-lg); padding:16px; margin-bottom:20px;"></div>
-
-    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; align-items:start;">
-        <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:16px;">
-            <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">🔧 Técnicos</div>
-            <div style="margin-bottom:8px; display:flex; gap:6px;">
-                <button onclick="seleccionarTodos('tecnicos')" style="font-size:11px;padding:4px 10px;">Todos</button>
-                <button onclick="limpiarTodos('tecnicos')" style="font-size:11px;padding:4px 10px;">Ninguno</button>
-            </div>
-            <div id="listaTecnicos" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
-        </div>
-
-        <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:16px;">
-            <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">🎯 Actividades</div>
-            <div style="margin-bottom:8px; display:flex; gap:6px;">
-                <button onclick="seleccionarTodos('actividades')" style="font-size:11px;padding:4px 10px;">Todas</button>
-                <button onclick="limpiarTodos('actividades')" style="font-size:11px;padding:4px 10px;">Ninguna</button>
-            </div>
-            <div id="listaActividades" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
-        </div>
-
-        <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:16px;">
-            <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">🚛 Unidades</div>
-            <div style="margin-bottom:8px; display:flex; gap:6px;">
-                <button onclick="seleccionarTodos('unidades')" style="font-size:11px;padding:4px 10px;">Todas</button>
-                <button onclick="limpiarTodos('unidades')" style="font-size:11px;padding:4px 10px;">Ninguna</button>
-            </div>
-            <div id="filtroLote" style="margin-bottom:8px;"></div>
-            <div id="listaUnidades" style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
-        </div>
-    </div>
-
-    <div style="margin-top:20px; background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:20px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-            <div id="contadorResumen" style="font-size:13px; color:var(--color-text-secondary);">Selecciona técnicos, actividades y unidades</div>
-            <button id="btnAsignar" onclick="ejecutarAsignacion()" style="padding:12px 32px; font-size:0.95rem; font-weight:600; background:linear-gradient(135deg,var(--carrier-blue),var(--carrier-accent)); color:white; border:none; border-radius:10px; cursor:pointer;">⚡ Asignar Cluster</button>
-        </div>
-    </div>
-
-    <script>
-        const fetchAuth = window.fetchAuth;
-        let todosTecnicos = [], todasActividades = [], todasUnidades = [];
-        let lotes = [];
-
-        function checkItem(tipo, valor) {
-            return `<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;cursor:pointer;border:0.5px solid var(--color-border-tertiary);font-size:13px;color:var(--color-text-primary);transition:background 0.15s;" onmouseover="this.style.background='var(--color-background-secondary)'" onmouseout="this.style.background='transparent'">
-                <input type="checkbox" data-tipo="${tipo}" data-valor="${encodeURIComponent(valor)}" onchange="actualizarContador()" style="width:15px;height:15px;cursor:pointer;">
-                ${valor}
-            </label>`;
-        }
-
-        function seleccionarTodos(tipo) {
-            document.querySelectorAll(`input[data-tipo="${tipo}"]`).forEach(c => c.checked = true);
-            actualizarContador();
-        }
-        function limpiarTodos(tipo) {
-            document.querySelectorAll(`input[data-tipo="${tipo}"]`).forEach(c => c.checked = false);
-            actualizarContador();
-        }
-
-        function getSeleccionados(tipo) {
-            return [...document.querySelectorAll(`input[data-tipo="${tipo}"]:checked`)].map(c => decodeURIComponent(c.dataset.valor));
-        }
-
-        function actualizarContador() {
-            const t = getSeleccionados('tecnicos').length;
-            const a = getSeleccionados('actividades').length;
-            const u = getSeleccionados('unidades').length;
-            const total = t * a * u;
-            const el = document.getElementById('contadorResumen');
-            if (total === 0) {
-                el.innerHTML = 'Selecciona técnicos, actividades y unidades';
-                el.style.color = 'var(--color-text-secondary)';
-            } else {
-                el.innerHTML = `<b>${t}</b> técnico(s) × <b>${a}</b> actividad(es) × <b>${u}</b> unidad(es) = <b style="color:var(--carrier-blue);">${total} asignaciones</b>`;
-                el.style.color = 'var(--color-text-primary)';
-            }
-        }
-
-        function filtrarPorLote(lote) {
-            const items = document.querySelectorAll('[data-lote]');
-            items.forEach(i => {
-                i.style.display = (!lote || i.dataset.lote === lote) ? 'flex' : 'none';
-            });
-        }
-
-        async function cargarDatos() {
-            const [resTec, resAct, resUni] = await Promise.all([
-                fetchAuth('/api/cluster/tecnicos'),
-                fetchAuth('/api/cluster/actividades'),
-                fetchAuth('/api/cluster/unidades')
-            ]);
-            todosTecnicos  = await resTec.json();
-            todasActividades = await resAct.json();
-            todasUnidades  = await resUni.json();
-
-            document.getElementById('listaTecnicos').innerHTML = todosTecnicos.map(t => checkItem('tecnicos', t.username)).join('');
-            document.getElementById('listaActividades').innerHTML = todasActividades.map(a => checkItem('actividades', a.nombre)).join('');
-
-            lotes = [...new Set(todasUnidades.map(u => u.id_lote).filter(Boolean))].sort();
-            let filtroHtml = '<select onchange="filtrarPorLote(this.value)" style="width:100%;margin-bottom:6px;font-size:12px;padding:5px;"><option value="">— Todos los lotes —</option>';
-            lotes.forEach(l => filtroHtml += `<option value="${l}">${l}</option>`);
-            filtroHtml += '</select>';
-            document.getElementById('filtroLote').innerHTML = filtroHtml;
-
-            document.getElementById('listaUnidades').innerHTML = todasUnidades.map(u =>
-                `<label data-lote="${u.id_lote || ''}" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;cursor:pointer;border:0.5px solid var(--color-border-tertiary);font-size:13px;color:var(--color-text-primary);transition:background 0.15s;" onmouseover="this.style.background='var(--color-background-secondary)'" onmouseout="this.style.background='transparent'">
-                    <input type="checkbox" data-tipo="unidades" data-valor="${encodeURIComponent(u.unit_number)}" onchange="actualizarContador()" style="width:15px;height:15px;cursor:pointer;">
-                    <span>${u.unit_number}</span><span style="font-size:11px;color:var(--color-text-secondary);margin-left:auto;">${u.id_lote || ''}</span>
-                </label>`
-            ).join('');
-        }
-
-        async function ejecutarAsignacion() {
-            const tecnicos   = getSeleccionados('tecnicos');
-            const actividades = getSeleccionados('actividades');
-            const unidades   = getSeleccionados('unidades');
-            if (!tecnicos.length || !actividades.length || !unidades.length) {
-                return alert('Selecciona al menos un técnico, una actividad y una unidad.');
-            }
-            const total = tecnicos.length * actividades.length * unidades.length;
-            if (!confirm(`¿Crear ${total} asignaciones? Esta acción no se puede deshacer.`)) return;
-
-            const btn = document.getElementById('btnAsignar');
-            btn.textContent = 'Asignando...'; btn.disabled = true;
-
-            const res = await fetchAuth('/api/cluster/asignar', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tecnicos, actividades, unidades })
-            });
-            const data = await res.json();
-
-            btn.textContent = '⚡ Asignar Cluster'; btn.disabled = false;
-
-            const resumen = document.getElementById('resumenCluster');
-            resumen.style.display = 'block';
-            resumen.innerHTML = res.ok
-                ? `<div style="color:var(--color-text-success);font-weight:500;">✅ ${data.mensaje}</div>`
-                : `<div style="color:var(--color-text-danger);font-weight:500;">❌ Error: ${data.detail || 'No se pudo completar'}</div>`;
-
-            if (res.ok) {
-                const toast = document.createElement('div');
-                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
-                toast.textContent = `✅ ${data.creadas} asignaciones creadas correctamente.`;
-                document.body.appendChild(toast);
-                setTimeout(() => toast.remove(), 4000);
-                limpiarTodos('tecnicos'); limpiarTodos('actividades'); limpiarTodos('unidades');
-                actualizarContador();
-            }
-        }
-
-        cargarDatos();
-    </script>
-    """
-    return HTMLResponse(content=pagina_con_menu("⚡ Asignación por Cluster", contenido, "cluster"))
+                document.getElementById('admin-tbody-uni').innerHTML = `<tr><td colspan="7">Error: ${e.message}
