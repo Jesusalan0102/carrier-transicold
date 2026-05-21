@@ -1,7 +1,9 @@
 
 from fastapi.responses import HTMLResponse
 from fastapi import APIRouter, Request, Depends, HTTPException
-
+from routers.auth_router import verify_token_cookie
+# o desde un archivo común de autenticación
+from utils.auth import verify_token_cookie
 router = APIRouter()
 
 # ------------------------------------------------------------
