@@ -188,6 +188,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/inventario', label: '📦 Inventarios' }},
                     {{ href: '/app/unidades', label: '📸 Registro de Unidades' }},
                     {{ href: '/app/usuarios', label: '👥 Gestión de Usuarios' }},
+                    {{ href: '/app/cluster', label: '⚡ Asignación por Cluster' }},
                     {{ href: '/app/admin', label: '🛠 Panel de Administración' }},
                 ];
                 const visorMenu = [
@@ -256,15 +257,7 @@ async def login():
         <style>
             * { box-sizing: border-box; font-family: 'Inter', system-ui, sans-serif; }
             body { background: linear-gradient(135deg, #EEF2F9 0%, #F5F7FB 60%, #EAF0FB 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; margin: 0; padding: 20px; }
-            /* Visor: ocultar botones de acción */
-    body.visor-mode .btn-primary,
-    body.visor-mode .btn-danger,
-    body.visor-mode .btn-success,
-    body.visor-mode .btn-warning,
-    body.visor-mode button:not(.logout-btn):not(.hamburger) { display: none !important; }
-    body.visor-mode input, body.visor-mode select, body.visor-mode textarea { pointer-events: none; background: #f9fafb; }
-    .visor-banner { background: #fef3c7; border: 1px solid #f59e0b; color: #92400e; padding: 8px 16px; border-radius: 8px; font-size: 0.82rem; font-weight: 600; text-align: center; margin-bottom: 16px; }
-    .login-card { background: white; padding: 40px 32px; border-radius: 20px; box-shadow: 0 12px 40px rgba(0,43,91,0.18); max-width: 400px; width: 100%; text-align: center; }
+            .login-card { background: white; padding: 40px 32px; border-radius: 20px; box-shadow: 0 12px 40px rgba(0,43,91,0.18); max-width: 400px; width: 100%; text-align: center; }
             .login-card img { width: 280px; max-width: 100%; border-radius: 12px; margin-bottom: 20px; }
             .login-card h2 { color: #002B5B; font-weight: 800; font-size: 1.5rem; margin-bottom: 4px; }
             .login-card p { color: #6b7280; font-size: 0.9rem; margin-bottom: 24px; }
@@ -311,7 +304,7 @@ async def login():
     """
 
 # ------------------------------------------------------------
-# DASHBOARD (solo admin) - TABLA DE ESTADÍSTICAS ELIMINADA
+# DASHBOARD (solo admin/visor) - TABLA DE ESTADÍSTICAS MEJORADA
 # ------------------------------------------------------------
 @router.get("/app/dashboard", response_class=HTMLResponse)
 async def dashboard():
@@ -358,14 +351,43 @@ async def dashboard():
                     Plotly.newPlot('pieChart', [{ values: [conteos.completada, conteos.en_proceso, conteos.pendiente], labels: ['Completadas', 'En Proceso', 'Pendientes'], marker: { colors: ['#16a34a', '#d97706', '#dc2626'] }, hole: 0.55, type: 'pie' }], { title: 'Distribución Global', paper_bgcolor: 'transparent', font: { family: 'Inter, sans-serif' } });
                     const unidadesRes = await fetchAuth('/api/unidades/'); const unidades = await unidadesRes.json();
                     if (unidades.length) {
+                        // Tabla de estatus con formato de tabla
                         const completadasSet = new Set(asignaciones.filter(a => a.estado === 'completada').map(a => a.unidad + '||' + a.actividad_id));
-                        let headers = '<table><th>LOTE</th><th>#Económico</th>'; actividades.forEach(a => headers += `<th>${a}</th>`); headers += '</tr>';
-                        let body = ''; unidades.forEach(u => { body += `<tr><td>${u.id_lote || ''}</td><td>${u.unit_number}</td>`; actividades.forEach(act => body += `<td>${completadasSet.has(u.unit_number + '||' + act) ? '✔' : '–'}</td>`); body += '</tr>'; });
-                        document.getElementById('statusTable').innerHTML = `<table><thead>${headers}</thead><tbody>${body}</tbody></table>`;
-                        const lotesMap = {}; unidades.forEach(u => { const lote = u.id_lote || 'Sin lote'; if (!lotesMap[lote]) lotesMap[lote] = []; lotesMap[lote].push(u); });
-                        let lotesHtml = ''; for (const [lote, units] of Object.entries(lotesMap)) { lotesHtml += `<div style="margin-bottom:16px; border:1px solid #e0e0e0; border-radius:12px; overflow:hidden;"><div class="inv-info-bar" style="margin-bottom:0; cursor:pointer;" onclick="var d=this.nextElementSibling;d.style.display=d.style.display==='none'?'block':'none';">📦 Lote: ${lote} (${units.length} unidades) <span style="margin-left:auto;">▼</span></div><div style="display:none; padding:16px; background:white; overflow-x:auto;"><table><thead><tr><th>#Económico</th>${Object.values(camposSeries).map(s => `<th>${s}</th>`).join('')}</tr></thead><tbody>${units.map(u => `<tr><td>${u.unit_number}</td>${Object.keys(camposSeries).map(k => `<td>${u[k] || '—'}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`; }
+                        let headers = '</table><th>LOTE</th><th>#Económico</th>';
+                        actividades.forEach(a => headers += `<th>${a}</th>`);
+                        headers += '</tr>';
+                        let body = '';
+                        unidades.forEach(u => {
+                            body += `<tr><td>${u.id_lote || ''}</td><td>${u.unit_number}</td>`;
+                            actividades.forEach(act => {
+                                const completada = completadasSet.has(u.unit_number + '||' + act);
+                                body += `<td style="text-align:center; font-weight:bold;">${completada ? '✔' : '—'}</td>`;
+                            });
+                            body += '</tr>';
+                        });
+                        document.getElementById('statusTable').innerHTML = `<table class="data-table" style="width:100%; border-collapse:collapse;">${headers}<tbody>${body}</tbody></table>`;
+                        // Lotes y series
+                        const lotesMap = {};
+                        unidades.forEach(u => {
+                            const lote = u.id_lote || 'Sin lote';
+                            if (!lotesMap[lote]) lotesMap[lote] = [];
+                            lotesMap[lote].push(u);
+                        });
+                        let lotesHtml = '';
+                        for (const [lote, units] of Object.entries(lotesMap)) {
+                            lotesHtml += `<div style="margin-bottom:16px; border:1px solid #e0e0e0; border-radius:12px; overflow:hidden;">
+                                <div class="inv-info-bar" style="margin-bottom:0; cursor:pointer;" onclick="var d=this.nextElementSibling;d.style.display=d.style.display==='none'?'block':'none';">📦 Lote: ${lote} (${units.length} unidades) <span style="margin-left:auto;">▼</span></div>
+                                <div style="display:none; padding:16px; background:white; overflow-x:auto;">
+                                    <table class="data-table" style="width:100%;">
+                                        <thead><tr><th>#Económico</th>${Object.values(camposSeries).map(s => `<th>${s}</th>`).join('')}</tr></thead>
+                                        <tbody>${units.map(u => `<tr><td>${u.unit_number}</td>${Object.keys(camposSeries).map(k => `<td>${u[k] || '—'}</td>`).join('')}</tr>`).join('')}</tbody>
+                                    ~
+                                </div>
+                            </div>`;
+                        }
                         document.getElementById('lotesContainer').innerHTML = lotesHtml;
-                        const unidadEvEl = document.getElementById('unidadEv'); if (unidadEvEl) unidadEvEl.innerHTML = '<option value="">Selecciona unidad</option>' + unidades.map(u => `<option value="${u.unit_number}">${u.unit_number} – ${u.id_lote || ''}</option>`).join('');
+                        const unidadEvEl = document.getElementById('unidadEv');
+                        if (unidadEvEl) unidadEvEl.innerHTML = '<option value="">Selecciona unidad</option>' + unidades.map(u => `<option value="${u.unit_number}">${u.unit_number} – ${u.id_lote || ''}</option>`).join('');
                     }
                 }
             } catch (err) { console.error('Error al cargar dashboard:', err); document.getElementById('kpiContainer').innerHTML = '<p style="color:red;">Error al conectar con el servidor.</p>'; }
@@ -548,7 +570,7 @@ async def inventario():
             document.getElementById('infoBar').innerHTML = `🗄 Inventario Principal &nbsp;·&nbsp; ${datos.length} registros &nbsp;·&nbsp; ${columnas.length} columnas`;
             renderTabla();
         }
-        function renderTabla() { let html = '<table><thead><tr><th>#</th>'; columnas.forEach(c => html += `<th>${c}</th>`); html += '<th>Acción</th></tr></thead><tbody>'; datos.forEach((fila, idx) => { html += `<tr><td>${idx+1}</td>`; columnas.forEach(c => html += `<td><input type="text" value="${fila[c] || ''}" onchange="datos[${idx}]['${c}'] = this.value" style="margin:0;"></td>`); html += `<td><button class="btn-danger" onclick="eliminarFila(${idx})">🗑</button><tr></tr>`; }); html += '</tbody></table>'; document.getElementById('inventarioTable').innerHTML = html; }
+        function renderTabla() { let html = '<table><thead><tr><th>#</th>'; columnas.forEach(c => html += `<th>${c}</th>`); html += '<th>Acción</th></tr></thead><tbody>'; datos.forEach((fila, idx) => { html += `<tr><td style="text-align:center;">${idx+1}</td>`; columnas.forEach(c => html += `<td><input type="text" value="${fila[c] || ''}" onchange="datos[${idx}]['${c}'] = this.value" style="margin:0;"></td>`); html += `<td><button class="btn-danger" onclick="eliminarFila(${idx})">🗑</button></td>`; }); html += '</tbody></table>'; document.getElementById('inventarioTable').innerHTML = html; }
         function agregarFila() { datos.push(Object.fromEntries(columnas.map(c => [c, '']))); renderTabla(); }
         function eliminarFila(idx) { if (confirm('¿Eliminar fila?')) { datos.splice(idx,1); renderTabla(); } }
         async function guardarInventario() { await fetchAuth('/api/inventario/datos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos) }); alert('Inventario guardado'); }
@@ -583,7 +605,7 @@ async def unidades():
     <div id="unidadesList"></div>
     <script>
         const fetchAuth = window.fetchAuth;
-        async function cargarUnidades() { const res = await fetchAuth('/api/unidades/'); const unidades = await res.json(); let html = '<table><thead><tr><th>#Económico</th><th>Lote</th><th>VIN</th><th>Reefer Serial</th><th>Modelo</th><th>Motor</th><th>Compresor</th></tr></thead><tbody>'; if (Array.isArray(unidades)) unidades.forEach(u => html += `<tr><td>${u.unit_number}</td><td>${u.id_lote||''}</td><td>${u.vin_number||''}</td><td>${u.reefer_serial||''}</td><td>${u.reefer_model||''}</td><td>${u.engine_serial||''}</td><td>${u.compressor_serial||''}</td></tr>`); html += '</tbody></table>'; document.getElementById('unidadesList').innerHTML = html; }
+        async function cargarUnidades() { const res = await fetchAuth('/api/unidades/'); const unidades = await res.json(); let html = '<table><thead><tr><th>#Económico</th><th>Lote</th><th>VIN</th><th>Reefer Serial</th><th>Modelo</th><th>Motor</th><th>Compresor</th></tr></thead><tbody>'; if (Array.isArray(unidades)) unidades.forEach(u => html += `<tr><td>${u.unit_number}</td><td>${u.id_lote||''}</td><td style="font-family:monospace;">${u.vin_number||''}</td><td>${u.reefer_serial||''}</td><td>${u.reefer_model||''}</td><td style="font-family:monospace;">${u.engine_serial||''}</td><td>${u.compressor_serial||''}</td>`); html += '</tbody></table>'; document.getElementById('unidadesList').innerHTML = html; }
         document.getElementById('unidadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const data = {
@@ -609,119 +631,878 @@ async def unidades():
     return HTMLResponse(content=pagina_con_menu("📸 Registro de Unidades", contenido, "unidades"))
 
 # ------------------------------------------------------------
-# GESTIÓN DE USUARIOS (admin) - CORREGIDO: se añadió opción "visor"
+# GESTIÓN DE USUARIOS (admin) - se añadió opción "visor"
 # ------------------------------------------------------------
 @router.get("/app/usuarios", response_class=HTMLResponse)
 async def usuarios():
     contenido = """
     <script> if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; } </script>
+
     <div class="section-title">👥 Usuarios Registrados</div>
     <div id="usuariosList"></div>
-    <div class="section-title admin-only">➕ Crear Nuevo Usuario</div>
-    <form id="usuarioForm" class="admin-only" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px;">
+
+    <div class="section-title admin-only" style="margin-top:28px;">➕ Crear Nuevo Usuario</div>
+    <div class="admin-only" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px;">
         <input type="text" id="username" placeholder="Nombre de usuario" required>
-        <input type="password" id="password" placeholder="Contraseña" required>
+        <input type="password" id="newUserPassword" placeholder="Contraseña" required>
         <select id="role" required>
             <option value="tecnico">Técnico</option>
             <option value="admin">Administrador</option>
             <option value="visor">Visor (solo lectura)</option>
         </select>
-        <button type="submit" class="btn-primary" style="grid-column: span 3;">👤 Crear Usuario</button>
-    </form>
+        <button onclick="crearUsuario()" class="btn-primary" style="grid-column: span 3;">👤 Crear Usuario</button>
+    </div>
+
     <script>
         const fetchAuth = window.fetchAuth;
-        
-        async function cargarUsuarios() { 
+
+        async function cargarUsuarios() {
             try {
-                const res = await fetchAuth('/api/usuarios/'); 
-                const usuarios = await res.json(); 
-                let html = '<table><thead><tr><th>Usuario</th><th>Rol</th><th>Acción</th></tr></thead><tbody>'; 
+                const res = await fetchAuth('/api/usuarios/');
+                const usuarios = await res.json();
+                let html = '<table><thead><tr><th>Usuario</th><th>Rol</th><th style="text-align:center;">Acciones</th></tr></thead><tbody>';
                 if (Array.isArray(usuarios)) {
                     usuarios.forEach(u => {
                         const rolTexto = u.role === 'admin' ? '🛡 Administrador' : (u.role === 'tecnico' ? '🔧 Técnico' : '👁 Visor');
-                        html += `<tr><td>${u.username}</td><td>${rolTexto}</td><td><button class="btn-danger" onclick="eliminarUsuario(${u.id})">🗑️</button></td></tr>`;
+                        const acciones = window.role === 'admin' ? `
+                            <button class="btn-warning" onclick="abrirModalPassword(${u.id}, '${u.username}')" style="padding:6px 14px;font-size:0.82rem;margin-right:6px;">🔑 Cambiar Contraseña</button>
+                            <button class="btn-danger" onclick="eliminarUsuario(${u.id}, '${u.username}')" style="padding:6px 14px;font-size:0.82rem;">🗑️ Eliminar</button>
+                        ` : '—';
+                        html += `<tr><td><b>${u.username}</b></td><td>${rolTexto}</td><td style="text-align:center;">${acciones}</td></tr>`;
                     });
                 }
-                html += '</tbody></table>'; 
+                html += '</tbody></table>';
                 document.getElementById('usuariosList').innerHTML = html;
             } catch (err) {
-                console.error('Error cargando usuarios:', err);
                 document.getElementById('usuariosList').innerHTML = '<p style="color:red;">Error al cargar usuarios</p>';
             }
         }
-        
-        async function eliminarUsuario(id) { 
-            if (confirm('¿Eliminar usuario?')) { 
-                const res = await fetchAuth('/api/usuarios/' + id, { method: 'DELETE' }); 
-                if (res.ok) cargarUsuarios();
-                else alert('Error al eliminar usuario');
-            } 
+
+        function abrirModalPassword(userId, username) {
+            const prev = document.getElementById('modalPassword');
+            if (prev) prev.remove();
+            const modal = document.createElement('div');
+            modal.id = 'modalPassword';
+            modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);display:flex;justify-content:center;align-items:center;z-index:500;';
+            modal.innerHTML = `
+                <div style="background:white;border-radius:20px;padding:32px;width:90%;max-width:460px;box-shadow:0 20px 60px rgba(0,43,91,0.25);animation:fadeInP 0.2s ease;">
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+                        <div style="background:#fef3c7;border-radius:12px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">🔑</div>
+                        <div>
+                            <h3 style="margin:0;color:var(--carrier-blue);font-size:1.1rem;font-weight:800;">Cambiar Contraseña</h3>
+                            <p style="margin:2px 0 0;font-size:0.82rem;color:#6b7280;">Usuario: <b>${username}</b></p>
+                        </div>
+                    </div>
+                    <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0;">
+                    <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">Nueva contraseña</label>
+                    <div style="position:relative;">
+                        <input id="inputNuevaPwd" type="password" placeholder="Escribe la nueva contraseña" style="width:100%;border:1.5px solid #d1d5db;border-radius:12px;padding:12px 44px 12px 12px;font-size:0.95rem;font-family:inherit;">
+                        <span onclick="togglePwd()" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:1.1rem;" title="Mostrar/ocultar">👁</span>
+                    </div>
+                    <p id="pwdError" style="color:var(--carrier-danger);font-size:0.82rem;min-height:18px;margin:4px 0 12px;"></p>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <button onclick="document.getElementById('modalPassword').remove()" style="background:#f1f5f9;color:#374151;border:none;border-radius:10px;padding:13px;font-weight:600;font-size:0.95rem;cursor:pointer;">✖ Cancelar</button>
+                        <button id="btnGuardarPwd" onclick="guardarPassword(${userId})" style="background:linear-gradient(135deg,var(--carrier-blue),var(--carrier-accent));color:white;border:none;border-radius:10px;padding:13px;font-weight:700;font-size:0.95rem;cursor:pointer;">💾 Guardar</button>
+                    </div>
+                </div>
+                <style>@keyframes fadeInP{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}</style>`;
+            document.body.appendChild(modal);
+            setTimeout(() => document.getElementById('inputNuevaPwd').focus(), 100);
         }
-        
-        document.getElementById('usuarioForm').addEventListener('submit', async (e) => { 
-            e.preventDefault(); 
+
+        function togglePwd() {
+            const input = document.getElementById('inputNuevaPwd');
+            input.type = input.type === 'password' ? 'text' : 'password';
+        }
+
+        async function guardarPassword(userId) {
+            const pwd = document.getElementById('inputNuevaPwd').value.trim();
+            const errorEl = document.getElementById('pwdError');
+            if (!pwd || pwd.length < 4) { errorEl.textContent = 'Mínimo 4 caracteres.'; return; }
+            const btn = document.getElementById('btnGuardarPwd');
+            btn.textContent = 'Guardando...'; btn.disabled = true;
+            const res = await fetchAuth('/api/usuarios/' + userId + '/password', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ new_password: pwd })
+            });
+            if (res.ok) {
+                document.getElementById('modalPassword').remove();
+                const toast = document.createElement('div');
+                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#1F4E79;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
+                toast.textContent = '✅ Contraseña actualizada correctamente.';
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 3000);
+            } else {
+                const err = await res.json();
+                errorEl.textContent = err.detail || 'Error al guardar.';
+                btn.textContent = '💾 Guardar'; btn.disabled = false;
+            }
+        }
+
+        async function crearUsuario() {
             const username = document.getElementById('username').value.trim();
-            const password = document.getElementById('password').value;
-            const role = document.getElementById('role').value;
-            
-            if (!username || !password) {
-                alert('Complete todos los campos');
-                return;
+            const password = document.getElementById('newUserPassword').value;
+            const role     = document.getElementById('role').value;
+            if (!username || !password) return alert('Completa todos los campos');
+            const res = await fetchAuth('/api/usuarios/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password, role })
+            });
+            if (res.ok) {
+                document.getElementById('username').value = '';
+                document.getElementById('newUserPassword').value = '';
+                cargarUsuarios();
+                const toast = document.createElement('div');
+                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
+                toast.textContent = '✅ Usuario creado exitosamente.';
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 3000);
+            } else {
+                const err = await res.json();
+                alert('Error: ' + (err.detail || 'No se pudo crear el usuario'));
             }
-            
-            try {
-                const res = await fetchAuth('/api/usuarios/', { 
-                    method: 'POST', 
-                    headers: { 'Content-Type': 'application/json' }, 
-                    body: JSON.stringify({ username, password, role }) 
-                });
-                
-                if (res.ok) {
-                    alert('Usuario creado exitosamente'); 
-                    cargarUsuarios();
-                    document.getElementById('usuarioForm').reset();
-                } else {
-                    const error = await res.json();
-                    alert('Error: ' + (error.detail || 'No se pudo crear el usuario'));
-                }
-            } catch (err) {
-                alert('Error de conexión: ' + err.message);
-            }
-        });
-        
+        }
+
+        async function eliminarUsuario(id, nombre) {
+            if (!confirm(`¿Eliminar al usuario "${nombre}"? Esta acción no se puede deshacer.`)) return;
+            const res = await fetchAuth('/api/usuarios/' + id, { method: 'DELETE' });
+            if (res.ok) cargarUsuarios();
+            else alert('Error al eliminar usuario');
+        }
+
         cargarUsuarios();
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("👥 Gestión de Usuarios", contenido, "usuarios"))
+
 # ------------------------------------------------------------
-# PANEL DE ADMINISTRACIÓN (admin)
+# PANEL DE ADMINISTRACIÓN (admin) — CRUD interactivo
 # ------------------------------------------------------------
 @router.get("/app/admin", response_class=HTMLResponse)
 async def admin():
     contenido = """
     <script> if (window.role !== 'admin') { window.location.href = '/app/mis-tareas'; } </script>
-    <div style="display:flex; gap:8px; margin-bottom:16px;">
-        <button class="btn-primary" onclick="mostrarPestana('actividades')">🗂 Actividades</button>
-        <button class="btn-primary" onclick="mostrarPestana('usuarios')">👥 Usuarios</button>
-        <button class="btn-primary" onclick="mostrarPestana('unidades')">🚛 Unidades</button>
-        <button class="btn-primary" onclick="mostrarPestana('sql')">🗄 SQL Directo</button>
+
+    <!-- Tabler Icons CDN -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+    <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy: #0f2d6b;
+      --navy-mid: #1a3f8f;
+      --navy-btn: #1e4fc0;
+      --navy-light: #2e63d4;
+      --danger: #c0392b;
+      --danger-hover: #a93226;
+      --success: #1a7a4a;
+      --warn: #b7640a;
+      --text-on-navy: #e8f0ff;
+      --row-hover: #edf2fb;
+      --selected-bg: #d6e4fc;
+      --border: rgba(30,79,192,0.18);
+      --color-background-primary: #ffffff;
+      --color-background-secondary: #f4f6fb;
+      --color-text-primary: #1a2340;
+      --color-text-secondary: #6b7280;
+      --color-border-secondary: #d1d5db;
+      --color-border-tertiary: #e5e7eb;
+      --border-radius-md: 8px;
+      --border-radius-lg: 12px;
+      --font-sans: 'Inter', sans-serif;
+      --font-mono: 'Courier New', monospace;
+    }
+    .panel { padding: 1rem 0; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 1.25rem; flex-wrap: wrap; }
+    .tab-btn {
+      background: var(--navy);
+      color: var(--text-on-navy);
+      border: none;
+      border-radius: var(--border-radius-md);
+      padding: 9px 18px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex; align-items: center; gap: 7px;
+      transition: background 0.15s;
+    }
+    .tab-btn:hover { background: var(--navy-light); }
+    .tab-btn.active { background: var(--navy-btn); outline: 2px solid #6fa3f7; outline-offset: 1px; }
+    .tab-btn i { font-size: 15px; }
+    .section { display: none; }
+    .section.active { display: block; }
+    .toolbar {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 10px; flex-wrap: wrap;
+    }
+    .toolbar input[type=text] {
+      flex: 1; min-width: 160px; max-width: 280px;
+      border: 0.5px solid var(--border);
+      border-radius: var(--border-radius-md);
+      padding: 7px 12px; font-size: 13px;
+      background: var(--color-background-primary);
+      color: var(--color-text-primary);
+      margin-bottom: 0;
+    }
+    .toolbar select {
+      border: 0.5px solid var(--border);
+      border-radius: var(--border-radius-md);
+      padding: 7px 10px; font-size: 13px;
+      background: var(--color-background-primary);
+      color: var(--color-text-primary);
+      margin-bottom: 0;
+    }
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 14px; border-radius: var(--border-radius-md);
+      font-size: 13px; font-weight: 500; cursor: pointer; border: none;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-navy { background: var(--navy-btn); color: #fff; }
+    .btn-navy:hover { background: var(--navy-light); }
+    .btn-danger-sm { background: var(--danger); color: #fff; }
+    .btn-danger-sm:hover { background: var(--danger-hover); }
+    .btn-ghost {
+      background: transparent; color: var(--color-text-secondary);
+      border: 0.5px solid var(--color-border-secondary);
+    }
+    .btn-ghost:hover { background: var(--color-background-secondary); }
+    .btn i { font-size: 14px; }
+    .bulk-bar {
+      display: none; align-items: center; gap: 10px;
+      background: #fff3cd; border: 0.5px solid #f5a623;
+      border-radius: var(--border-radius-md); padding: 8px 14px;
+      margin-bottom: 10px; font-size: 13px; color: #7a4e00;
+    }
+    .bulk-bar.visible { display: flex; }
+    .main-layout { display: flex; gap: 12px; align-items: flex-start; }
+    .table-wrap { flex: 1; min-width: 0; overflow: hidden; }
+    .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .data-table th {
+      background: var(--navy);
+      color: var(--text-on-navy);
+      padding: 9px 10px; text-align: left;
+      font-weight: 500; font-size: 12px; letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+    .data-table th:first-child { border-radius: var(--border-radius-md) 0 0 0; width: 32px; }
+    .data-table th:last-child { border-radius: 0 var(--border-radius-md) 0 0; }
+    .data-table td { padding: 9px 10px; border-bottom: 0.5px solid var(--color-border-tertiary); color: var(--color-text-primary); vertical-align: middle; }
+    .data-table tr:hover td { background: var(--row-hover); }
+    .data-table tr.selected td { background: var(--selected-bg); }
+    .data-table tr.editing td { background: #edf6ff; }
+    .admin-badge {
+      display: inline-block; padding: 2px 9px; border-radius: 999px;
+      font-size: 11px; font-weight: 500;
+    }
+    .badge-pending { background: #fff3cd; color: #7a4e00; }
+    .badge-done { background: #d4edda; color: #155724; }
+    .badge-req { background: #d1ecf1; color: #0c5460; }
+    .badge-cancel { background: #f8d7da; color: #721c24; }
+    .row-actions { display: flex; gap: 5px; }
+    .icon-btn {
+      background: none; border: none; cursor: pointer;
+      padding: 4px; border-radius: 5px; color: var(--color-text-secondary);
+      font-size: 15px; display: flex; align-items: center; justify-content: center;
+      transition: background 0.12s, color 0.12s;
+    }
+    .icon-btn:hover.edit { background: #dbeafe; color: var(--navy-btn); }
+    .icon-btn:hover.del { background: #fde8e8; color: var(--danger); }
+    .editor-panel {
+      width: 268px; min-width: 268px;
+      background: var(--color-background-primary);
+      border: 0.5px solid var(--color-border-secondary);
+      border-radius: var(--border-radius-lg);
+      padding: 1rem; font-size: 13px;
+      display: none;
+    }
+    .editor-panel.visible { display: block; }
+    .editor-panel h3 {
+      font-size: 14px; font-weight: 500;
+      color: var(--navy);
+      margin-bottom: 14px;
+      display: flex; align-items: center; gap: 7px; justify-content: space-between;
+    }
+    .editor-panel h3 span { display: flex; align-items: center; gap: 7px; }
+    .close-editor { background: none; border: none; cursor: pointer; color: var(--color-text-secondary); font-size: 16px; padding: 2px; border-radius: 4px; }
+    .close-editor:hover { background: var(--color-background-secondary); }
+    .field-group { margin-bottom: 11px; }
+    .field-group label { display: block; font-size: 11px; color: var(--color-text-secondary); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .field-group input, .field-group select, .field-group textarea {
+      width: 100%;
+      border: 0.5px solid var(--color-border-secondary);
+      border-radius: var(--border-radius-md);
+      padding: 7px 10px; font-size: 13px;
+      background: var(--color-background-primary);
+      color: var(--color-text-primary);
+      margin-bottom: 0;
+    }
+    .field-group textarea { resize: vertical; min-height: 60px; }
+    .editor-actions { display: flex; gap: 8px; margin-top: 14px; }
+    .editor-actions .btn { flex: 1; justify-content: center; }
+    .admin-divider { height: 0.5px; background: var(--color-border-tertiary); margin: 14px 0; }
+    .id-badge { font-size: 11px; background: var(--color-background-secondary); color: var(--color-text-secondary); padding: 2px 8px; border-radius: var(--border-radius-md); }
+    .sql-area {
+      width: 100%;
+      border: 0.5px solid var(--color-border-secondary);
+      border-radius: var(--border-radius-md);
+      padding: 12px; font-size: 13px;
+      font-family: var(--font-mono);
+      background: var(--color-background-secondary);
+      color: var(--color-text-primary);
+      min-height: 110px; resize: vertical;
+      margin-bottom: 10px;
+    }
+    .sql-result {
+      font-size: 12px; font-family: var(--font-mono);
+      background: var(--color-background-secondary);
+      border: 0.5px solid var(--color-border-tertiary);
+      border-radius: var(--border-radius-md);
+      padding: 10px 12px; max-height: 180px; overflow-y: auto;
+      color: var(--color-text-primary); white-space: pre-wrap;
+      display: none; margin-top: 10px;
+    }
+    .sql-result.visible { display: block; }
+    .sql-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .sql-presets button {
+      font-size: 11px; padding: 4px 10px;
+      background: var(--color-background-secondary);
+      border: 0.5px solid var(--color-border-secondary);
+      border-radius: var(--border-radius-md);
+      cursor: pointer; color: var(--color-text-secondary);
+      margin-bottom: 0;
+    }
+    .sql-presets button:hover { background: var(--navy); color: #fff; border-color: var(--navy); }
+    .admin-notice { font-size: 12px; color: var(--color-text-secondary); padding: 6px 10px; background: var(--color-background-secondary); border-radius: var(--border-radius-md); border-left: 3px solid var(--navy-light); margin-bottom: 10px; }
+    .pagination { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; color: var(--color-text-secondary); }
+    .pagination button {
+      background: var(--color-background-secondary);
+      border: 0.5px solid var(--color-border-secondary);
+      border-radius: var(--border-radius-md);
+      padding: 4px 10px; font-size: 12px; cursor: pointer;
+      margin-bottom: 0;
+    }
+    .pagination button:hover { background: var(--navy); color: #fff; border-color: var(--navy); }
+    .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+    </style>
+
+    <div class="panel">
+      <div class="tabs">
+        <button class="tab-btn active" onclick="showTab('actividades')" id="tab-actividades">
+          <i class="ti ti-activity"></i> Actividades
+        </button>
+        <button class="tab-btn" onclick="showTab('usuarios')" id="tab-usuarios">
+          <i class="ti ti-users"></i> Usuarios
+        </button>
+        <button class="tab-btn" onclick="showTab('unidades')" id="tab-unidades">
+          <i class="ti ti-truck"></i> Unidades
+        </button>
+        <button class="tab-btn" onclick="showTab('sql')" id="tab-sql">
+          <i class="ti ti-terminal-2"></i> SQL Directo
+        </button>
+      </div>
+
+      <!-- ── ACTIVIDADES ── -->
+      <div id="sec-actividades" class="section active">
+        <div class="toolbar">
+          <input type="text" id="search-act" placeholder="Buscar por ID, vehículo, técnico…" oninput="filterTable('act')" />
+          <select id="filter-estado" onchange="filterTable('act')">
+            <option value="">Todos los estados</option>
+            <option value="pendiente">Pendiente</option>
+            <option value="en_proceso">En Proceso</option>
+            <option value="completada">Completada</option>
+            <option value="solicitado">Solicitado</option>
+            <option value="cancelado">Cancelado</option>
+          </select>
+          <button class="btn btn-navy" onclick="recargarActividades()">
+            <i class="ti ti-refresh"></i> Recargar
+          </button>
+        </div>
+        <div class="bulk-bar" id="bulk-act">
+          <i class="ti ti-checkbox"></i>
+          <span id="bulk-count-act">0</span> seleccionados
+          <button class="btn btn-danger-sm" style="margin-left:auto" onclick="eliminarSeleccionados('act')">
+            <i class="ti ti-trash"></i> Eliminar seleccionados
+          </button>
+        </div>
+        <div class="main-layout">
+          <div class="table-wrap">
+            <table class="data-table" id="table-act">
+              <thead>
+                <tr>
+                  <th><input type="checkbox" id="check-all-act" onchange="toggleAll('act')" /></th>
+                  <th>ID</th><th>Unidad</th><th>Actividad</th><th>Técnico</th><th>Estado</th><th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-act"></tbody>
+            </table>
+            <div class="pagination" id="pag-act"></div>
+          </div>
+          <div class="editor-panel" id="editor-act">
+            <h3>
+              <span><i class="ti ti-edit"></i> Editar registro</span>
+              <button class="close-editor" onclick="cerrarEditor('act')"><i class="ti ti-x"></i></button>
+            </h3>
+            <div id="editor-id-act" class="id-badge" style="margin-bottom:12px"></div>
+            <div class="field-group"><label>Unidad</label><input type="text" id="ef-vehiculo" /></div>
+            <div class="field-group"><label>Técnico</label><input type="text" id="ef-tecnico" /></div>
+            <div class="field-group"><label>Estado</label>
+              <select id="ef-estado">
+                <option value="pendiente">Pendiente</option>
+                <option value="en_proceso">En Proceso</option>
+                <option value="solicitado">Solicitado</option>
+                <option value="completada">Completada</option>
+                <option value="cancelado">Cancelado</option>
+              </select>
+            </div>
+            <div class="admin-divider"></div>
+            <div class="editor-actions">
+              <button class="btn btn-navy" onclick="guardarEditor('act')"><i class="ti ti-device-floppy"></i> Guardar</button>
+              <button class="btn btn-ghost" onclick="cerrarEditor('act')">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── USUARIOS ── -->
+      <div id="sec-usuarios" class="section">
+        <div class="toolbar">
+          <input type="text" id="search-usr" placeholder="Buscar usuario…" oninput="filterTable('usr')" />
+          <select id="filter-rol" onchange="filterTable('usr')">
+            <option value="">Todos los roles</option>
+            <option value="admin">Administrador</option>
+            <option value="tecnico">Técnico</option>
+            <option value="visor">Visor</option>
+          </select>
+          <button class="btn btn-navy" onclick="recargarUsuarios()">
+            <i class="ti ti-refresh"></i> Recargar
+          </button>
+          <button class="btn btn-navy" onclick="nuevoUsuario()">
+            <i class="ti ti-plus"></i> Nuevo
+          </button>
+        </div>
+        <div class="bulk-bar" id="bulk-usr">
+          <i class="ti ti-checkbox"></i>
+          <span id="bulk-count-usr">0</span> seleccionados
+          <button class="btn btn-danger-sm" style="margin-left:auto" onclick="eliminarSeleccionados('usr')">
+            <i class="ti ti-trash"></i> Eliminar seleccionados
+          </button>
+        </div>
+        <div class="main-layout">
+          <div class="table-wrap">
+            <table class="data-table" id="table-usr">
+              <thead>
+                <tr>
+                  <th><input type="checkbox" id="check-all-usr" onchange="toggleAll('usr')" /></th>
+                  <th>ID</th><th>Usuario</th><th>Rol</th><th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-usr"></tbody>
+            </table>
+            <div class="pagination" id="pag-usr"></div>
+          </div>
+          <div class="editor-panel" id="editor-usr">
+            <h3>
+              <span><i class="ti ti-user-edit"></i> Editar usuario</span>
+              <button class="close-editor" onclick="cerrarEditor('usr')"><i class="ti ti-x"></i></button>
+            </h3>
+            <div id="editor-id-usr" class="id-badge" style="margin-bottom:12px"></div>
+            <div class="field-group"><label>Usuario</label><input type="text" id="uf-nombre" /></div>
+            <div class="field-group"><label>Rol</label>
+              <select id="uf-rol">
+                <option value="admin">Administrador</option>
+                <option value="tecnico">Técnico</option>
+                <option value="visor">Visor (solo lectura)</option>
+              </select>
+            </div>
+            <div class="field-group"><label>Contraseña nueva</label><input type="password" id="uf-pass" placeholder="Dejar en blanco = sin cambios" /></div>
+            <div class="admin-divider"></div>
+            <div class="editor-actions">
+              <button class="btn btn-navy" onclick="guardarEditor('usr')"><i class="ti ti-device-floppy"></i> Guardar</button>
+              <button class="btn btn-ghost" onclick="cerrarEditor('usr')">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── UNIDADES ── -->
+      <div id="sec-unidades" class="section">
+        <div class="toolbar">
+          <input type="text" id="search-uni" placeholder="Buscar unidad…" oninput="filterTable('uni')" />
+          <button class="btn btn-navy" onclick="recargarUnidades()">
+            <i class="ti ti-refresh"></i> Recargar
+          </button>
+        </div>
+        <div class="bulk-bar" id="bulk-uni">
+          <i class="ti ti-checkbox"></i>
+          <span id="bulk-count-uni">0</span> seleccionados
+          <button class="btn btn-danger-sm" style="margin-left:auto" onclick="eliminarSeleccionados('uni')">
+            <i class="ti ti-trash"></i> Eliminar seleccionados
+          </button>
+        </div>
+        <div class="main-layout">
+          <div class="table-wrap">
+            <table class="data-table" id="table-uni">
+              <thead>
+                <tr>
+                  <th><input type="checkbox" id="check-all-uni" onchange="toggleAll('uni')" /></th>
+                  <th>ID</th><th>#Económico</th><th>Lote</th><th>VIN</th><th>Modelo</th><th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-uni"></tbody>
+            </table>
+            <div class="pagination" id="pag-uni"></div>
+          </div>
+          <div class="editor-panel" id="editor-uni">
+            <h3>
+              <span><i class="ti ti-truck"></i> Editar unidad</span>
+              <button class="close-editor" onclick="cerrarEditor('uni')"><i class="ti ti-x"></i></button>
+            </h3>
+            <div id="editor-id-uni" class="id-badge" style="margin-bottom:12px"></div>
+            <div class="field-group"><label>#Económico</label><input type="text" id="nf-placa" /></div>
+            <div class="field-group"><label>Lote</label><input type="text" id="nf-lote" /></div>
+            <div class="field-group"><label>VIN</label><input type="text" id="nf-vin" /></div>
+            <div class="field-group"><label>Modelo Reefer</label><input type="text" id="nf-modelo" /></div>
+            <div class="admin-divider"></div>
+            <div class="editor-actions">
+              <button class="btn btn-navy" onclick="guardarEditor('uni')"><i class="ti ti-device-floppy"></i> Guardar</button>
+              <button class="btn btn-ghost" onclick="cerrarEditor('uni')">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── SQL ── -->
+      <div id="sec-sql" class="section">
+        <div class="admin-notice"><i class="ti ti-info-circle"></i> Ejecuta consultas directas. Los cambios son permanentes.</div>
+        <div class="sql-presets">
+          <button onclick="setSQL('SELECT * FROM asignaciones;')">asignaciones</button>
+          <button onclick="setSQL('SELECT * FROM usuarios;')">usuarios</button>
+          <button onclick="setSQL('SELECT * FROM unidades;')">unidades</button>
+          <button onclick="setSQL('SELECT * FROM tickets;')">tickets</button>
+          <button onclick="setSQL('SELECT * FROM inventarios;')">inventarios</button>
+          <button onclick="setSQL(&quot;DELETE FROM asignaciones WHERE estado = 'cancelado';&quot;)">limpiar cancelados</button>
+        </div>
+        <textarea class="sql-area" id="sql-input" spellcheck="false">SELECT * FROM asignaciones;</textarea>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button class="btn btn-navy" onclick="ejecutarSQL()"><i class="ti ti-player-play"></i> Ejecutar</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('sql-input').value=''"><i class="ti ti-eraser"></i> Limpiar</button>
+        </div>
+        <div class="sql-result" id="sql-result"></div>
+      </div>
     </div>
-    <div id="panelContenido"></div>
+
     <script>
-        const fetchAuth = window.fetchAuth;
-        const pestanas = {
-            actividades: async () => {
-                document.getElementById('panelContenido').innerHTML = `<div class="section-title">Filtrar por estado</div><select id="filtroEstado" onchange="cargarActividades()"><option value="Todos">Todos</option><option value="solicitado">Solicitado</option><option value="pendiente">Pendiente</option><option value="en_proceso">En Proceso</option><option value="completada">Completada</option></select><div id="listaActividades"></div>`;
-                window.cargarActividades = async () => { const estado = document.getElementById('filtroEstado').value; const url = estado === 'Todos' ? '/api/asignaciones/' : `/api/asignaciones/?estado=${estado}`; const [asigRes, usuariosRes] = await Promise.all([fetchAuth(url), fetchAuth('/api/usuarios/')]); const asigs = await asigRes.json(); const usuarios = await usuariosRes.json(); const tecnicosSet = new Set(usuarios.filter(u => u.role === 'tecnico').map(u => u.username)); const huerfanas = asigs.filter(a => !tecnicosSet.has(a.tecnico)); let h = ''; if (huerfanas.length) h += `<div class="bloqueo-card"><p>⚠️ Existen <b>${huerfanas.length}</b> asignaciones con usuarios no técnicos (ej: ${[...new Set(huerfanas.map(a => a.tecnico))].join(', ')}).</p></div>`; asigs.forEach(a => { const esTecnico = tecnicosSet.has(a.tecnico); const borderColor = esTecnico ? '#e5e7eb' : '#fca5a5', bg = esTecnico ? 'white' : '#fff5f5'; const warning = esTecnico ? '' : ' <span style="color:#dc2626;">⚠️ No es técnico</span>'; h += `<div style="background:${bg}; border-left:5px solid ${borderColor}; padding:10px; margin-bottom:6px; border-radius:8px;"><b>ID ${a.id}</b> · ${a.unidad} — ${a.actividad_id} (<b>${a.tecnico}</b>${warning}) [${a.estado}]<button class="btn-danger" onclick="eliminarActividad(${a.id})" style="float:right;">🗑️</button></div>`; }); document.getElementById('listaActividades').innerHTML = h || 'Sin actividades.'; };
-                window.eliminarActividad = async (id) => { if (confirm('¿Eliminar actividad?')) { await fetchAuth('/api/asignaciones/' + id, { method: 'DELETE' }); cargarActividades(); } };
-                cargarActividades();
-            },
-            usuarios: async () => { const res = await fetchAuth('/app/usuarios'); const html = await res.text(); const parser = new DOMParser(); const doc = parser.parseFromString(html, 'text/html'); document.getElementById('panelContenido').innerHTML = doc.querySelector('.main-content').innerHTML; },
-            unidades: async () => { const res = await fetchAuth('/app/unidades'); const html = await res.text(); const parser = new DOMParser(); const doc = parser.parseFromString(html, 'text/html'); document.getElementById('panelContenido').innerHTML = doc.querySelector('.main-content').innerHTML; },
-            sql: () => { document.getElementById('panelContenido').innerHTML = `<textarea id="sqlInput" placeholder="SELECT * FROM asignaciones;" rows="6" style="width:100%;"></textarea><button class="btn-primary" onclick="ejecutarSQL()">▶️ Ejecutar</button><div id="sqlResult" style="margin-top:16px;"></div>`; window.ejecutarSQL = async () => { const sql = document.getElementById('sqlInput').value.trim(); if (!sql) return; try { const res = await fetchAuth('/api/admin/execute-sql', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sql }) }); const data = await res.json(); if (data.error) { document.getElementById('sqlResult').innerHTML = `<p style="color:red;">${data.error}</p>`; return; } if (Array.isArray(data) && data.length) { let table = '</table><thead><tr>'; Object.keys(data[0]).forEach(k => table += `<th>${k}</th>`); table += '</tr></thead><tbody>'; data.forEach(row => { table += '<tr>'; Object.values(row).forEach(v => table += `<td>${v}</td>`); table += '</tr>'; }); table += '</tbody></tr>'; document.getElementById('sqlResult').innerHTML = table; } else document.getElementById('sqlResult').innerHTML = '<p>Consulta ejecutada sin resultados.</p>'; } catch (e) { alert('Error: ' + e.message); } }; }
+    const fetchAuth = window.fetchAuth;
+    const PER_PAGE = 8;
+    const DATA   = { act: [], usr: [], uni: [] };
+    const filtered = { act: [], usr: [], uni: [] };
+    const pages  = { act: 1, usr: 1, uni: 1 };
+    const editing = { act: null, usr: null, uni: null };
+    const selected = { act: new Set(), usr: new Set(), uni: new Set() };
+
+    // ── Carga desde API ──────────────────────────────────────
+    async function recargarActividades() {
+        const estado = document.getElementById('filter-estado').value;
+        const url = estado ? `/api/asignaciones/?estado=${estado}` : '/api/asignaciones/';
+        const res = await fetchAuth(url);
+        DATA.act = await res.json();
+        filterTable('act');
+    }
+
+    async function recargarUsuarios() {
+        const res = await fetchAuth('/api/usuarios/');
+        DATA.usr = await res.json();
+        filterTable('usr');
+    }
+
+    async function recargarUnidades() {
+        const res = await fetchAuth('/api/unidades/');
+        DATA.uni = await res.json();
+        filterTable('uni');
+    }
+
+    // ── Badges ──────────────────────────────────────────────
+    function badgeEstado(e) {
+        const m = {
+            pendiente:'badge-pending', en_proceso:'badge-req',
+            completada:'badge-done', solicitado:'badge-req',
+            cancelado:'badge-cancel', activo:'badge-done',
+            inactivo:'badge-cancel', mantenimiento:'badge-pending',
+            admin:'badge-req', tecnico:'badge-pending', visor:'badge-done'
         };
-        function mostrarPestana(nombre) { pestanas[nombre](); }
-        mostrarPestana('actividades');
+        return `<span class="admin-badge ${m[e]||''}">${e}</span>`;
+    }
+
+    // ── Render tablas ────────────────────────────────────────
+    function renderAct() {
+        const pg = pages.act; const rows = filtered.act;
+        const slice = rows.slice((pg-1)*PER_PAGE, pg*PER_PAGE);
+        document.getElementById('tbody-act').innerHTML = slice.map(r => `
+            <tr id="row-act-${r.id}" class="${editing.act===r.id?'editing':''} ${selected.act.has(r.id)?'selected':''}">
+              <td><input type="checkbox" onchange="toggleRow('act',${r.id},this)" ${selected.act.has(r.id)?'checked':''}></td>
+              <td><span style="font-family:monospace;font-size:12px;color:#6b7280">${r.id}</span></td>
+              <td style="font-weight:500">${r.unidad||''}</td>
+              <td>${r.actividad_id||''}</td>
+              <td>${r.tecnico||''}</td>
+              <td>${badgeEstado(r.estado||'')}</td>
+              <td><div class="row-actions">
+                <button class="icon-btn edit" onclick="editarFilaAct(${r.id})" title="Editar"><i class="ti ti-edit"></i></button>
+                <button class="icon-btn del" onclick="eliminarFilaAct(${r.id})" title="Eliminar"><i class="ti ti-trash"></i></button>
+              </div></td>
+            </tr>`).join('');
+        renderPag('act', rows.length);
+    }
+
+    function renderUsr() {
+        const pg = pages.usr; const rows = filtered.usr;
+        const slice = rows.slice((pg-1)*PER_PAGE, pg*PER_PAGE);
+        document.getElementById('tbody-usr').innerHTML = slice.map(r => `
+            <tr id="row-usr-${r.id}" class="${editing.usr===r.id?'editing':''} ${selected.usr.has(r.id)?'selected':''}">
+              <td><input type="checkbox" onchange="toggleRow('usr',${r.id},this)" ${selected.usr.has(r.id)?'checked':''}></td>
+              <td style="font-family:monospace;font-size:12px;color:#6b7280">${r.id}</td>
+              <td style="font-weight:500">${r.username||''}</td>
+              <td>${badgeEstado(r.role||'')}</td>
+              <td><div class="row-actions">
+                <button class="icon-btn edit" onclick="editarFilaUsr(${r.id})" title="Editar"><i class="ti ti-edit"></i></button>
+                <button class="icon-btn del" onclick="eliminarFilaUsr(${r.id})" title="Eliminar"><i class="ti ti-trash"></i></button>
+              </div></td>
+            </tr>`).join('');
+        renderPag('usr', rows.length);
+    }
+
+    function renderUni() {
+        const pg = pages.uni; const rows = filtered.uni;
+        const slice = rows.slice((pg-1)*PER_PAGE, pg*PER_PAGE);
+        document.getElementById('tbody-uni').innerHTML = slice.map(r => `
+            <tr id="row-uni-${r.id}" class="${editing.uni===r.id?'editing':''} ${selected.uni.has(r.id)?'selected':''}">
+              <td><input type="checkbox" onchange="toggleRow('uni',${r.id},this)" ${selected.uni.has(r.id)?'checked':''}></td>
+              <td style="font-family:monospace;font-size:12px;color:#6b7280">${r.id}</td>
+              <td style="font-weight:500;font-family:monospace">${r.unit_number||''}</td>
+              <td>${r.id_lote||''}</td>
+              <td style="font-size:12px;color:#6b7280">${r.vin_number||'—'}</td>
+              <td>${r.reefer_model||'—'}</td>
+              <td><div class="row-actions">
+                <button class="icon-btn edit" onclick="editarFilaUni(${r.id})" title="Editar"><i class="ti ti-edit"></i></button>
+                <button class="icon-btn del" onclick="eliminarFilaUni(${r.id})" title="Eliminar"><i class="ti ti-trash"></i></button>
+              </div></td>
+            </tr>`).join('');
+        renderPag('uni', rows.length);
+    }
+
+    function renderPag(t, total) {
+        const pg = pages[t]; const tot = Math.ceil(total/PER_PAGE)||1;
+        document.getElementById('pag-'+t).innerHTML = `
+            <button onclick="changePage('${t}',-1)" ${pg<=1?'disabled':''}>&#8249;</button>
+            <span>Pág ${pg} de ${tot} &nbsp;·&nbsp; ${total} registros</span>
+            <button onclick="changePage('${t}',1)" ${pg>=tot?'disabled':''}>&#8250;</button>`;
+    }
+
+    function changePage(t,d){ pages[t]+=d; render(t); }
+    function render(t){ if(t==='act')renderAct(); else if(t==='usr')renderUsr(); else renderUni(); }
+
+    // ── Filtros ──────────────────────────────────────────────
+    function filterTable(t) {
+        if(t==='act'){
+            const q=(document.getElementById('search-act').value||'').toLowerCase();
+            const es=document.getElementById('filter-estado').value;
+            filtered.act=DATA.act.filter(r=>{
+                const match=!q||((r.unidad||'')+(r.tecnico||'')+(r.actividad_id||'')+String(r.id)).toLowerCase().includes(q);
+                return match&&(!es||r.estado===es);
+            }); pages.act=1; renderAct();
+        } else if(t==='usr'){
+            const q=(document.getElementById('search-usr').value||'').toLowerCase();
+            const rl=document.getElementById('filter-rol').value;
+            filtered.usr=DATA.usr.filter(r=>{
+                const match=!q||(r.username||'').toLowerCase().includes(q);
+                return match&&(!rl||r.role===rl);
+            }); pages.usr=1; renderUsr();
+        } else {
+            const q=(document.getElementById('search-uni').value||'').toLowerCase();
+            filtered.uni=DATA.uni.filter(r=>!q||((r.unit_number||'')+(r.id_lote||'')).toLowerCase().includes(q));
+            pages.uni=1; renderUni();
+        }
+    }
+
+    // ── Pestañas ─────────────────────────────────────────────
+    function showTab(t) {
+        ['actividades','usuarios','unidades','sql'].forEach(s=>{
+            document.getElementById('sec-'+s).classList.toggle('active',s===t);
+            document.getElementById('tab-'+s).classList.toggle('active',s===t);
+        });
+    }
+
+    // ── Editar Actividades ───────────────────────────────────
+    function editarFilaAct(id) {
+        editing.act=id;
+        const r=DATA.act.find(x=>x.id===id); if(!r) return;
+        document.getElementById('editor-act').classList.add('visible');
+        document.getElementById('editor-id-act').textContent='ID: '+id;
+        document.getElementById('ef-vehiculo').value=r.unidad||'';
+        document.getElementById('ef-tecnico').value=r.tecnico||'';
+        document.getElementById('ef-estado').value=r.estado||'pendiente';
+        renderAct();
+    }
+
+    async function guardarEditor(t) {
+        if(t==='act'){
+            const id=editing.act;
+            const estado=document.getElementById('ef-estado').value;
+            await fetchAuth('/api/asignaciones/'+id, {
+                method:'PUT', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({estado})
+            });
+            cerrarEditor('act'); recargarActividades();
+        } else if(t==='usr'){
+            const id=editing.usr;
+            const username=document.getElementById('uf-nombre').value;
+            const role=document.getElementById('uf-rol').value;
+            const pass=document.getElementById('uf-pass').value;
+            await fetchAuth('/api/usuarios/'+id, {
+                method:'PUT', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({username, role})
+            });
+            if(pass) await fetchAuth('/api/usuarios/'+id+'/password', {
+                method:'PUT', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({new_password:pass})
+            });
+            cerrarEditor('usr'); recargarUsuarios();
+        } else {
+            const id=editing.uni;
+            const unit_number=document.getElementById('nf-placa').value;
+            const id_lote=document.getElementById('nf-lote').value;
+            const vin_number=document.getElementById('nf-vin').value;
+            const reefer_model=document.getElementById('nf-modelo').value;
+            await fetchAuth('/api/unidades/'+id, {
+                method:'PUT', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({unit_number, id_lote, vin_number, reefer_model})
+            });
+            cerrarEditor('uni'); recargarUnidades();
+        }
+    }
+
+    function cerrarEditor(t){
+        editing[t]=null;
+        document.getElementById('editor-'+t).classList.remove('visible');
+        render(t);
+    }
+
+    // ── Editar Usuarios ──────────────────────────────────────
+    function editarFilaUsr(id) {
+        editing.usr=id;
+        const r=DATA.usr.find(x=>x.id===id); if(!r) return;
+        document.getElementById('editor-usr').classList.add('visible');
+        document.getElementById('editor-id-usr').textContent='ID: '+id;
+        document.getElementById('uf-nombre').value=r.username||'';
+        document.getElementById('uf-rol').value=r.role||'tecnico';
+        document.getElementById('uf-pass').value='';
+        renderUsr();
+    }
+
+    async function nuevoUsuario() {
+        const username=prompt('Nombre de usuario:'); if(!username) return;
+        const password=prompt('Contraseña:'); if(!password) return;
+        const role=prompt('Rol (admin/tecnico/visor):','tecnico'); if(!role) return;
+        const res=await fetchAuth('/api/usuarios/', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({username, password, role})
+        });
+        if(res.ok){ recargarUsuarios(); } else { alert('Error al crear usuario'); }
+    }
+
+    async function eliminarFilaUsr(id) {
+        const r=DATA.usr.find(x=>x.id===id);
+        if(!confirm('¿Eliminar usuario "'+( r?.username||id)+'"?')) return;
+        await fetchAuth('/api/usuarios/'+id, {method:'DELETE'});
+        recargarUsuarios();
+    }
+
+    // ── Editar Unidades ──────────────────────────────────────
+    function editarFilaUni(id) {
+        editing.uni=id;
+        const r=DATA.uni.find(x=>x.id===id); if(!r) return;
+        document.getElementById('editor-uni').classList.add('visible');
+        document.getElementById('editor-id-uni').textContent='#: '+r.unit_number;
+        document.getElementById('nf-placa').value=r.unit_number||'';
+        document.getElementById('nf-lote').value=r.id_lote||'';
+        document.getElementById('nf-vin').value=r.vin_number||'';
+        document.getElementById('nf-modelo').value=r.reefer_model||'';
+        renderUni();
+    }
+
+    async function eliminarFilaUni(id) {
+        const r=DATA.uni.find(x=>x.id===id);
+        if(!confirm('¿Eliminar unidad "'+(r?.unit_number||id)+'"?')) return;
+        await fetchAuth('/api/unidades/'+id, {method:'DELETE'});
+        recargarUnidades();
+    }
+
+    // ── Eliminar Actividades ─────────────────────────────────
+    async function eliminarFilaAct(id) {
+        if(!confirm('¿Eliminar actividad '+id+'?')) return;
+        await fetchAuth('/api/asignaciones/'+id, {method:'DELETE'});
+        recargarActividades();
+    }
+
+    // ── Selección múltiple ───────────────────────────────────
+    function toggleRow(t,id,cb){
+        if(cb.checked) selected[t].add(id); else selected[t].delete(id);
+        updateBulk(t); render(t);
+    }
+
+    function toggleAll(t){
+        const cb=document.getElementById('check-all-'+t);
+        filtered[t].forEach(r=>{ if(cb.checked) selected[t].add(r.id); else selected[t].delete(r.id); });
+        updateBulk(t); render(t);
+    }
+
+    function updateBulk(t){
+        const bar=document.getElementById('bulk-'+t);
+        const n=selected[t].size;
+        bar.classList.toggle('visible',n>0);
+        document.getElementById('bulk-count-'+t).textContent=n;
+    }
+
+    async function eliminarSeleccionados(t) {
+        const n=selected[t].size;
+        if(!confirm('¿Eliminar '+n+' registros seleccionados?')) return;
+        const endpoint = t==='act' ? '/api/asignaciones/' : t==='usr' ? '/api/usuarios/' : '/api/unidades/';
+        for(const id of selected[t]) await fetchAuth(endpoint+id, {method:'DELETE'});
+        selected[t].clear();
+        if(t==='act') recargarActividades();
+        else if(t==='usr') recargarUsuarios();
+        else recargarUnidades();
+        updateBulk(t);
+    }
+
+    // ── SQL ──────────────────────────────────────────────────
+    function setSQL(q){ document.getElementById('sql-input').value=q; }
+    async function ejecutarSQL(){
+        const sql=document.getElementById('sql-input').value.trim();
+        const res=document.getElementById('sql-result');
+        res.classList.add('visible');
+        if(!sql){ res.textContent='Error: consulta vacía.'; return; }
+        res.textContent='Ejecutando…';
+        try {
+            const r=await fetchAuth('/api/admin/execute-sql', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({sql})
+            });
+            const data=await r.json();
+            if(data.error){ res.textContent='Error: '+data.error; return; }
+            if(Array.isArray(data)&&data.length){
+                const keys=Object.keys(data[0]);
+                res.textContent=[keys.join(' | '),'-'.repeat(60),...data.map(row=>keys.map(k=>String(row[k]??'')).join(' | '))].join('\\n');
+            } else { res.textContent='Consulta ejecutada. '+JSON.stringify(data); }
+        } catch(e){ res.textContent='Error: '+e.message; }
+    }
+
+    // ── Init ─────────────────────────────────────────────────
+    recargarActividades();
+    recargarUsuarios();
+    recargarUnidades();
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("🛠 Panel de Administración", contenido, "admin"))
@@ -776,9 +1557,55 @@ async def mis_tareas():
 
         async function iniciarTarea(id) { const res = await fetchAuth('/api/asignaciones/' + id + '/iniciar', { method: 'PATCH' }); if (res.ok) cargarTareas(); else alert('Error al iniciar la tarea'); }
         async function completarTarea(id) {
-            const comentario = prompt('Comentario obligatorio:'); if (!comentario) return;
+            const prev = document.getElementById('modalFinalizar');
+            if (prev) prev.remove();
+
+            const modal = document.createElement('div');
+            modal.id = 'modalFinalizar';
+            modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);display:flex;justify-content:center;align-items:center;z-index:500;';
+            modal.innerHTML = `
+                <div style="background:white;border-radius:20px;padding:32px;width:90%;max-width:520px;box-shadow:0 20px 60px rgba(0,43,91,0.25);animation:fadeInM 0.2s ease;">
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+                        <div style="background:#f0fdf4;border-radius:12px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">✅</div>
+                        <div>
+                            <h3 style="margin:0;color:var(--carrier-blue);font-size:1.2rem;font-weight:800;">Finalizar Actividad</h3>
+                            <p style="margin:2px 0 0;font-size:0.82rem;color:#6b7280;">Agrega un comentario antes de cerrar esta tarea.</p>
+                        </div>
+                    </div>
+                    <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0;">
+                    <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">📝 Comentario del técnico</label>
+                    <textarea id="comentarioTexto" rows="4" placeholder="Describe brevemente el trabajo realizado, observaciones, etc." style="width:100%;border:1.5px solid #d1d5db;border-radius:12px;padding:12px;font-size:0.95rem;resize:vertical;font-family:inherit;transition:border-color 0.2s;"></textarea>
+                    <p id="comentarioError" style="color:var(--carrier-danger);font-size:0.82rem;min-height:18px;margin:4px 0 12px;"></p>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <button onclick="document.getElementById('modalFinalizar').remove()" style="background:#f1f5f9;color:#374151;border:none;border-radius:10px;padding:13px;font-weight:600;font-size:0.95rem;cursor:pointer;">✖ Cancelar</button>
+                        <button id="btnConfirmarFinalizar" onclick="confirmarFinalizar(${id})" style="background:linear-gradient(135deg,#16a34a,#15803d);color:white;border:none;border-radius:10px;padding:13px;font-weight:700;font-size:0.95rem;cursor:pointer;">✅ Confirmar y Finalizar</button>
+                    </div>
+                </div>
+                <style>@keyframes fadeInM{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}</style>`;
+            document.body.appendChild(modal);
+            setTimeout(() => document.getElementById('comentarioTexto').focus(), 100);
+        }
+
+        async function confirmarFinalizar(id) {
+            const comentario = document.getElementById('comentarioTexto').value.trim();
+            const errorEl   = document.getElementById('comentarioError');
+            if (!comentario) { errorEl.textContent = 'El comentario no puede estar vacío.'; return; }
+            const btn = document.getElementById('btnConfirmarFinalizar');
+            btn.textContent = 'Guardando...'; btn.disabled = true;
             const res = await fetchAuth('/api/asignaciones/' + id + '/finalizar', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ comentario }) });
-            if (res.ok) cargarTareas(); else { const err = await res.json(); alert('Error: ' + (err.detail || 'No se pudo finalizar')); }
+            if (res.ok) {
+                document.getElementById('modalFinalizar').remove();
+                const toast = document.createElement('div');
+                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
+                toast.textContent = '✅ Actividad finalizada correctamente.';
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 3000);
+                cargarTareas();
+            } else {
+                const err = await res.json();
+                errorEl.textContent = err.detail || 'No se pudo finalizar. Intenta de nuevo.';
+                btn.textContent = '✅ Confirmar y Finalizar'; btn.disabled = false;
+            }
         }
 
         // ────────── EVIDENCIA ──────────
@@ -824,7 +1651,7 @@ async def mis_tareas():
                 const tarea = Array.isArray(tareas) ? tareas.find(t => t.id == tareaId) : null; if (!tarea) return alert('Tarea no encontrada');
                 const keys = [...document.querySelectorAll('[id^="serie_key_"]')].map(el => el.value); const values = { unit_number: tarea.unidad };
                 keys.forEach((key,i) => values[key] = document.getElementById('serie_'+i).value);
-                await fetchAuth('/api/unidades/series', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) }); alert('Series guardadas'); cerrarModal();
+                const resSeries = await fetchAuth('/api/unidades/series/update', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) }); if (resSeries.ok) { cerrarModal(); cargarTareas(); const t = document.createElement('div'); t.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;z-index:600;'; t.textContent = '✅ Series guardadas correctamente.'; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); } else { alert('Error al guardar las series.'); }
             };
         }
 
@@ -934,7 +1761,6 @@ async def mis_tickets():
         }
 
         async function enviarReporte(ticketId) {
-            // Remover modal previo si existe
             const prev = document.getElementById('modalReporte');
             if (prev) prev.remove();
 
@@ -973,7 +1799,6 @@ async def mis_tickets():
             const res = await fetchAuth('/api/tickets/' + id + '/report', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reporte }) });
             if (res.ok) {
                 document.getElementById('modalReporte').remove();
-                // Mostrar confirmación breve
                 const toast = document.createElement('div');
                 toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
                 toast.textContent = '✅ Reporte enviado. Ticket completado.';
@@ -990,5 +1815,161 @@ async def mis_tickets():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("🎫 Mis Tickets", contenido, "mis-tickets"))
- 
- 
+
+# ------------------------------------------------------------
+# PANEL DE ASIGNACIÓN POR CLUSTER (CORREGIDO, SIN DEPENDENCIAS)
+# ------------------------------------------------------------
+@router.get("/app/cluster", response_class=HTMLResponse)
+async def panel_cluster():
+    contenido = """
+    <div id="resumenCluster" style="display:none; background:var(--color-background-secondary); border-radius:var(--border-radius-lg); padding:16px; margin-bottom:20px;"></div>
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; align-items:start;">
+        <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:16px;">
+            <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">🔧 Técnicos</div>
+            <div style="margin-bottom:8px; display:flex; gap:6px;">
+                <button onclick="seleccionarTodos('tecnicos')" style="font-size:11px;padding:4px 10px;">Todos</button>
+                <button onclick="limpiarTodos('tecnicos')" style="font-size:11px;padding:4px 10px;">Ninguno</button>
+            </div>
+            <div id="listaTecnicos" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
+        </div>
+        <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:16px;">
+            <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">🎯 Actividades</div>
+            <div style="margin-bottom:8px; display:flex; gap:6px;">
+                <button onclick="seleccionarTodos('actividades')" style="font-size:11px;padding:4px 10px;">Todas</button>
+                <button onclick="limpiarTodos('actividades')" style="font-size:11px;padding:4px 10px;">Ninguna</button>
+            </div>
+            <div id="listaActividades" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
+        </div>
+        <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:16px;">
+            <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">🚛 Unidades</div>
+            <div style="margin-bottom:8px; display:flex; gap:6px;">
+                <button onclick="seleccionarTodos('unidades')" style="font-size:11px;padding:4px 10px;">Todas</button>
+                <button onclick="limpiarTodos('unidades')" style="font-size:11px;padding:4px 10px;">Ninguna</button>
+            </div>
+            <div id="filtroLote" style="margin-bottom:8px;"></div>
+            <div id="listaUnidades" style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
+        </div>
+    </div>
+    <div style="margin-top:20px; background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+            <div id="contadorResumen" style="font-size:13px; color:var(--color-text-secondary);">Selecciona técnicos, actividades y unidades</div>
+            <button id="btnAsignar" onclick="ejecutarAsignacion()" style="padding:12px 32px; font-size:0.95rem; font-weight:600; background:linear-gradient(135deg,var(--carrier-blue),var(--carrier-accent)); color:white; border:none; border-radius:10px; cursor:pointer;">⚡ Asignar Cluster</button>
+        </div>
+    </div>
+    <script>
+        const fetchAuth = window.fetchAuth;
+        let todosTecnicos = [], todasActividades = [], todasUnidades = [];
+        let lotes = [];
+
+        function checkItem(tipo, valor) {
+            return `<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;cursor:pointer;border:0.5px solid var(--color-border-tertiary);font-size:13px;color:var(--color-text-primary);transition:background 0.15s;" onmouseover="this.style.background='var(--color-background-secondary)'" onmouseout="this.style.background='transparent'">
+                <input type="checkbox" data-tipo="${tipo}" data-valor="${encodeURIComponent(valor)}" onchange="actualizarContador()" style="width:15px;height:15px;cursor:pointer;">
+                ${valor}
+            </label>`;
+        }
+
+        function seleccionarTodos(tipo) {
+            document.querySelectorAll(`input[data-tipo="${tipo}"]`).forEach(c => c.checked = true);
+            actualizarContador();
+        }
+        function limpiarTodos(tipo) {
+            document.querySelectorAll(`input[data-tipo="${tipo}"]`).forEach(c => c.checked = false);
+            actualizarContador();
+        }
+
+        function getSeleccionados(tipo) {
+            return [...document.querySelectorAll(`input[data-tipo="${tipo}"]:checked`)].map(c => decodeURIComponent(c.dataset.valor));
+        }
+
+        function actualizarContador() {
+            const t = getSeleccionados('tecnicos').length;
+            const a = getSeleccionados('actividades').length;
+            const u = getSeleccionados('unidades').length;
+            const total = t * a * u;
+            const el = document.getElementById('contadorResumen');
+            if (total === 0) {
+                el.innerHTML = 'Selecciona técnicos, actividades y unidades';
+                el.style.color = 'var(--color-text-secondary)';
+            } else {
+                el.innerHTML = `<b>${t}</b> técnico(s) × <b>${a}</b> actividad(es) × <b>${u}</b> unidad(es) = <b style="color:var(--carrier-blue);">${total} asignaciones</b>`;
+                el.style.color = 'var(--color-text-primary)';
+            }
+        }
+
+        function filtrarPorLote(lote) {
+            const items = document.querySelectorAll('[data-lote]');
+            items.forEach(i => {
+                i.style.display = (!lote || i.dataset.lote === lote) ? 'flex' : 'none';
+            });
+        }
+
+        async function cargarDatos() {
+            const [resTec, resAct, resUni] = await Promise.all([
+                fetchAuth('/api/cluster/tecnicos'),
+                fetchAuth('/api/cluster/actividades'),
+                fetchAuth('/api/cluster/unidades')
+            ]);
+            todosTecnicos  = await resTec.json();
+            todasActividades = await resAct.json();
+            todasUnidades  = await resUni.json();
+
+            document.getElementById('listaTecnicos').innerHTML = todosTecnicos.map(t => checkItem('tecnicos', t.username)).join('');
+            document.getElementById('listaActividades').innerHTML = todasActividades.map(a => checkItem('actividades', a.nombre)).join('');
+
+            lotes = [...new Set(todasUnidades.map(u => u.id_lote).filter(Boolean))].sort();
+            let filtroHtml = '<select onchange="filtrarPorLote(this.value)" style="width:100%;margin-bottom:6px;font-size:12px;padding:5px;"><option value="">— Todos los lotes —</option>';
+            lotes.forEach(l => filtroHtml += `<option value="${l}">${l}</option>`);
+            filtroHtml += '</select>';
+            document.getElementById('filtroLote').innerHTML = filtroHtml;
+
+            document.getElementById('listaUnidades').innerHTML = todasUnidades.map(u =>
+                `<label data-lote="${u.id_lote || ''}" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;cursor:pointer;border:0.5px solid var(--color-border-tertiary);font-size:13px;color:var(--color-text-primary);transition:background 0.15s;" onmouseover="this.style.background='var(--color-background-secondary)'" onmouseout="this.style.background='transparent'">
+                    <input type="checkbox" data-tipo="unidades" data-valor="${encodeURIComponent(u.unit_number)}" onchange="actualizarContador()" style="width:15px;height:15px;cursor:pointer;">
+                    <span>${u.unit_number}</span><span style="font-size:11px;color:var(--color-text-secondary);margin-left:auto;">${u.id_lote || ''}</span>
+                </label>`
+            ).join('');
+        }
+
+        async function ejecutarAsignacion() {
+            const tecnicos   = getSeleccionados('tecnicos');
+            const actividades = getSeleccionados('actividades');
+            const unidades   = getSeleccionados('unidades');
+            if (!tecnicos.length || !actividades.length || !unidades.length) {
+                return alert('Selecciona al menos un técnico, una actividad y una unidad.');
+            }
+            const total = tecnicos.length * actividades.length * unidades.length;
+            if (!confirm(`¿Crear ${total} asignaciones? Esta acción no se puede deshacer.`)) return;
+
+            const btn = document.getElementById('btnAsignar');
+            btn.textContent = 'Asignando...'; btn.disabled = true;
+
+            const res = await fetchAuth('/api/cluster/asignar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tecnicos, actividades, unidades })
+            });
+            const data = await res.json();
+
+            btn.textContent = '⚡ Asignar Cluster'; btn.disabled = false;
+
+            const resumen = document.getElementById('resumenCluster');
+            resumen.style.display = 'block';
+            resumen.innerHTML = res.ok
+                ? `<div style="color:var(--color-text-success);font-weight:500;">✅ ${data.mensaje}</div>`
+                : `<div style="color:var(--color-text-danger);font-weight:500;">❌ Error: ${data.detail || 'No se pudo completar'}</div>`;
+
+            if (res.ok) {
+                const toast = document.createElement('div');
+                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
+                toast.textContent = `✅ ${data.creadas} asignaciones creadas correctamente.`;
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 4000);
+                limpiarTodos('tecnicos'); limpiarTodos('actividades'); limpiarTodos('unidades');
+                actualizarContador();
+            }
+        }
+
+        cargarDatos();
+    </script>
+    """
+    return HTMLResponse(content=pagina_con_menu("⚡ Asignación por Cluster", contenido, "cluster"))
