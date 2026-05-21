@@ -1,6 +1,3 @@
-import sys
-import os
-sys.path.insert(0, os.path.dirname(__file__))
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers.auth_router import router as auth_router
@@ -14,6 +11,7 @@ from routers.evidencias_router import router as evidencias_router
 from routers.toma_valores_router import router as toma_valores_router
 from routers.comentarios_router import router as comentarios_router
 from routers.ws import router as ws_router
+from routers.cluster_router import router as cluster_router   # <-- NUEVO
 from db import init_db
 from routers.web_router import router as web_router
 
@@ -46,6 +44,7 @@ app.include_router(evidencias_router)
 app.include_router(toma_valores_router)
 app.include_router(comentarios_router)
 app.include_router(ws_router)
+app.include_router(cluster_router)      # <-- NUEVO
 app.include_router(web_router)
 
 @app.get("/")
@@ -55,22 +54,25 @@ def root():
 @app.get("/test-onedrive")
 def test_onedrive():
     import os
+    vars_presentes = {
+        "MS_CLIENT_ID":     bool(os.getenv("MS_CLIENT_ID")),
+        "MS_CLIENT_SECRET": bool(os.getenv("MS_CLIENT_SECRET")),
+        "MS_TENANT_ID":     bool(os.getenv("MS_TENANT_ID")),
+        "MS_USER_EMAIL":    os.getenv("MS_USER_EMAIL", "NO DEFINIDO"),
+    }
     try:
-        import onedrive_service
+        from onedrive_service import _get_token
+        token = _get_token()
         return {
-            "status": "OK ✅",
-            "onedrive_enabled": True,
-            "MS_REFRESH_TOKEN": bool(os.getenv("MS_REFRESH_TOKEN")),
-            "MS_CLIENT_ID_PERSONAL": bool(os.getenv("MS_CLIENT_ID_PERSONAL")),
-            "MS_CLIENT_SECRET_PERSONAL": bool(os.getenv("MS_CLIENT_SECRET_PERSONAL")),
+            "status": "OK ✅ — Conexión con OneDrive exitosa",
+            "variables": vars_presentes,
+            "token_preview": token[:20] + "..."
         }
     except Exception as e:
         return {
             "status": "ERROR ❌",
-            "error": str(e),
-            "MS_REFRESH_TOKEN": bool(os.getenv("MS_REFRESH_TOKEN")),
-            "MS_CLIENT_ID_PERSONAL": bool(os.getenv("MS_CLIENT_ID_PERSONAL")),
-            "MS_CLIENT_SECRET_PERSONAL": bool(os.getenv("MS_CLIENT_SECRET_PERSONAL")),
+            "variables": vars_presentes,
+            "detalle": str(e)
         }
 
 @app.get("/auth/onedrive/callback")
