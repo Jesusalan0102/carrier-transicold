@@ -2358,3 +2358,5 @@ async def checkin_tecnico():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("📍 Registrar Asistencia", contenido, "checkin"))
+
+
