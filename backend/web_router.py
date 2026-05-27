@@ -189,6 +189,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/unidades', label: '📸 Registro de Unidades' }},
                     {{ href: '/app/usuarios', label: '👥 Gestión de Usuarios' }},
                     {{ href: '/app/cluster', label: '⚡ Asignación por Cluster' }},
+                    {{ href: '/app/asistencia', label: '📍 Control de Asistencia' }},
                     {{ href: '/app/admin', label: '🛠 Panel de Administración' }},
                 ];
                 const visorMenu = [
@@ -198,11 +199,13 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/inventario', label: '📦 Inventarios' }},
                     {{ href: '/app/unidades', label: '📸 Registro de Unidades' }},
                     {{ href: '/app/usuarios', label: '👥 Gestión de Usuarios' }},
+                    {{ href: '/app/asistencia', label: '📍 Control de Asistencia' }},
                 ];
                 const techMenu = [
                     {{ href: '/app/mis-tareas', label: '🎯 Mis Tareas' }},
                     {{ href: '/app/solicitud', label: '🔔 Nueva Solicitud' }},
                     {{ href: '/app/mis-tickets', label: '🎫 Mis Tickets' }},
+                    {{ href: '/app/checkin', label: '📍 Registrar Asistencia' }},
                 ];
                 const menu = window.role === 'admin' ? adminMenu : (window.role === 'visor' ? visorMenu : techMenu);
                 let navHtml = '';
@@ -1973,3 +1976,385 @@ async def panel_cluster():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("⚡ Asignación por Cluster", contenido, "cluster"))
+
+
+# ------------------------------------------------------------
+# ASISTENCIA – PANEL ADMIN: genera QR con geocoordenadas fijas
+# ------------------------------------------------------------
+@router.get("/app/asistencia", response_class=HTMLResponse)
+async def asistencia_admin():
+    contenido = """
+    <script>if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; }</script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+
+    <!-- Configuración de geoposición fija -->
+    <div class="evidencia-info" style="margin-bottom:20px;">
+        <b>📍 Geoposición fija del QR</b><br>
+        <span style="font-size:0.85rem;">Define las coordenadas del lugar de trabajo. El técnico deberá estar dentro del radio permitido al escanear.</span>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:20px;">
+        <div>
+            <label style="font-size:0.82rem; font-weight:600; color:#374151;">Latitud fija</label>
+            <input type="number" id="latFija" step="0.000001" value="32.5027" placeholder="Ej: 32.5027">
+        </div>
+        <div>
+            <label style="font-size:0.82rem; font-weight:600; color:#374151;">Longitud fija</label>
+            <input type="number" id="lonFija" step="0.000001" value="-117.0037" placeholder="Ej: -117.0037">
+        </div>
+        <div>
+            <label style="font-size:0.82rem; font-weight:600; color:#374151;">Radio permitido (metros)</label>
+            <input type="number" id="radioMetros" value="200" min="10" max="5000">
+        </div>
+    </div>
+
+    <div style="display:flex; gap:12px; margin-bottom:28px; flex-wrap:wrap;">
+        <button class="btn-primary" style="width:auto; padding:12px 24px;" onclick="generarQR()">🔄 Generar QR de Asistencia</button>
+        <button class="btn-warning" style="width:auto; padding:12px 24px;" onclick="usarUbicacionActual()">📡 Usar mi ubicación actual</button>
+    </div>
+
+    <!-- QR generado -->
+    <div id="qrSection" style="display:none; margin-bottom:32px;">
+        <div class="section-title">📲 QR para Escanear</div>
+        <div style="display:flex; gap:32px; align-items:flex-start; flex-wrap:wrap;">
+            <div style="background:white; padding:24px; border-radius:16px; box-shadow:0 4px 20px rgba(0,43,91,0.1); text-align:center;">
+                <div id="qrCanvas"></div>
+                <p style="font-size:0.78rem; color:#6b7280; margin-top:12px;">Válido por <b id="qrTimer">05:00</b></p>
+                <button class="btn-primary" style="width:auto; padding:10px 20px; font-size:0.85rem; margin-top:8px;" onclick="generarQR()">🔁 Regenerar</button>
+            </div>
+            <div style="flex:1; min-width:220px;">
+                <div class="inv-info-bar" style="margin-bottom:12px;">📍 Punto de asistencia configurado</div>
+                <p style="font-size:0.9rem;"><b>Lat:</b> <span id="qrLatLabel"></span></p>
+                <p style="font-size:0.9rem;"><b>Lon:</b> <span id="qrLonLabel"></span></p>
+                <p style="font-size:0.9rem;"><b>Radio:</b> <span id="qrRadioLabel"></span> m</p>
+                <div id="mapaLink" style="margin-top:8px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Historial de registros de asistencia -->
+    <div class="section-title">📋 Registros de Asistencia del Día</div>
+    <div style="display:flex; gap:12px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
+        <input type="date" id="fechaFiltro" style="width:auto; margin-bottom:0;" onchange="cargarRegistros()">
+        <button class="btn-primary" style="width:auto; padding:10px 20px; font-size:0.85rem;" onclick="cargarRegistros()">🔄 Actualizar</button>
+        <button class="btn-success" style="width:auto; padding:10px 20px; font-size:0.85rem;" onclick="exportarCSV()">📥 Exportar CSV</button>
+    </div>
+    <div id="tablaAsistencia" style="overflow-x:auto;"></div>
+
+    <script>
+        let qrInterval = null;
+        let timerInterval = null;
+        let segundosRestantes = 0;
+
+        // Poner fecha de hoy por defecto
+        document.getElementById('fechaFiltro').value = new Date().toISOString().slice(0, 10);
+        cargarRegistros();
+
+        function usarUbicacionActual() {
+            if (!navigator.geolocation) return alert('Tu navegador no soporta geolocalización.');
+            navigator.geolocation.getCurrentPosition(pos => {
+                document.getElementById('latFija').value = pos.coords.latitude.toFixed(6);
+                document.getElementById('lonFija').value = pos.coords.longitude.toFixed(6);
+                alert('✅ Coordenadas actualizadas con tu posición actual.');
+            }, () => alert('No se pudo obtener la ubicación.'));
+        }
+
+        function generarQR() {
+            const lat = parseFloat(document.getElementById('latFija').value);
+            const lon = parseFloat(document.getElementById('lonFija').value);
+            const radio = parseInt(document.getElementById('radioMetros').value);
+            if (isNaN(lat) || isNaN(lon) || isNaN(radio)) return alert('Completa todos los campos de configuración.');
+
+            const token = btoa(`asistencia:${lat}:${lon}:${radio}:${Date.now()}`);
+            const url = `${window.location.origin}/app/checkin?token=${encodeURIComponent(token)}&lat=${lat}&lon=${lon}&radio=${radio}`;
+
+            document.getElementById('qrCanvas').innerHTML = '';
+            new QRCode(document.getElementById('qrCanvas'), {
+                text: url,
+                width: 220,
+                height: 220,
+                colorDark: '#002B5B',
+                colorLight: '#ffffff',
+                correctLevel: QRCode.CorrectLevel.H
+            });
+
+            document.getElementById('qrLatLabel').textContent = lat;
+            document.getElementById('qrLonLabel').textContent = lon;
+            document.getElementById('qrRadioLabel').textContent = radio;
+            document.getElementById('mapaLink').innerHTML = `<a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" style="color:#0057A8; font-size:0.85rem;">🗺 Ver en Google Maps</a>`;
+            document.getElementById('qrSection').style.display = 'block';
+
+            // Timer de 5 minutos
+            if (timerInterval) clearInterval(timerInterval);
+            segundosRestantes = 300;
+            actualizarTimer();
+            timerInterval = setInterval(() => {
+                segundosRestantes--;
+                actualizarTimer();
+                if (segundosRestantes <= 0) {
+                    clearInterval(timerInterval);
+                    document.getElementById('qrCanvas').innerHTML = '<p style="color:#dc2626; font-weight:600;">⏱ QR expirado. Regenera.</p>';
+                }
+            }, 1000);
+        }
+
+        function actualizarTimer() {
+            const m = String(Math.floor(segundosRestantes / 60)).padStart(2, '0');
+            const s = String(segundosRestantes % 60).padStart(2, '0');
+            const el = document.getElementById('qrTimer');
+            if (el) el.textContent = m + ':' + s;
+        }
+
+        async function cargarRegistros() {
+            const fecha = document.getElementById('fechaFiltro').value;
+            try {
+                const res = await fetchAuth(`/api/asistencia/registros?fecha=${fecha}`);
+                if (!res.ok) { document.getElementById('tablaAsistencia').innerHTML = '<p style="color:#6b7280;">Sin registros para esta fecha.</p>'; return; }
+                const data = await res.json();
+                if (!data.length) { document.getElementById('tablaAsistencia').innerHTML = '<p style="color:#6b7280; padding:12px;">No hay registros para esta fecha.</p>'; return; }
+                let html = `<table><thead><tr>
+                    <th>#</th><th>Técnico</th><th>Hora Entrada</th><th>Latitud</th><th>Longitud</th><th>Distancia</th><th>Estado</th>
+                </tr></thead><tbody>`;
+                data.forEach((r, i) => {
+                    const estadoBadge = r.dentro_radio
+                        ? '<span class="badge" style="background:#dcfce7; color:#16a34a;">✅ Dentro</span>'
+                        : '<span class="badge" style="background:#fee2e2; color:#dc2626;">❌ Fuera</span>';
+                    html += `<tr>
+                        <td>${i+1}</td>
+                        <td><b>${r.username}</b></td>
+                        <td>${r.hora}</td>
+                        <td>${r.lat_tecnico}</td>
+                        <td>${r.lon_tecnico}</td>
+                        <td>${r.distancia_m} m</td>
+                        <td>${estadoBadge}</td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+                document.getElementById('tablaAsistencia').innerHTML = html;
+            } catch (e) {
+                document.getElementById('tablaAsistencia').innerHTML = '<p style="color:#dc2626;">Error al cargar registros.</p>';
+            }
+        }
+
+        function exportarCSV() {
+            const tabla = document.querySelector('#tablaAsistencia table');
+            if (!tabla) return alert('No hay datos para exportar.');
+            let csv = '';
+            tabla.querySelectorAll('tr').forEach(row => {
+                const cols = [...row.querySelectorAll('th, td')].map(c => '"' + c.innerText.replace(/"/g, '""') + '"');
+                csv += cols.join(',') + '\\n';
+            });
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `asistencia_${document.getElementById('fechaFiltro').value}.csv`;
+            a.click();
+        }
+    </script>
+    """
+    return HTMLResponse(content=pagina_con_menu("📍 Control de Asistencia", contenido, "asistencia"))
+
+
+# ------------------------------------------------------------
+# CHECKIN – PÁGINA DEL TÉCNICO: escanea QR y registra ubicación
+# ------------------------------------------------------------
+@router.get("/app/checkin", response_class=HTMLResponse)
+async def checkin_tecnico():
+    contenido = """
+    <script>if (window.role !== 'tecnico') { window.location.href = '/app/dashboard'; }</script>
+
+    <div style="max-width:480px; margin:0 auto;">
+
+        <!-- Estado inicial -->
+        <div id="estadoInicial">
+            <div class="evidencia-info" style="margin-bottom:20px; text-align:center;">
+                <div style="font-size:3rem; margin-bottom:8px;">📍</div>
+                <b style="font-size:1.1rem;">Registro de Asistencia</b><br>
+                <span style="font-size:0.88rem;">Escanea el código QR para registrar tu entrada.</span>
+            </div>
+
+            <!-- Cámara para escanear QR -->
+            <div style="background:white; border-radius:16px; padding:20px; box-shadow:0 4px 16px rgba(0,43,91,0.1); margin-bottom:20px; text-align:center;">
+                <div class="section-title" style="margin-top:0;">📷 Escanear QR</div>
+                <video id="qrVideo" style="width:100%; border-radius:10px; max-height:280px; background:#000;" autoplay playsinline></video>
+                <canvas id="qrCanvasHidden" style="display:none;"></canvas>
+                <p id="scanStatus" style="font-size:0.85rem; color:#6b7280; margin-top:8px;">Iniciando cámara...</p>
+                <button class="btn-primary" style="margin-top:10px;" onclick="iniciarCamara()">🔄 Activar Cámara</button>
+            </div>
+
+            <!-- O bien, si ya viene con token en URL -->
+            <div id="tokenUrlSection" style="display:none; background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px; padding:16px; margin-bottom:20px; text-align:center;">
+                <p style="font-size:0.9rem; margin-bottom:12px;">✅ QR detectado desde enlace</p>
+                <button class="btn-primary" onclick="procesarDesdeURL()">📍 Registrar mi Asistencia</button>
+            </div>
+        </div>
+
+        <!-- Estado de procesamiento -->
+        <div id="estadoProcesando" style="display:none; text-align:center; padding:40px 20px;">
+            <div style="font-size:3rem; margin-bottom:12px;">⏳</div>
+            <p style="font-weight:600; color:#374151;">Obteniendo tu ubicación...</p>
+            <p style="font-size:0.85rem; color:#6b7280;">Asegúrate de tener el GPS activado.</p>
+        </div>
+
+        <!-- Resultado -->
+        <div id="estadoResultado" style="display:none; text-align:center; padding:20px;">
+        </div>
+
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <script>
+        let streamCamera = null;
+        let scanLoop = null;
+        let qrParams = null;
+
+        // Revisar si ya vienen parámetros en la URL
+        window.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('lat') && params.has('lon') && params.has('radio')) {
+                qrParams = {
+                    lat: parseFloat(params.get('lat')),
+                    lon: parseFloat(params.get('lon')),
+                    radio: parseInt(params.get('radio'))
+                };
+                document.getElementById('tokenUrlSection').style.display = 'block';
+            } else {
+                iniciarCamara();
+            }
+        });
+
+        function iniciarCamara() {
+            document.getElementById('scanStatus').textContent = 'Solicitando acceso a la cámara...';
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+                .then(stream => {
+                    streamCamera = stream;
+                    const video = document.getElementById('qrVideo');
+                    video.srcObject = stream;
+                    video.play();
+                    document.getElementById('scanStatus').textContent = '🔍 Apunta al código QR...';
+                    scanLoop = setInterval(() => escanearFrame(), 400);
+                })
+                .catch(() => {
+                    document.getElementById('scanStatus').textContent = '⚠️ No se pudo acceder a la cámara. Usa el enlace directo del QR.';
+                });
+        }
+
+        function escanearFrame() {
+            const video = document.getElementById('qrVideo');
+            const canvas = document.getElementById('qrCanvasHidden');
+            if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height);
+            if (code) {
+                clearInterval(scanLoop);
+                if (streamCamera) streamCamera.getTracks().forEach(t => t.stop());
+                try {
+                    const url = new URL(code.data);
+                    const p = url.searchParams;
+                    qrParams = {
+                        lat: parseFloat(p.get('lat')),
+                        lon: parseFloat(p.get('lon')),
+                        radio: parseInt(p.get('radio'))
+                    };
+                    if (isNaN(qrParams.lat) || isNaN(qrParams.lon)) throw new Error('QR inválido');
+                    document.getElementById('scanStatus').textContent = '✅ QR leído correctamente';
+                    procesarCheckin();
+                } catch {
+                    document.getElementById('scanStatus').textContent = '❌ QR no reconocido. Intenta de nuevo.';
+                    scanLoop = setInterval(() => escanearFrame(), 400);
+                }
+            }
+        }
+
+        function procesarDesdeURL() {
+            if (!qrParams) return alert('No se detectaron parámetros del QR.');
+            procesarCheckin();
+        }
+
+        function procesarCheckin() {
+            document.getElementById('estadoInicial').style.display = 'none';
+            document.getElementById('estadoProcesando').style.display = 'block';
+
+            if (!navigator.geolocation) {
+                mostrarResultado(false, 'Tu navegador no soporta geolocalización.');
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(
+                pos => {
+                    const latTec = pos.coords.latitude;
+                    const lonTec = pos.coords.longitude;
+                    const distancia = calcularDistancia(latTec, lonTec, qrParams.lat, qrParams.lon);
+                    const dentroRadio = distancia <= qrParams.radio;
+                    enviarRegistro(latTec, lonTec, distancia, dentroRadio);
+                },
+                err => {
+                    mostrarResultado(false, 'No se pudo obtener tu ubicación GPS. Activa la localización e intenta de nuevo.');
+                },
+                { enableHighAccuracy: true, timeout: 10000 }
+            );
+        }
+
+        async function enviarRegistro(latTec, lonTec, distancia, dentroRadio) {
+            try {
+                const res = await fetchAuth('/api/asistencia/registrar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        lat_fija: qrParams.lat,
+                        lon_fija: qrParams.lon,
+                        radio: qrParams.radio,
+                        lat_tecnico: latTec,
+                        lon_tecnico: lonTec,
+                        distancia_m: Math.round(distancia),
+                        dentro_radio: dentroRadio
+                    })
+                });
+                const data = await res.json();
+                mostrarResultado(dentroRadio, data.mensaje || (dentroRadio ? 'Asistencia registrada.' : 'Estás fuera del área permitida.'), latTec, lonTec, Math.round(distancia));
+            } catch {
+                mostrarResultado(false, 'Error al conectar con el servidor. Verifica tu conexión.');
+            }
+        }
+
+        function mostrarResultado(exito, mensaje, lat, lon, distancia) {
+            document.getElementById('estadoProcesando').style.display = 'none';
+            const el = document.getElementById('estadoResultado');
+            el.style.display = 'block';
+            const ahora = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+            const iconoGrande = exito ? '✅' : '❌';
+            const color = exito ? '#16a34a' : '#dc2626';
+            const bg = exito ? '#dcfce7' : '#fee2e2';
+            const border = exito ? '#86efac' : '#fca5a5';
+            el.innerHTML = `
+                <div style="background:${bg}; border:2px solid ${border}; border-radius:20px; padding:32px 24px;">
+                    <div style="font-size:4rem; margin-bottom:12px;">${iconoGrande}</div>
+                    <h2 style="color:${color}; font-size:1.4rem; margin-bottom:8px;">${exito ? '¡Asistencia Registrada!' : 'No se pudo registrar'}</h2>
+                    <p style="color:#374151; font-size:0.95rem; margin-bottom:16px;">${mensaje}</p>
+                    ${lat ? `<div style="background:white; border-radius:12px; padding:12px; font-size:0.85rem; color:#374151; margin-bottom:16px; text-align:left;">
+                        <p>🕐 <b>Hora:</b> ${ahora}</p>
+                        <p>👤 <b>Técnico:</b> ${window.username}</p>
+                        <p>📍 <b>Tu ubicación:</b> ${lat.toFixed(5)}, ${lon.toFixed(5)}</p>
+                        <p>📏 <b>Distancia al punto:</b> ${distancia} m</p>
+                    </div>` : ''}
+                    <button class="btn-primary" onclick="window.location.href='/app/mis-tareas'">🏠 Ir a Mis Tareas</button>
+                </div>`;
+        }
+
+        // Haversine: distancia en metros entre dos coordenadas
+        function calcularDistancia(lat1, lon1, lat2, lon2) {
+            const R = 6371000;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon/2) * Math.sin(dLon/2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+    </script>
+    """
+    return HTMLResponse(content=pagina_con_menu("📍 Registrar Asistencia", contenido, "checkin"))
