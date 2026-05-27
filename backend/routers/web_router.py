@@ -2368,20 +2368,25 @@ async def checkin_tecnico():
 @router.get("/app/horarios", response_class=HTMLResponse)
 async def horarios_admin():
     contenido = """
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <script>if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; }</script>
 
-    <!-- Selector de semana -->
-    <div style="display:flex; gap:16px; align-items:center; margin-bottom:20px; flex-wrap:wrap;">
+    <!-- Barra de acciones -->
+    <div style="display:flex; gap:12px; align-items:flex-end; margin-bottom:20px; flex-wrap:wrap;">
         <div>
             <label style="font-size:0.82rem; font-weight:600; color:#374151;">Semana (Lunes)</label>
             <input type="date" id="semanaInicio" style="width:auto; margin-bottom:0;" onchange="cargarHorarios()">
         </div>
-        <button class="btn-primary" style="width:auto; padding:12px 24px;" onclick="guardarHorarios()">💾 Guardar Horarios</button>
-        <button class="btn-warning" style="width:auto; padding:12px 24px;" onclick="exportarHorarios()">📥 Exportar Excel</button>
+        <button class="btn-primary" style="width:auto; padding:12px 20px;" onclick="guardarHorarios()">💾 Guardar</button>
+        <button class="btn-warning" style="width:auto; padding:12px 20px;" onclick="exportarExcel()">📥 Exportar Excel</button>
+        <label style="background:#0057A8; color:white; border-radius:10px; padding:12px 20px; font-weight:600; font-size:1rem; cursor:pointer; display:inline-block;">
+            📤 Importar Excel <input type="file" accept=".xlsx,.csv" style="display:none;" onchange="importarExcel(this)">
+        </label>
+        <button class="btn-success" style="width:auto; padding:12px 20px;" onclick="abrirModalNombres()">✏️ Editar Nombres</button>
     </div>
 
     <div class="evidencia-info" style="margin-bottom:16px; font-size:0.85rem;">
-        <b>📋 Instrucciones:</b> Configura ENTRADA y SALIDA por día para cada técnico. Deja en blanco si descansa. El sistema calculará automáticamente el retardo al comparar con el check-in QR.
+        <b>📋 Instrucciones:</b> Configura ENTRADA y SALIDA por día. Exporta la plantilla, llénala en Excel e importa. Los nombres mostrados son editables con el botón ✏️.
     </div>
 
     <!-- Tabla de horarios -->
@@ -2389,28 +2394,49 @@ async def horarios_admin():
         <div id="tablaHorarios"></div>
     </div>
 
-    <!-- Resumen de asistencia de la semana -->
+    <!-- Resumen de asistencia -->
     <div class="section-title">📊 Resumen de Asistencia de la Semana</div>
     <div id="resumenAsistencia" style="overflow-x:auto;"></div>
 
+    <!-- Modal editar nombres -->
+    <div id="modalNombres" class="modal">
+        <div class="modal-content" style="max-width:480px;">
+            <h3 style="color:var(--carrier-blue); margin-bottom:16px;">✏️ Editar Nombres de Técnicos</h3>
+            <p style="font-size:0.85rem; color:#6b7280; margin-bottom:16px;">El nombre completo se mostrará en la tabla de horarios. El username no cambia.</p>
+            <div id="listaNombres"></div>
+            <div style="display:flex; gap:10px; margin-top:16px;">
+                <button class="btn-primary" onclick="guardarNombres()">💾 Guardar Nombres</button>
+                <button class="btn-danger" onclick="document.getElementById('modalNombres').style.display='none'">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const DIAS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+        let tecnicosData = [];
+        let nombresMap = {}; // username -> nombre completo
 
-        // Poner lunes de la semana actual por defecto
+        // Lunes de la semana actual
         const hoy = new Date();
-        const diaSemana = hoy.getDay();
-        const diffLunes = diaSemana === 0 ? -6 : 1 - diaSemana;
+        const diffLunes = hoy.getDay() === 0 ? -6 : 1 - hoy.getDay();
         const lunes = new Date(hoy);
         lunes.setDate(hoy.getDate() + diffLunes);
         document.getElementById('semanaInicio').value = lunes.toISOString().slice(0, 10);
-
-        let tecnicosData = [];
 
         async function init() {
             const res = await fetchAuth('/api/usuarios/');
             const usuarios = await res.json();
             tecnicosData = usuarios.filter(u => u.role === 'tecnico');
+            // Cargar nombres guardados del localStorage
+            const guardados = localStorage.getItem('nombresCompletos');
+            if (guardados) nombresMap = JSON.parse(guardados);
+            // Inicializar con username si no hay nombre guardado
+            tecnicosData.forEach(t => { if (!nombresMap[t.username]) nombresMap[t.username] = t.username; });
             cargarHorarios();
+        }
+
+        function getNombre(username) {
+            return nombresMap[username] || username;
         }
 
         function fechasDeSemana(lunesStr) {
@@ -2428,31 +2454,21 @@ async def horarios_admin():
             const semana = document.getElementById('semanaInicio').value;
             if (!semana) return;
             const fechas = fechasDeSemana(semana);
-
-            // Intentar cargar horarios guardados
             let horariosGuardados = {};
             try {
                 const res = await fetchAuth('/api/horarios/?semana=' + semana);
                 if (res.ok) {
                     const data = await res.json();
-                    data.forEach(h => {
-                        const key = h.username + '_' + h.fecha;
-                        horariosGuardados[key] = h;
-                    });
+                    data.forEach(h => { horariosGuardados[h.username + '_' + h.fecha] = h; });
                 }
             } catch(e) {}
 
-            // Construir tabla
-            let html = `<table>
-                <thead>
-                    <tr>
-                        <th rowspan="2" style="min-width:160px;">Técnico</th>`;
-
+            let html = `<table><thead><tr>
+                <th rowspan="2" style="min-width:180px;">Técnico</th>`;
             fechas.forEach((f, i) => {
-                const [anio, mes, dia] = f.split('-');
+                const [,mes,dia] = f.split('-');
                 html += `<th colspan="2" style="text-align:center; background:#f0f4ff;">${DIAS[i]}<br><span style="font-weight:400; font-size:0.78rem;">${dia}/${mes}</span></th>`;
             });
-
             html += `</tr><tr>`;
             fechas.forEach(() => {
                 html += `<th style="font-size:0.75rem; color:#6b7280; background:#f8fafc;">Entrada</th>
@@ -2461,33 +2477,22 @@ async def horarios_admin():
             html += `</tr></thead><tbody>`;
 
             tecnicosData.forEach(tec => {
-                html += `<tr><td><b>${tec.username}</b></td>`;
+                html += `<tr><td><b>${getNombre(tec.username)}</b><br><span style="font-size:0.72rem;color:#9ca3af;">${tec.username}</span></td>`;
                 fechas.forEach(fecha => {
                     const key = tec.username + '_' + fecha;
                     const h = horariosGuardados[key] || {};
-                    const entrada = h.hora_entrada || '';
-                    const salida = h.hora_salida || '';
                     html += `<td style="padding:6px;">
-                        <input type="time" id="e_${tec.username}_${fecha}"
-                            value="${entrada}"
-                            style="width:100px; margin-bottom:0; padding:6px; font-size:0.82rem;"
-                            ${h.estado === 'vacaciones' ? 'disabled placeholder="VAC"' : ''}
-                            ${h.estado === 'descanso' ? 'disabled' : ''}>
-                    </td>
-                    <td style="padding:6px;">
-                        <input type="time" id="s_${tec.username}_${fecha}"
-                            value="${salida}"
-                            style="width:100px; margin-bottom:0; padding:6px; font-size:0.82rem;"
-                            ${h.estado === 'vacaciones' ? 'disabled' : ''}
-                            ${h.estado === 'descanso' ? 'disabled' : ''}>
+                        <input type="time" id="e_${tec.username}_${fecha}" value="${h.hora_entrada||''}"
+                            style="width:100px; margin-bottom:0; padding:6px; font-size:0.82rem;">
+                    </td><td style="padding:6px;">
+                        <input type="time" id="s_${tec.username}_${fecha}" value="${h.hora_salida||''}"
+                            style="width:100px; margin-bottom:0; padding:6px; font-size:0.82rem;">
                     </td>`;
                 });
                 html += `</tr>`;
             });
-
             html += `</tbody></table>`;
             document.getElementById('tablaHorarios').innerHTML = html;
-
             cargarResumenAsistencia(semana, fechas);
         }
 
@@ -2495,109 +2500,156 @@ async def horarios_admin():
             const semana = document.getElementById('semanaInicio').value;
             const fechas = fechasDeSemana(semana);
             const registros = [];
-
             tecnicosData.forEach(tec => {
                 fechas.forEach(fecha => {
-                    const entrada = document.getElementById('e_' + tec.username + '_' + fecha)?.value || '';
-                    const salida  = document.getElementById('s_' + tec.username + '_' + fecha)?.value || '';
                     registros.push({
                         username: tec.username,
-                        fecha: fecha,
-                        hora_entrada: entrada,
-                        hora_salida: salida,
-                        semana: semana
+                        fecha, semana,
+                        hora_entrada: document.getElementById('e_' + tec.username + '_' + fecha)?.value || '',
+                        hora_salida:  document.getElementById('s_' + tec.username + '_' + fecha)?.value || ''
                     });
                 });
             });
-
             const res = await fetchAuth('/api/horarios/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(registros)
             });
-
             if (res.ok) {
-                const toast = document.createElement('div');
-                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
-                toast.textContent = '✅ Horarios guardados correctamente';
-                document.body.appendChild(toast);
-                setTimeout(() => toast.remove(), 3000);
-                cargarResumenAsistencia(semana, fechasDeSemana(semana));
-            } else {
-                alert('❌ Error al guardar. Verifica la conexión.');
-            }
+                const t = document.createElement('div');
+                t.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;z-index:600;';
+                t.textContent = '✅ Horarios guardados';
+                document.body.appendChild(t);
+                setTimeout(() => t.remove(), 3000);
+            } else { alert('❌ Error al guardar.'); }
         }
 
+        // ── EXPORTAR a Excel (.xlsx) ──────────────────────────────
+        function exportarExcel() {
+            const semana = document.getElementById('semanaInicio').value;
+            const fechas = fechasDeSemana(semana);
+            const encabezado = ['Técnico (username)', 'Nombre Completo'];
+            fechas.forEach((f,i) => { encabezado.push(DIAS[i]+' Entrada', DIAS[i]+' Salida'); });
+            const filas = [encabezado];
+            tecnicosData.forEach(tec => {
+                const fila = [tec.username, getNombre(tec.username)];
+                fechas.forEach(fecha => {
+                    fila.push(
+                        document.getElementById('e_' + tec.username + '_' + fecha)?.value || '',
+                        document.getElementById('s_' + tec.username + '_' + fecha)?.value || ''
+                    );
+                });
+                filas.push(fila);
+            });
+            const ws = XLSX.utils.aoa_to_sheet(filas);
+            ws['!cols'] = encabezado.map((h,i) => ({ wch: i < 2 ? 22 : 14 }));
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Horarios');
+            XLSX.writeFile(wb, 'horarios_semana_' + semana + '.xlsx');
+        }
+
+        // ── IMPORTAR desde Excel (.xlsx o .csv) ──────────────────
+        function importarExcel(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const semana = document.getElementById('semanaInicio').value;
+            const fechas = fechasDeSemana(semana);
+            const reader = new FileReader();
+            reader.onload = e => {
+                try {
+                    const wb = XLSX.read(e.target.result, { type: 'array' });
+                    const ws = wb.Sheets[wb.SheetNames[0]];
+                    const filas = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+                    if (filas.length < 2) return alert('El archivo está vacío o no tiene datos.');
+
+                    // Primera fila = encabezados, buscar índices
+                    const headers = filas[0].map(h => String(h).trim());
+                    const idxUser = headers.findIndex(h => h.toLowerCase().includes('username'));
+                    if (idxUser === -1) return alert('No se encontró columna "Técnico (username)". Usa la plantilla exportada.');
+
+                    let importados = 0;
+                    filas.slice(1).forEach(fila => {
+                        const username = String(fila[idxUser] || '').trim();
+                        if (!username) return;
+                        fechas.forEach((fecha, i) => {
+                            const idxE = headers.findIndex(h => h.includes(DIAS[i]) && h.toLowerCase().includes('entrada'));
+                            const idxS = headers.findIndex(h => h.includes(DIAS[i]) && h.toLowerCase().includes('salida'));
+                            const eEl = document.getElementById('e_' + username + '_' + fecha);
+                            const sEl = document.getElementById('s_' + username + '_' + fecha);
+                            if (eEl && idxE !== -1) { eEl.value = String(fila[idxE] || '').trim(); }
+                            if (sEl && idxS !== -1) { sEl.value = String(fila[idxS] || '').trim(); }
+                        });
+                        importados++;
+                    });
+                    input.value = '';
+                    const t = document.createElement('div');
+                    t.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#0057A8;color:white;padding:14px 28px;border-radius:50px;font-weight:700;z-index:600;';
+                    t.textContent = `📤 ${importados} técnicos importados. Revisa y guarda.`;
+                    document.body.appendChild(t);
+                    setTimeout(() => t.remove(), 4000);
+                } catch(err) { alert('Error al leer el archivo: ' + err.message); }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // ── MODAL NOMBRES ─────────────────────────────────────────
+        function abrirModalNombres() {
+            let html = '';
+            tecnicosData.forEach(tec => {
+                html += `<div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                    <span style="width:120px; font-size:0.82rem; color:#6b7280; flex-shrink:0;">${tec.username}</span>
+                    <input type="text" id="nombre_${tec.username}" value="${getNombre(tec.username)}"
+                        placeholder="Nombre completo"
+                        style="flex:1; margin-bottom:0; padding:8px; font-size:0.9rem;">
+                </div>`;
+            });
+            document.getElementById('listaNombres').innerHTML = html;
+            document.getElementById('modalNombres').style.display = 'flex';
+        }
+
+        function guardarNombres() {
+            tecnicosData.forEach(tec => {
+                const val = document.getElementById('nombre_' + tec.username)?.value.trim();
+                if (val) nombresMap[tec.username] = val;
+            });
+            localStorage.setItem('nombresCompletos', JSON.stringify(nombresMap));
+            document.getElementById('modalNombres').style.display = 'none';
+            cargarHorarios();
+            const t = document.createElement('div');
+            t.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;z-index:600;';
+            t.textContent = '✅ Nombres actualizados';
+            document.body.appendChild(t);
+            setTimeout(() => t.remove(), 2500);
+        }
+
+        // ── RESUMEN ASISTENCIA ────────────────────────────────────
         async function cargarResumenAsistencia(semana, fechas) {
             try {
                 const res = await fetchAuth('/api/horarios/resumen?semana=' + semana);
-                if (!res.ok) { document.getElementById('resumenAsistencia').innerHTML = '<p style="color:#6b7280; padding:12px;">Sin datos de asistencia aún.</p>'; return; }
+                if (!res.ok) { document.getElementById('resumenAsistencia').innerHTML = '<p style="color:#6b7280;padding:12px;">Sin datos aún.</p>'; return; }
                 const data = await res.json();
-                if (!data.length) { document.getElementById('resumenAsistencia').innerHTML = '<p style="color:#6b7280; padding:12px;">Sin registros de check-in para esta semana.</p>'; return; }
-
-                let html = `<table><thead><tr>
-                    <th>Técnico</th>`;
-                fechas.forEach((f, i) => {
+                if (!data.length) { document.getElementById('resumenAsistencia').innerHTML = '<p style="color:#6b7280;padding:12px;">Sin check-ins esta semana.</p>'; return; }
+                let html = `<table><thead><tr><th>Técnico</th>`;
+                fechas.forEach((f,i) => {
                     const [,mes,dia] = f.split('-');
                     html += `<th style="text-align:center;">${DIAS[i]}<br><span style="font-size:0.75rem;font-weight:400;">${dia}/${mes}</span></th>`;
                 });
                 html += `</tr></thead><tbody>`;
-
-                // Agrupar por técnico
                 const porTecnico = {};
-                data.forEach(r => {
-                    if (!porTecnico[r.username]) porTecnico[r.username] = {};
-                    porTecnico[r.username][r.fecha] = r;
-                });
-
+                data.forEach(r => { if (!porTecnico[r.username]) porTecnico[r.username] = {}; porTecnico[r.username][r.fecha] = r; });
                 Object.entries(porTecnico).forEach(([username, dias]) => {
-                    html += `<tr><td><b>${username}</b></td>`;
+                    html += `<tr><td><b>${getNombre(username)}</b><br><span style="font-size:0.72rem;color:#9ca3af;">${username}</span></td>`;
                     fechas.forEach(fecha => {
                         const r = dias[fecha];
-                        if (!r) {
-                            html += `<td style="text-align:center; color:#9ca3af;">—</td>`;
-                        } else if (r.retardo_min > 0) {
-                            html += `<td style="text-align:center;">
-                                <span class="badge" style="background:#fef3c7; color:#92400e;">⏱ +${r.retardo_min} min</span>
-                            </td>`;
-                        } else {
-                            html += `<td style="text-align:center;">
-                                <span class="badge" style="background:#dcfce7; color:#16a34a;">✅ ${r.hora_checkin}</span>
-                            </td>`;
-                        }
+                        if (!r) html += `<td style="text-align:center;color:#9ca3af;">—</td>`;
+                        else if (r.retardo_min > 0) html += `<td style="text-align:center;"><span class="badge" style="background:#fef3c7;color:#92400e;">⏱ +${r.retardo_min} min</span></td>`;
+                        else html += `<td style="text-align:center;"><span class="badge" style="background:#dcfce7;color:#16a34a;">✅ ${r.hora_checkin}</span></td>`;
                     });
                     html += `</tr>`;
                 });
-
                 html += `</tbody></table>`;
                 document.getElementById('resumenAsistencia').innerHTML = html;
-            } catch(e) {
-                document.getElementById('resumenAsistencia').innerHTML = '<p style="color:#dc2626;">Error al cargar resumen.</p>';
-            }
-        }
-
-        function exportarHorarios() {
-            const tabla = document.querySelector('#tablaHorarios table');
-            if (!tabla) return;
-            let csv = 'Técnico';
-            const semana = document.getElementById('semanaInicio').value;
-            const fechas = fechasDeSemana(semana);
-            fechas.forEach((f,i) => { csv += `,${DIAS[i]} Entrada,${DIAS[i]} Salida`; });
-            csv += '\\n';
-            tecnicosData.forEach(tec => {
-                csv += tec.username;
-                fechas.forEach(fecha => {
-                    const e = document.getElementById('e_' + tec.username + '_' + fecha)?.value || '';
-                    const s = document.getElementById('s_' + tec.username + '_' + fecha)?.value || '';
-                    csv += `,${e},${s}`;
-                });
-                csv += '\\n';
-            });
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = 'horarios_semana_' + semana + '.csv';
-            a.click();
+            } catch(e) { document.getElementById('resumenAsistencia').innerHTML = '<p style="color:#dc2626;">Error al cargar resumen.</p>'; }
         }
 
         init();
