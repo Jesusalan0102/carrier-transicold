@@ -189,6 +189,8 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/unidades', label: '📸 Registro de Unidades' }},
                     {{ href: '/app/usuarios', label: '👥 Gestión de Usuarios' }},
                     {{ href: '/app/cluster', label: '⚡ Asignación por Cluster' }},
+                    {{ href: '/app/horarios', label: '🗓 Horarios Semanales' }},
+                    {{ href: '/app/asistencia', label: '📍 Control de Asistencia' }},
                     {{ href: '/app/admin', label: '🛠 Panel de Administración' }},
                 ];
                 const visorMenu = [
@@ -198,11 +200,14 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/inventario', label: '📦 Inventarios' }},
                     {{ href: '/app/unidades', label: '📸 Registro de Unidades' }},
                     {{ href: '/app/usuarios', label: '👥 Gestión de Usuarios' }},
+                    {{ href: '/app/horarios', label: '🗓 Horarios Semanales' }},
+                    {{ href: '/app/asistencia', label: '📍 Control de Asistencia' }},
                 ];
                 const techMenu = [
                     {{ href: '/app/mis-tareas', label: '🎯 Mis Tareas' }},
                     {{ href: '/app/solicitud', label: '🔔 Nueva Solicitud' }},
                     {{ href: '/app/mis-tickets', label: '🎫 Mis Tickets' }},
+                    {{ href: '/app/checkin', label: '📍 Registrar Asistencia' }},
                 ];
                 const menu = window.role === 'admin' ? adminMenu : (window.role === 'visor' ? visorMenu : techMenu);
                 let navHtml = '';
@@ -257,15 +262,7 @@ async def login():
         <style>
             * { box-sizing: border-box; font-family: 'Inter', system-ui, sans-serif; }
             body { background: linear-gradient(135deg, #EEF2F9 0%, #F5F7FB 60%, #EAF0FB 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; margin: 0; padding: 20px; }
-            /* Visor: ocultar botones de acción */
-    body.visor-mode .btn-primary,
-    body.visor-mode .btn-danger,
-    body.visor-mode .btn-success,
-    body.visor-mode .btn-warning,
-    body.visor-mode button:not(.logout-btn):not(.hamburger) { display: none !important; }
-    body.visor-mode input, body.visor-mode select, body.visor-mode textarea { pointer-events: none; background: #f9fafb; }
-    .visor-banner { background: #fef3c7; border: 1px solid #f59e0b; color: #92400e; padding: 8px 16px; border-radius: 8px; font-size: 0.82rem; font-weight: 600; text-align: center; margin-bottom: 16px; }
-    .login-card { background: white; padding: 40px 32px; border-radius: 20px; box-shadow: 0 12px 40px rgba(0,43,91,0.18); max-width: 400px; width: 100%; text-align: center; }
+            .login-card { background: white; padding: 40px 32px; border-radius: 20px; box-shadow: 0 12px 40px rgba(0,43,91,0.18); max-width: 400px; width: 100%; text-align: center; }
             .login-card img { width: 280px; max-width: 100%; border-radius: 12px; margin-bottom: 20px; }
             .login-card h2 { color: #002B5B; font-weight: 800; font-size: 1.5rem; margin-bottom: 4px; }
             .login-card p { color: #6b7280; font-size: 0.9rem; margin-bottom: 24px; }
@@ -312,7 +309,7 @@ async def login():
     """
 
 # ------------------------------------------------------------
-# DASHBOARD (solo admin) - TABLA DE ESTADÍSTICAS ELIMINADA
+# DASHBOARD (solo admin/visor) - TABLA DE ESTADÍSTICAS MEJORADA
 # ------------------------------------------------------------
 @router.get("/app/dashboard", response_class=HTMLResponse)
 async def dashboard():
@@ -359,14 +356,43 @@ async def dashboard():
                     Plotly.newPlot('pieChart', [{ values: [conteos.completada, conteos.en_proceso, conteos.pendiente], labels: ['Completadas', 'En Proceso', 'Pendientes'], marker: { colors: ['#16a34a', '#d97706', '#dc2626'] }, hole: 0.55, type: 'pie' }], { title: 'Distribución Global', paper_bgcolor: 'transparent', font: { family: 'Inter, sans-serif' } });
                     const unidadesRes = await fetchAuth('/api/unidades/'); const unidades = await unidadesRes.json();
                     if (unidades.length) {
+                        // Tabla de estatus con formato de tabla
                         const completadasSet = new Set(asignaciones.filter(a => a.estado === 'completada').map(a => a.unidad + '||' + a.actividad_id));
-                        let headers = '<table><th>LOTE</th><th>#Económico</th>'; actividades.forEach(a => headers += `<th>${a}</th>`); headers += '</tr>';
-                        let body = ''; unidades.forEach(u => { body += `<tr><td>${u.id_lote || ''}</td><td>${u.unit_number}</td>`; actividades.forEach(act => body += `<td>${completadasSet.has(u.unit_number + '||' + act) ? '✔' : '–'}</td>`); body += '</tr>'; });
-                        document.getElementById('statusTable').innerHTML = `<table><thead>${headers}</thead><tbody>${body}</tbody></table>`;
-                        const lotesMap = {}; unidades.forEach(u => { const lote = u.id_lote || 'Sin lote'; if (!lotesMap[lote]) lotesMap[lote] = []; lotesMap[lote].push(u); });
-                        let lotesHtml = ''; for (const [lote, units] of Object.entries(lotesMap)) { lotesHtml += `<div style="margin-bottom:16px; border:1px solid #e0e0e0; border-radius:12px; overflow:hidden;"><div class="inv-info-bar" style="margin-bottom:0; cursor:pointer;" onclick="var d=this.nextElementSibling;d.style.display=d.style.display==='none'?'block':'none';">📦 Lote: ${lote} (${units.length} unidades) <span style="margin-left:auto;">▼</span></div><div style="display:none; padding:16px; background:white; overflow-x:auto;"><table><thead><tr><th>#Económico</th>${Object.values(camposSeries).map(s => `<th>${s}</th>`).join('')}</tr></thead><tbody>${units.map(u => `<tr><td>${u.unit_number}</td>${Object.keys(camposSeries).map(k => `<td>${u[k] || '—'}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`; }
+                        let headers = '</table><th>LOTE</th><th>#Económico</th>';
+                        actividades.forEach(a => headers += `<th>${a}</th>`);
+                        headers += '</tr>';
+                        let body = '';
+                        unidades.forEach(u => {
+                            body += `<tr><td>${u.id_lote || ''}</td><td>${u.unit_number}</td>`;
+                            actividades.forEach(act => {
+                                const completada = completadasSet.has(u.unit_number + '||' + act);
+                                body += `<td style="text-align:center; font-weight:bold;">${completada ? '✔' : '—'}</td>`;
+                            });
+                            body += '</tr>';
+                        });
+                        document.getElementById('statusTable').innerHTML = `<table class="data-table" style="width:100%; border-collapse:collapse;">${headers}<tbody>${body}</tbody></table>`;
+                        // Lotes y series
+                        const lotesMap = {};
+                        unidades.forEach(u => {
+                            const lote = u.id_lote || 'Sin lote';
+                            if (!lotesMap[lote]) lotesMap[lote] = [];
+                            lotesMap[lote].push(u);
+                        });
+                        let lotesHtml = '';
+                        for (const [lote, units] of Object.entries(lotesMap)) {
+                            lotesHtml += `<div style="margin-bottom:16px; border:1px solid #e0e0e0; border-radius:12px; overflow:hidden;">
+                                <div class="inv-info-bar" style="margin-bottom:0; cursor:pointer;" onclick="var d=this.nextElementSibling;d.style.display=d.style.display==='none'?'block':'none';">📦 Lote: ${lote} (${units.length} unidades) <span style="margin-left:auto;">▼</span></div>
+                                <div style="display:none; padding:16px; background:white; overflow-x:auto;">
+                                    <table class="data-table" style="width:100%;">
+                                        <thead><tr><th>#Económico</th>${Object.values(camposSeries).map(s => `<th>${s}</th>`).join('')}</tr></thead>
+                                        <tbody>${units.map(u => `<tr><td>${u.unit_number}</td>${Object.keys(camposSeries).map(k => `<td>${u[k] || '—'}</td>`).join('')}</tr>`).join('')}</tbody>
+                                    ~
+                                </div>
+                            </div>`;
+                        }
                         document.getElementById('lotesContainer').innerHTML = lotesHtml;
-                        const unidadEvEl = document.getElementById('unidadEv'); if (unidadEvEl) unidadEvEl.innerHTML = '<option value="">Selecciona unidad</option>' + unidades.map(u => `<option value="${u.unit_number}">${u.unit_number} – ${u.id_lote || ''}</option>`).join('');
+                        const unidadEvEl = document.getElementById('unidadEv');
+                        if (unidadEvEl) unidadEvEl.innerHTML = '<option value="">Selecciona unidad</option>' + unidades.map(u => `<option value="${u.unit_number}">${u.unit_number} – ${u.id_lote || ''}</option>`).join('');
                     }
                 }
             } catch (err) { console.error('Error al cargar dashboard:', err); document.getElementById('kpiContainer').innerHTML = '<p style="color:red;">Error al conectar con el servidor.</p>'; }
@@ -549,7 +575,7 @@ async def inventario():
             document.getElementById('infoBar').innerHTML = `🗄 Inventario Principal &nbsp;·&nbsp; ${datos.length} registros &nbsp;·&nbsp; ${columnas.length} columnas`;
             renderTabla();
         }
-        function renderTabla() { let html = '<table><thead><tr><th>#</th>'; columnas.forEach(c => html += `<th>${c}</th>`); html += '<th>Acción</th></tr></thead><tbody>'; datos.forEach((fila, idx) => { html += `<tr><td>${idx+1}</td>`; columnas.forEach(c => html += `<td><input type="text" value="${fila[c] || ''}" onchange="datos[${idx}]['${c}'] = this.value" style="margin:0;"></td>`); html += `<td><button class="btn-danger" onclick="eliminarFila(${idx})">🗑</button><tr></tr>`; }); html += '</tbody></table>'; document.getElementById('inventarioTable').innerHTML = html; }
+        function renderTabla() { let html = '<table><thead><tr><th>#</th>'; columnas.forEach(c => html += `<th>${c}</th>`); html += '<th>Acción</th></tr></thead><tbody>'; datos.forEach((fila, idx) => { html += `<tr><td style="text-align:center;">${idx+1}</td>`; columnas.forEach(c => html += `<td><input type="text" value="${fila[c] || ''}" onchange="datos[${idx}]['${c}'] = this.value" style="margin:0;"></td>`); html += `<td><button class="btn-danger" onclick="eliminarFila(${idx})">🗑</button></td>`; }); html += '</tbody></table>'; document.getElementById('inventarioTable').innerHTML = html; }
         function agregarFila() { datos.push(Object.fromEntries(columnas.map(c => [c, '']))); renderTabla(); }
         function eliminarFila(idx) { if (confirm('¿Eliminar fila?')) { datos.splice(idx,1); renderTabla(); } }
         async function guardarInventario() { await fetchAuth('/api/inventario/datos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos) }); alert('Inventario guardado'); }
@@ -584,7 +610,7 @@ async def unidades():
     <div id="unidadesList"></div>
     <script>
         const fetchAuth = window.fetchAuth;
-        async function cargarUnidades() { const res = await fetchAuth('/api/unidades/'); const unidades = await res.json(); let html = '<table><thead><tr><th>#Económico</th><th>Lote</th><th>VIN</th><th>Reefer Serial</th><th>Modelo</th><th>Motor</th><th>Compresor</th></tr></thead><tbody>'; if (Array.isArray(unidades)) unidades.forEach(u => html += `<tr><td>${u.unit_number}</td><td>${u.id_lote||''}</td><td>${u.vin_number||''}</td><td>${u.reefer_serial||''}</td><td>${u.reefer_model||''}</td><td>${u.engine_serial||''}</td><td>${u.compressor_serial||''}</td></tr>`); html += '</tbody></table>'; document.getElementById('unidadesList').innerHTML = html; }
+        async function cargarUnidades() { const res = await fetchAuth('/api/unidades/'); const unidades = await res.json(); let html = '<table><thead><tr><th>#Económico</th><th>Lote</th><th>VIN</th><th>Reefer Serial</th><th>Modelo</th><th>Motor</th><th>Compresor</th></tr></thead><tbody>'; if (Array.isArray(unidades)) unidades.forEach(u => html += `<tr><td>${u.unit_number}</td><td>${u.id_lote||''}</td><td style="font-family:monospace;">${u.vin_number||''}</td><td>${u.reefer_serial||''}</td><td>${u.reefer_model||''}</td><td style="font-family:monospace;">${u.engine_serial||''}</td><td>${u.compressor_serial||''}</td>`); html += '</tbody></table>'; document.getElementById('unidadesList').innerHTML = html; }
         document.getElementById('unidadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const data = {
@@ -610,7 +636,7 @@ async def unidades():
     return HTMLResponse(content=pagina_con_menu("📸 Registro de Unidades", contenido, "unidades"))
 
 # ------------------------------------------------------------
-# GESTIÓN DE USUARIOS (admin) - CORREGIDO: se añadió opción "visor"
+# GESTIÓN DE USUARIOS (admin) - se añadió opción "visor"
 # ------------------------------------------------------------
 @router.get("/app/usuarios", response_class=HTMLResponse)
 async def usuarios():
@@ -755,6 +781,7 @@ async def usuarios():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("👥 Gestión de Usuarios", contenido, "usuarios"))
+
 # ------------------------------------------------------------
 # PANEL DE ADMINISTRACIÓN (admin) — CRUD interactivo
 # ------------------------------------------------------------
@@ -765,7 +792,6 @@ async def admin():
 
     <!-- Tabler Icons CDN -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
-
     <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -1740,7 +1766,6 @@ async def mis_tickets():
         }
 
         async function enviarReporte(ticketId) {
-            // Remover modal previo si existe
             const prev = document.getElementById('modalReporte');
             if (prev) prev.remove();
 
@@ -1779,7 +1804,6 @@ async def mis_tickets():
             const res = await fetchAuth('/api/tickets/' + id + '/report', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reporte }) });
             if (res.ok) {
                 document.getElementById('modalReporte').remove();
-                // Mostrar confirmación breve
                 const toast = document.createElement('div');
                 toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
                 toast.textContent = '✅ Reporte enviado. Ticket completado.';
@@ -1797,17 +1821,14 @@ async def mis_tickets():
     """
     return HTMLResponse(content=pagina_con_menu("🎫 Mis Tickets", contenido, "mis-tickets"))
 
-
-# ── PANEL DE ASIGNACIÓN POR CLUSTER ────────────────────────────────────────
+# ------------------------------------------------------------
+# PANEL DE ASIGNACIÓN POR CLUSTER (CORREGIDO, SIN DEPENDENCIAS)
+# ------------------------------------------------------------
 @router.get("/app/cluster", response_class=HTMLResponse)
 async def panel_cluster():
-
     contenido = """
     <div id="resumenCluster" style="display:none; background:var(--color-background-secondary); border-radius:var(--border-radius-lg); padding:16px; margin-bottom:20px;"></div>
-
     <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; align-items:start;">
-
-        <!-- Columna 1: Técnicos -->
         <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:16px;">
             <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">🔧 Técnicos</div>
             <div style="margin-bottom:8px; display:flex; gap:6px;">
@@ -1816,8 +1837,6 @@ async def panel_cluster():
             </div>
             <div id="listaTecnicos" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
         </div>
-
-        <!-- Columna 2: Actividades -->
         <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:16px;">
             <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">🎯 Actividades</div>
             <div style="margin-bottom:8px; display:flex; gap:6px;">
@@ -1826,8 +1845,6 @@ async def panel_cluster():
             </div>
             <div id="listaActividades" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
         </div>
-
-        <!-- Columna 3: Unidades -->
         <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:16px;">
             <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">🚛 Unidades</div>
             <div style="margin-bottom:8px; display:flex; gap:6px;">
@@ -1838,15 +1855,12 @@ async def panel_cluster():
             <div id="listaUnidades" style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
         </div>
     </div>
-
-    <!-- Resumen y botón -->
     <div style="margin-top:20px; background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:20px;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
             <div id="contadorResumen" style="font-size:13px; color:var(--color-text-secondary);">Selecciona técnicos, actividades y unidades</div>
             <button id="btnAsignar" onclick="ejecutarAsignacion()" style="padding:12px 32px; font-size:0.95rem; font-weight:600; background:linear-gradient(135deg,var(--carrier-blue),var(--carrier-accent)); color:white; border:none; border-radius:10px; cursor:pointer;">⚡ Asignar Cluster</button>
         </div>
     </div>
-
     <script>
         const fetchAuth = window.fetchAuth;
         let todosTecnicos = [], todasActividades = [], todasUnidades = [];
@@ -1907,7 +1921,6 @@ async def panel_cluster():
             document.getElementById('listaTecnicos').innerHTML = todosTecnicos.map(t => checkItem('tecnicos', t.username)).join('');
             document.getElementById('listaActividades').innerHTML = todasActividades.map(a => checkItem('actividades', a.nombre)).join('');
 
-            // Filtro por lote
             lotes = [...new Set(todasUnidades.map(u => u.id_lote).filter(Boolean))].sort();
             let filtroHtml = '<select onchange="filtrarPorLote(this.value)" style="width:100%;margin-bottom:6px;font-size:12px;padding:5px;"><option value="">— Todos los lotes —</option>';
             lotes.forEach(l => filtroHtml += `<option value="${l}">${l}</option>`);
@@ -1951,13 +1964,11 @@ async def panel_cluster():
                 : `<div style="color:var(--color-text-danger);font-weight:500;">❌ Error: ${data.detail || 'No se pudo completar'}</div>`;
 
             if (res.ok) {
-                // Toast
                 const toast = document.createElement('div');
                 toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
                 toast.textContent = `✅ ${data.creadas} asignaciones creadas correctamente.`;
                 document.body.appendChild(toast);
                 setTimeout(() => toast.remove(), 4000);
-                // Limpiar selección
                 limpiarTodos('tecnicos'); limpiarTodos('actividades'); limpiarTodos('unidades');
                 actualizarContador();
             }
@@ -1967,3 +1978,629 @@ async def panel_cluster():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("⚡ Asignación por Cluster", contenido, "cluster"))
+
+
+# ------------------------------------------------------------
+# ASISTENCIA – PANEL ADMIN: genera QR con geocoordenadas fijas
+# ------------------------------------------------------------
+@router.get("/app/asistencia", response_class=HTMLResponse)
+async def asistencia_admin():
+    contenido = """
+    <script>if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; }</script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+
+    <!-- Configuración de geoposición fija -->
+    <div class="evidencia-info" style="margin-bottom:20px;">
+        <b>📍 Geoposición fija del QR</b><br>
+        <span style="font-size:0.85rem;">Define las coordenadas del lugar de trabajo. El técnico deberá estar dentro del radio permitido al escanear.</span>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:20px;">
+        <div>
+            <label style="font-size:0.82rem; font-weight:600; color:#374151;">Latitud fija</label>
+            <input type="number" id="latFija" step="0.000001" value="32.5027" placeholder="Ej: 32.5027">
+        </div>
+        <div>
+            <label style="font-size:0.82rem; font-weight:600; color:#374151;">Longitud fija</label>
+            <input type="number" id="lonFija" step="0.000001" value="-117.0037" placeholder="Ej: -117.0037">
+        </div>
+        <div>
+            <label style="font-size:0.82rem; font-weight:600; color:#374151;">Radio permitido (metros)</label>
+            <input type="number" id="radioMetros" value="200" min="10" max="5000">
+        </div>
+    </div>
+
+    <div style="display:flex; gap:12px; margin-bottom:28px; flex-wrap:wrap;">
+        <button class="btn-primary" style="width:auto; padding:12px 24px;" onclick="generarQR()">🔄 Generar QR de Asistencia</button>
+        <button class="btn-warning" style="width:auto; padding:12px 24px;" onclick="usarUbicacionActual()">📡 Usar mi ubicación actual</button>
+    </div>
+
+    <!-- QR generado -->
+    <div id="qrSection" style="display:none; margin-bottom:32px;">
+        <div class="section-title">📲 QR para Escanear</div>
+        <div style="display:flex; gap:32px; align-items:flex-start; flex-wrap:wrap;">
+            <div style="background:white; padding:24px; border-radius:16px; box-shadow:0 4px 20px rgba(0,43,91,0.1); text-align:center;">
+                <div id="qrCanvas"></div>
+                <p style="font-size:0.78rem; color:#6b7280; margin-top:12px;">Válido por <b id="qrTimer">05:00</b></p>
+                <button class="btn-primary" style="width:auto; padding:10px 20px; font-size:0.85rem; margin-top:8px;" onclick="generarQR()">🔁 Regenerar</button>
+            </div>
+            <div style="flex:1; min-width:220px;">
+                <div class="inv-info-bar" style="margin-bottom:12px;">📍 Punto de asistencia configurado</div>
+                <p style="font-size:0.9rem;"><b>Lat:</b> <span id="qrLatLabel"></span></p>
+                <p style="font-size:0.9rem;"><b>Lon:</b> <span id="qrLonLabel"></span></p>
+                <p style="font-size:0.9rem;"><b>Radio:</b> <span id="qrRadioLabel"></span> m</p>
+                <div id="mapaLink" style="margin-top:8px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Historial de registros de asistencia -->
+    <div class="section-title">📋 Registros de Asistencia del Día</div>
+    <div style="display:flex; gap:12px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
+        <input type="date" id="fechaFiltro" style="width:auto; margin-bottom:0;" onchange="cargarRegistros()">
+        <button class="btn-primary" style="width:auto; padding:10px 20px; font-size:0.85rem;" onclick="cargarRegistros()">🔄 Actualizar</button>
+        <button class="btn-success" style="width:auto; padding:10px 20px; font-size:0.85rem;" onclick="exportarCSV()">📥 Exportar CSV</button>
+    </div>
+    <div id="tablaAsistencia" style="overflow-x:auto;"></div>
+
+    <script>
+        let qrInterval = null;
+        let timerInterval = null;
+        let segundosRestantes = 0;
+
+        // Poner fecha de hoy por defecto
+        document.getElementById('fechaFiltro').value = new Date().toISOString().slice(0, 10);
+        cargarRegistros();
+
+        function usarUbicacionActual() {
+            if (!navigator.geolocation) return alert('Tu navegador no soporta geolocalización.');
+            navigator.geolocation.getCurrentPosition(pos => {
+                document.getElementById('latFija').value = pos.coords.latitude.toFixed(6);
+                document.getElementById('lonFija').value = pos.coords.longitude.toFixed(6);
+                alert('✅ Coordenadas actualizadas con tu posición actual.');
+            }, () => alert('No se pudo obtener la ubicación.'));
+        }
+
+        function generarQR() {
+            const lat = parseFloat(document.getElementById('latFija').value);
+            const lon = parseFloat(document.getElementById('lonFija').value);
+            const radio = parseInt(document.getElementById('radioMetros').value);
+            if (isNaN(lat) || isNaN(lon) || isNaN(radio)) return alert('Completa todos los campos de configuración.');
+
+            const token = btoa(`asistencia:${lat}:${lon}:${radio}:${Date.now()}`);
+            const url = `${window.location.origin}/app/checkin?token=${encodeURIComponent(token)}&lat=${lat}&lon=${lon}&radio=${radio}`;
+
+            document.getElementById('qrCanvas').innerHTML = '';
+            new QRCode(document.getElementById('qrCanvas'), {
+                text: url,
+                width: 220,
+                height: 220,
+                colorDark: '#002B5B',
+                colorLight: '#ffffff',
+                correctLevel: QRCode.CorrectLevel.H
+            });
+
+            document.getElementById('qrLatLabel').textContent = lat;
+            document.getElementById('qrLonLabel').textContent = lon;
+            document.getElementById('qrRadioLabel').textContent = radio;
+            document.getElementById('mapaLink').innerHTML = `<a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" style="color:#0057A8; font-size:0.85rem;">🗺 Ver en Google Maps</a>`;
+            document.getElementById('qrSection').style.display = 'block';
+
+            // Timer de 5 minutos
+            if (timerInterval) clearInterval(timerInterval);
+            segundosRestantes = 300;
+            actualizarTimer();
+            timerInterval = setInterval(() => {
+                segundosRestantes--;
+                actualizarTimer();
+                if (segundosRestantes <= 0) {
+                    clearInterval(timerInterval);
+                    document.getElementById('qrCanvas').innerHTML = '<p style="color:#dc2626; font-weight:600;">⏱ QR expirado. Regenera.</p>';
+                }
+            }, 1000);
+        }
+
+        function actualizarTimer() {
+            const m = String(Math.floor(segundosRestantes / 60)).padStart(2, '0');
+            const s = String(segundosRestantes % 60).padStart(2, '0');
+            const el = document.getElementById('qrTimer');
+            if (el) el.textContent = m + ':' + s;
+        }
+
+        async function cargarRegistros() {
+            const fecha = document.getElementById('fechaFiltro').value;
+            try {
+                const res = await fetchAuth(`/api/asistencia/registros?fecha=${fecha}`);
+                if (!res.ok) { document.getElementById('tablaAsistencia').innerHTML = '<p style="color:#6b7280;">Sin registros para esta fecha.</p>'; return; }
+                const data = await res.json();
+                if (!data.length) { document.getElementById('tablaAsistencia').innerHTML = '<p style="color:#6b7280; padding:12px;">No hay registros para esta fecha.</p>'; return; }
+                let html = `<table><thead><tr>
+                    <th>#</th><th>Técnico</th><th>Hora Entrada</th><th>Latitud</th><th>Longitud</th><th>Distancia</th><th>Estado</th>
+                </tr></thead><tbody>`;
+                data.forEach((r, i) => {
+                    const estadoBadge = r.dentro_radio
+                        ? '<span class="badge" style="background:#dcfce7; color:#16a34a;">✅ Dentro</span>'
+                        : '<span class="badge" style="background:#fee2e2; color:#dc2626;">❌ Fuera</span>';
+                    html += `<tr>
+                        <td>${i+1}</td>
+                        <td><b>${r.username}</b></td>
+                        <td>${r.hora}</td>
+                        <td>${r.lat_tecnico}</td>
+                        <td>${r.lon_tecnico}</td>
+                        <td>${r.distancia_m} m</td>
+                        <td>${estadoBadge}</td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+                document.getElementById('tablaAsistencia').innerHTML = html;
+            } catch (e) {
+                document.getElementById('tablaAsistencia').innerHTML = '<p style="color:#dc2626;">Error al cargar registros.</p>';
+            }
+        }
+
+        function exportarCSV() {
+            const tabla = document.querySelector('#tablaAsistencia table');
+            if (!tabla) return alert('No hay datos para exportar.');
+            let csv = '';
+            tabla.querySelectorAll('tr').forEach(row => {
+                const cols = [...row.querySelectorAll('th, td')].map(c => '"' + c.innerText.replace(/"/g, '""') + '"');
+                csv += cols.join(',') + '\\n';
+            });
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `asistencia_${document.getElementById('fechaFiltro').value}.csv`;
+            a.click();
+        }
+    </script>
+    """
+    return HTMLResponse(content=pagina_con_menu("📍 Control de Asistencia", contenido, "asistencia"))
+
+
+# ------------------------------------------------------------
+# CHECKIN – PÁGINA DEL TÉCNICO: escanea QR y registra ubicación
+# ------------------------------------------------------------
+@router.get("/app/checkin", response_class=HTMLResponse)
+async def checkin_tecnico():
+    contenido = """
+    <script>if (window.role !== 'tecnico') { window.location.href = '/app/dashboard'; }</script>
+
+    <div style="max-width:480px; margin:0 auto;">
+
+        <!-- Estado inicial -->
+        <div id="estadoInicial">
+            <div class="evidencia-info" style="margin-bottom:20px; text-align:center;">
+                <div style="font-size:3rem; margin-bottom:8px;">📍</div>
+                <b style="font-size:1.1rem;">Registro de Asistencia</b><br>
+                <span style="font-size:0.88rem;">Escanea el código QR para registrar tu entrada.</span>
+            </div>
+
+            <!-- Cámara para escanear QR -->
+            <div style="background:white; border-radius:16px; padding:20px; box-shadow:0 4px 16px rgba(0,43,91,0.1); margin-bottom:20px; text-align:center;">
+                <div class="section-title" style="margin-top:0;">📷 Escanear QR</div>
+                <video id="qrVideo" style="width:100%; border-radius:10px; max-height:280px; background:#000;" autoplay playsinline></video>
+                <canvas id="qrCanvasHidden" style="display:none;"></canvas>
+                <p id="scanStatus" style="font-size:0.85rem; color:#6b7280; margin-top:8px;">Iniciando cámara...</p>
+                <button class="btn-primary" style="margin-top:10px;" onclick="iniciarCamara()">🔄 Activar Cámara</button>
+            </div>
+
+            <!-- O bien, si ya viene con token en URL -->
+            <div id="tokenUrlSection" style="display:none; background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px; padding:16px; margin-bottom:20px; text-align:center;">
+                <p style="font-size:0.9rem; margin-bottom:12px;">✅ QR detectado desde enlace</p>
+                <button class="btn-primary" onclick="procesarDesdeURL()">📍 Registrar mi Asistencia</button>
+            </div>
+        </div>
+
+        <!-- Estado de procesamiento -->
+        <div id="estadoProcesando" style="display:none; text-align:center; padding:40px 20px;">
+            <div style="font-size:3rem; margin-bottom:12px;">⏳</div>
+            <p style="font-weight:600; color:#374151;">Obteniendo tu ubicación...</p>
+            <p style="font-size:0.85rem; color:#6b7280;">Asegúrate de tener el GPS activado.</p>
+        </div>
+
+        <!-- Resultado -->
+        <div id="estadoResultado" style="display:none; text-align:center; padding:20px;">
+        </div>
+
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <script>
+        let streamCamera = null;
+        let scanLoop = null;
+        let qrParams = null;
+
+        // Revisar si ya vienen parámetros en la URL
+        window.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('lat') && params.has('lon') && params.has('radio')) {
+                qrParams = {
+                    lat: parseFloat(params.get('lat')),
+                    lon: parseFloat(params.get('lon')),
+                    radio: parseInt(params.get('radio'))
+                };
+                document.getElementById('tokenUrlSection').style.display = 'block';
+            } else {
+                iniciarCamara();
+            }
+        });
+
+        function iniciarCamara() {
+            document.getElementById('scanStatus').textContent = 'Solicitando acceso a la cámara...';
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+                .then(stream => {
+                    streamCamera = stream;
+                    const video = document.getElementById('qrVideo');
+                    video.srcObject = stream;
+                    video.play();
+                    document.getElementById('scanStatus').textContent = '🔍 Apunta al código QR...';
+                    scanLoop = setInterval(() => escanearFrame(), 400);
+                })
+                .catch(() => {
+                    document.getElementById('scanStatus').textContent = '⚠️ No se pudo acceder a la cámara. Usa el enlace directo del QR.';
+                });
+        }
+
+        function escanearFrame() {
+            const video = document.getElementById('qrVideo');
+            const canvas = document.getElementById('qrCanvasHidden');
+            if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height);
+            if (code) {
+                clearInterval(scanLoop);
+                if (streamCamera) streamCamera.getTracks().forEach(t => t.stop());
+                try {
+                    const url = new URL(code.data);
+                    const p = url.searchParams;
+                    qrParams = {
+                        lat: parseFloat(p.get('lat')),
+                        lon: parseFloat(p.get('lon')),
+                        radio: parseInt(p.get('radio'))
+                    };
+                    if (isNaN(qrParams.lat) || isNaN(qrParams.lon)) throw new Error('QR inválido');
+                    document.getElementById('scanStatus').textContent = '✅ QR leído correctamente';
+                    procesarCheckin();
+                } catch {
+                    document.getElementById('scanStatus').textContent = '❌ QR no reconocido. Intenta de nuevo.';
+                    scanLoop = setInterval(() => escanearFrame(), 400);
+                }
+            }
+        }
+
+        function procesarDesdeURL() {
+            if (!qrParams) return alert('No se detectaron parámetros del QR.');
+            procesarCheckin();
+        }
+
+        function procesarCheckin() {
+            document.getElementById('estadoInicial').style.display = 'none';
+            document.getElementById('estadoProcesando').style.display = 'block';
+
+            if (!navigator.geolocation) {
+                mostrarResultado(false, 'Tu navegador no soporta geolocalización.');
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(
+                pos => {
+                    const latTec = pos.coords.latitude;
+                    const lonTec = pos.coords.longitude;
+                    const distancia = calcularDistancia(latTec, lonTec, qrParams.lat, qrParams.lon);
+                    const dentroRadio = distancia <= qrParams.radio;
+                    enviarRegistro(latTec, lonTec, distancia, dentroRadio);
+                },
+                err => {
+                    mostrarResultado(false, 'No se pudo obtener tu ubicación GPS. Activa la localización e intenta de nuevo.');
+                },
+                { enableHighAccuracy: true, timeout: 10000 }
+            );
+        }
+
+        async function enviarRegistro(latTec, lonTec, distancia, dentroRadio) {
+            try {
+                const res = await fetchAuth('/api/asistencia/registrar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        lat_fija: qrParams.lat,
+                        lon_fija: qrParams.lon,
+                        radio: qrParams.radio,
+                        lat_tecnico: latTec,
+                        lon_tecnico: lonTec,
+                        distancia_m: Math.round(distancia),
+                        dentro_radio: dentroRadio
+                    })
+                });
+                const data = await res.json();
+                mostrarResultado(dentroRadio, data.mensaje || (dentroRadio ? 'Asistencia registrada.' : 'Estás fuera del área permitida.'), latTec, lonTec, Math.round(distancia));
+            } catch {
+                mostrarResultado(false, 'Error al conectar con el servidor. Verifica tu conexión.');
+            }
+        }
+
+        function mostrarResultado(exito, mensaje, lat, lon, distancia) {
+            document.getElementById('estadoProcesando').style.display = 'none';
+            const el = document.getElementById('estadoResultado');
+            el.style.display = 'block';
+            const ahora = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+            const iconoGrande = exito ? '✅' : '❌';
+            const color = exito ? '#16a34a' : '#dc2626';
+            const bg = exito ? '#dcfce7' : '#fee2e2';
+            const border = exito ? '#86efac' : '#fca5a5';
+            el.innerHTML = `
+                <div style="background:${bg}; border:2px solid ${border}; border-radius:20px; padding:32px 24px;">
+                    <div style="font-size:4rem; margin-bottom:12px;">${iconoGrande}</div>
+                    <h2 style="color:${color}; font-size:1.4rem; margin-bottom:8px;">${exito ? '¡Asistencia Registrada!' : 'No se pudo registrar'}</h2>
+                    <p style="color:#374151; font-size:0.95rem; margin-bottom:16px;">${mensaje}</p>
+                    ${lat ? `<div style="background:white; border-radius:12px; padding:12px; font-size:0.85rem; color:#374151; margin-bottom:16px; text-align:left;">
+                        <p>🕐 <b>Hora:</b> ${ahora}</p>
+                        <p>👤 <b>Técnico:</b> ${window.username}</p>
+                        <p>📍 <b>Tu ubicación:</b> ${lat.toFixed(5)}, ${lon.toFixed(5)}</p>
+                        <p>📏 <b>Distancia al punto:</b> ${distancia} m</p>
+                    </div>` : ''}
+                    <button class="btn-primary" onclick="window.location.href='/app/mis-tareas'">🏠 Ir a Mis Tareas</button>
+                </div>`;
+        }
+
+        // Haversine: distancia en metros entre dos coordenadas
+        function calcularDistancia(lat1, lon1, lat2, lon2) {
+            const R = 6371000;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon/2) * Math.sin(dLon/2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+    </script>
+    """
+    return HTMLResponse(content=pagina_con_menu("📍 Registrar Asistencia", contenido, "checkin"))
+
+
+# ------------------------------------------------------------
+# HORARIOS – ADMIN: configura horario semanal por técnico
+# ------------------------------------------------------------
+@router.get("/app/horarios", response_class=HTMLResponse)
+async def horarios_admin():
+    contenido = """
+    <script>if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; }</script>
+
+    <!-- Selector de semana -->
+    <div style="display:flex; gap:16px; align-items:center; margin-bottom:20px; flex-wrap:wrap;">
+        <div>
+            <label style="font-size:0.82rem; font-weight:600; color:#374151;">Semana (Lunes)</label>
+            <input type="date" id="semanaInicio" style="width:auto; margin-bottom:0;" onchange="cargarHorarios()">
+        </div>
+        <button class="btn-primary" style="width:auto; padding:12px 24px;" onclick="guardarHorarios()">💾 Guardar Horarios</button>
+        <button class="btn-warning" style="width:auto; padding:12px 24px;" onclick="exportarHorarios()">📥 Exportar Excel</button>
+    </div>
+
+    <div class="evidencia-info" style="margin-bottom:16px; font-size:0.85rem;">
+        <b>📋 Instrucciones:</b> Configura ENTRADA y SALIDA por día para cada técnico. Deja en blanco si descansa. El sistema calculará automáticamente el retardo al comparar con el check-in QR.
+    </div>
+
+    <!-- Tabla de horarios -->
+    <div style="overflow-x:auto; margin-bottom:32px;">
+        <div id="tablaHorarios"></div>
+    </div>
+
+    <!-- Resumen de asistencia de la semana -->
+    <div class="section-title">📊 Resumen de Asistencia de la Semana</div>
+    <div id="resumenAsistencia" style="overflow-x:auto;"></div>
+
+    <script>
+        const DIAS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+
+        // Poner lunes de la semana actual por defecto
+        const hoy = new Date();
+        const diaSemana = hoy.getDay();
+        const diffLunes = diaSemana === 0 ? -6 : 1 - diaSemana;
+        const lunes = new Date(hoy);
+        lunes.setDate(hoy.getDate() + diffLunes);
+        document.getElementById('semanaInicio').value = lunes.toISOString().slice(0, 10);
+
+        let tecnicosData = [];
+
+        async function init() {
+            const res = await fetchAuth('/api/usuarios/');
+            const usuarios = await res.json();
+            tecnicosData = usuarios.filter(u => u.role === 'tecnico');
+            cargarHorarios();
+        }
+
+        function fechasDeSemana(lunesStr) {
+            const fechas = [];
+            const base = new Date(lunesStr + 'T12:00:00');
+            for (let i = 0; i < 6; i++) {
+                const d = new Date(base);
+                d.setDate(base.getDate() + i);
+                fechas.push(d.toISOString().slice(0, 10));
+            }
+            return fechas;
+        }
+
+        async function cargarHorarios() {
+            const semana = document.getElementById('semanaInicio').value;
+            if (!semana) return;
+            const fechas = fechasDeSemana(semana);
+
+            // Intentar cargar horarios guardados
+            let horariosGuardados = {};
+            try {
+                const res = await fetchAuth('/api/horarios/?semana=' + semana);
+                if (res.ok) {
+                    const data = await res.json();
+                    data.forEach(h => {
+                        const key = h.username + '_' + h.fecha;
+                        horariosGuardados[key] = h;
+                    });
+                }
+            } catch(e) {}
+
+            // Construir tabla
+            let html = `<table>
+                <thead>
+                    <tr>
+                        <th rowspan="2" style="min-width:160px;">Técnico</th>`;
+
+            fechas.forEach((f, i) => {
+                const [anio, mes, dia] = f.split('-');
+                html += `<th colspan="2" style="text-align:center; background:#f0f4ff;">${DIAS[i]}<br><span style="font-weight:400; font-size:0.78rem;">${dia}/${mes}</span></th>`;
+            });
+
+            html += `</tr><tr>`;
+            fechas.forEach(() => {
+                html += `<th style="font-size:0.75rem; color:#6b7280; background:#f8fafc;">Entrada</th>
+                         <th style="font-size:0.75rem; color:#6b7280; background:#f8fafc;">Salida</th>`;
+            });
+            html += `</tr></thead><tbody>`;
+
+            tecnicosData.forEach(tec => {
+                html += `<tr><td><b>${tec.username}</b></td>`;
+                fechas.forEach(fecha => {
+                    const key = tec.username + '_' + fecha;
+                    const h = horariosGuardados[key] || {};
+                    const entrada = h.hora_entrada || '';
+                    const salida = h.hora_salida || '';
+                    html += `<td style="padding:6px;">
+                        <input type="time" id="e_${tec.username}_${fecha}"
+                            value="${entrada}"
+                            style="width:100px; margin-bottom:0; padding:6px; font-size:0.82rem;"
+                            ${h.estado === 'vacaciones' ? 'disabled placeholder="VAC"' : ''}
+                            ${h.estado === 'descanso' ? 'disabled' : ''}>
+                    </td>
+                    <td style="padding:6px;">
+                        <input type="time" id="s_${tec.username}_${fecha}"
+                            value="${salida}"
+                            style="width:100px; margin-bottom:0; padding:6px; font-size:0.82rem;"
+                            ${h.estado === 'vacaciones' ? 'disabled' : ''}
+                            ${h.estado === 'descanso' ? 'disabled' : ''}>
+                    </td>`;
+                });
+                html += `</tr>`;
+            });
+
+            html += `</tbody></table>`;
+            document.getElementById('tablaHorarios').innerHTML = html;
+
+            cargarResumenAsistencia(semana, fechas);
+        }
+
+        async function guardarHorarios() {
+            const semana = document.getElementById('semanaInicio').value;
+            const fechas = fechasDeSemana(semana);
+            const registros = [];
+
+            tecnicosData.forEach(tec => {
+                fechas.forEach(fecha => {
+                    const entrada = document.getElementById('e_' + tec.username + '_' + fecha)?.value || '';
+                    const salida  = document.getElementById('s_' + tec.username + '_' + fecha)?.value || '';
+                    registros.push({
+                        username: tec.username,
+                        fecha: fecha,
+                        hora_entrada: entrada,
+                        hora_salida: salida,
+                        semana: semana
+                    });
+                });
+            });
+
+            const res = await fetchAuth('/api/horarios/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(registros)
+            });
+
+            if (res.ok) {
+                const toast = document.createElement('div');
+                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
+                toast.textContent = '✅ Horarios guardados correctamente';
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 3000);
+                cargarResumenAsistencia(semana, fechasDeSemana(semana));
+            } else {
+                alert('❌ Error al guardar. Verifica la conexión.');
+            }
+        }
+
+        async function cargarResumenAsistencia(semana, fechas) {
+            try {
+                const res = await fetchAuth('/api/horarios/resumen?semana=' + semana);
+                if (!res.ok) { document.getElementById('resumenAsistencia').innerHTML = '<p style="color:#6b7280; padding:12px;">Sin datos de asistencia aún.</p>'; return; }
+                const data = await res.json();
+                if (!data.length) { document.getElementById('resumenAsistencia').innerHTML = '<p style="color:#6b7280; padding:12px;">Sin registros de check-in para esta semana.</p>'; return; }
+
+                let html = `<table><thead><tr>
+                    <th>Técnico</th>`;
+                fechas.forEach((f, i) => {
+                    const [,mes,dia] = f.split('-');
+                    html += `<th style="text-align:center;">${DIAS[i]}<br><span style="font-size:0.75rem;font-weight:400;">${dia}/${mes}</span></th>`;
+                });
+                html += `</tr></thead><tbody>`;
+
+                // Agrupar por técnico
+                const porTecnico = {};
+                data.forEach(r => {
+                    if (!porTecnico[r.username]) porTecnico[r.username] = {};
+                    porTecnico[r.username][r.fecha] = r;
+                });
+
+                Object.entries(porTecnico).forEach(([username, dias]) => {
+                    html += `<tr><td><b>${username}</b></td>`;
+                    fechas.forEach(fecha => {
+                        const r = dias[fecha];
+                        if (!r) {
+                            html += `<td style="text-align:center; color:#9ca3af;">—</td>`;
+                        } else if (r.retardo_min > 0) {
+                            html += `<td style="text-align:center;">
+                                <span class="badge" style="background:#fef3c7; color:#92400e;">⏱ +${r.retardo_min} min</span>
+                            </td>`;
+                        } else {
+                            html += `<td style="text-align:center;">
+                                <span class="badge" style="background:#dcfce7; color:#16a34a;">✅ ${r.hora_checkin}</span>
+                            </td>`;
+                        }
+                    });
+                    html += `</tr>`;
+                });
+
+                html += `</tbody></table>`;
+                document.getElementById('resumenAsistencia').innerHTML = html;
+            } catch(e) {
+                document.getElementById('resumenAsistencia').innerHTML = '<p style="color:#dc2626;">Error al cargar resumen.</p>';
+            }
+        }
+
+        function exportarHorarios() {
+            const tabla = document.querySelector('#tablaHorarios table');
+            if (!tabla) return;
+            let csv = 'Técnico';
+            const semana = document.getElementById('semanaInicio').value;
+            const fechas = fechasDeSemana(semana);
+            fechas.forEach((f,i) => { csv += `,${DIAS[i]} Entrada,${DIAS[i]} Salida`; });
+            csv += '\\n';
+            tecnicosData.forEach(tec => {
+                csv += tec.username;
+                fechas.forEach(fecha => {
+                    const e = document.getElementById('e_' + tec.username + '_' + fecha)?.value || '';
+                    const s = document.getElementById('s_' + tec.username + '_' + fecha)?.value || '';
+                    csv += `,${e},${s}`;
+                });
+                csv += '\\n';
+            });
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'horarios_semana_' + semana + '.csv';
+            a.click();
+        }
+
+        init();
+    </script>
+    """
+    return HTMLResponse(content=pagina_con_menu("🗓 Horarios Semanales", contenido, "horarios"))
