@@ -189,6 +189,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/unidades', label: '📸 Registro de Unidades' }},
                     {{ href: '/app/usuarios', label: '👥 Gestión de Usuarios' }},
                     {{ href: '/app/cluster', label: '⚡ Asignación por Cluster' }},
+                    {{ href: '/app/horarios', label: '🗓 Horarios Semanales' }},
                     {{ href: '/app/asistencia', label: '📍 Control de Asistencia' }},
                     {{ href: '/app/admin', label: '🛠 Panel de Administración' }},
                 ];
@@ -199,6 +200,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/inventario', label: '📦 Inventarios' }},
                     {{ href: '/app/unidades', label: '📸 Registro de Unidades' }},
                     {{ href: '/app/usuarios', label: '👥 Gestión de Usuarios' }},
+                    {{ href: '/app/horarios', label: '🗓 Horarios Semanales' }},
                     {{ href: '/app/asistencia', label: '📍 Control de Asistencia' }},
                 ];
                 const techMenu = [
@@ -2360,3 +2362,245 @@ async def checkin_tecnico():
     return HTMLResponse(content=pagina_con_menu("📍 Registrar Asistencia", contenido, "checkin"))
 
 
+# ------------------------------------------------------------
+# HORARIOS – ADMIN: configura horario semanal por técnico
+# ------------------------------------------------------------
+@router.get("/app/horarios", response_class=HTMLResponse)
+async def horarios_admin():
+    contenido = """
+    <script>if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; }</script>
+
+    <!-- Selector de semana -->
+    <div style="display:flex; gap:16px; align-items:center; margin-bottom:20px; flex-wrap:wrap;">
+        <div>
+            <label style="font-size:0.82rem; font-weight:600; color:#374151;">Semana (Lunes)</label>
+            <input type="date" id="semanaInicio" style="width:auto; margin-bottom:0;" onchange="cargarHorarios()">
+        </div>
+        <button class="btn-primary" style="width:auto; padding:12px 24px;" onclick="guardarHorarios()">💾 Guardar Horarios</button>
+        <button class="btn-warning" style="width:auto; padding:12px 24px;" onclick="exportarHorarios()">📥 Exportar Excel</button>
+    </div>
+
+    <div class="evidencia-info" style="margin-bottom:16px; font-size:0.85rem;">
+        <b>📋 Instrucciones:</b> Configura ENTRADA y SALIDA por día para cada técnico. Deja en blanco si descansa. El sistema calculará automáticamente el retardo al comparar con el check-in QR.
+    </div>
+
+    <!-- Tabla de horarios -->
+    <div style="overflow-x:auto; margin-bottom:32px;">
+        <div id="tablaHorarios"></div>
+    </div>
+
+    <!-- Resumen de asistencia de la semana -->
+    <div class="section-title">📊 Resumen de Asistencia de la Semana</div>
+    <div id="resumenAsistencia" style="overflow-x:auto;"></div>
+
+    <script>
+        const DIAS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+
+        // Poner lunes de la semana actual por defecto
+        const hoy = new Date();
+        const diaSemana = hoy.getDay();
+        const diffLunes = diaSemana === 0 ? -6 : 1 - diaSemana;
+        const lunes = new Date(hoy);
+        lunes.setDate(hoy.getDate() + diffLunes);
+        document.getElementById('semanaInicio').value = lunes.toISOString().slice(0, 10);
+
+        let tecnicosData = [];
+
+        async function init() {
+            const res = await fetchAuth('/api/usuarios/');
+            const usuarios = await res.json();
+            tecnicosData = usuarios.filter(u => u.role === 'tecnico');
+            cargarHorarios();
+        }
+
+        function fechasDeSemana(lunesStr) {
+            const fechas = [];
+            const base = new Date(lunesStr + 'T12:00:00');
+            for (let i = 0; i < 6; i++) {
+                const d = new Date(base);
+                d.setDate(base.getDate() + i);
+                fechas.push(d.toISOString().slice(0, 10));
+            }
+            return fechas;
+        }
+
+        async function cargarHorarios() {
+            const semana = document.getElementById('semanaInicio').value;
+            if (!semana) return;
+            const fechas = fechasDeSemana(semana);
+
+            // Intentar cargar horarios guardados
+            let horariosGuardados = {};
+            try {
+                const res = await fetchAuth('/api/horarios/?semana=' + semana);
+                if (res.ok) {
+                    const data = await res.json();
+                    data.forEach(h => {
+                        const key = h.username + '_' + h.fecha;
+                        horariosGuardados[key] = h;
+                    });
+                }
+            } catch(e) {}
+
+            // Construir tabla
+            let html = `<table>
+                <thead>
+                    <tr>
+                        <th rowspan="2" style="min-width:160px;">Técnico</th>`;
+
+            fechas.forEach((f, i) => {
+                const [anio, mes, dia] = f.split('-');
+                html += `<th colspan="2" style="text-align:center; background:#f0f4ff;">${DIAS[i]}<br><span style="font-weight:400; font-size:0.78rem;">${dia}/${mes}</span></th>`;
+            });
+
+            html += `</tr><tr>`;
+            fechas.forEach(() => {
+                html += `<th style="font-size:0.75rem; color:#6b7280; background:#f8fafc;">Entrada</th>
+                         <th style="font-size:0.75rem; color:#6b7280; background:#f8fafc;">Salida</th>`;
+            });
+            html += `</tr></thead><tbody>`;
+
+            tecnicosData.forEach(tec => {
+                html += `<tr><td><b>${tec.username}</b></td>`;
+                fechas.forEach(fecha => {
+                    const key = tec.username + '_' + fecha;
+                    const h = horariosGuardados[key] || {};
+                    const entrada = h.hora_entrada || '';
+                    const salida = h.hora_salida || '';
+                    html += `<td style="padding:6px;">
+                        <input type="time" id="e_${tec.username}_${fecha}"
+                            value="${entrada}"
+                            style="width:100px; margin-bottom:0; padding:6px; font-size:0.82rem;"
+                            ${h.estado === 'vacaciones' ? 'disabled placeholder="VAC"' : ''}
+                            ${h.estado === 'descanso' ? 'disabled' : ''}>
+                    </td>
+                    <td style="padding:6px;">
+                        <input type="time" id="s_${tec.username}_${fecha}"
+                            value="${salida}"
+                            style="width:100px; margin-bottom:0; padding:6px; font-size:0.82rem;"
+                            ${h.estado === 'vacaciones' ? 'disabled' : ''}
+                            ${h.estado === 'descanso' ? 'disabled' : ''}>
+                    </td>`;
+                });
+                html += `</tr>`;
+            });
+
+            html += `</tbody></table>`;
+            document.getElementById('tablaHorarios').innerHTML = html;
+
+            cargarResumenAsistencia(semana, fechas);
+        }
+
+        async function guardarHorarios() {
+            const semana = document.getElementById('semanaInicio').value;
+            const fechas = fechasDeSemana(semana);
+            const registros = [];
+
+            tecnicosData.forEach(tec => {
+                fechas.forEach(fecha => {
+                    const entrada = document.getElementById('e_' + tec.username + '_' + fecha)?.value || '';
+                    const salida  = document.getElementById('s_' + tec.username + '_' + fecha)?.value || '';
+                    registros.push({
+                        username: tec.username,
+                        fecha: fecha,
+                        hora_entrada: entrada,
+                        hora_salida: salida,
+                        semana: semana
+                    });
+                });
+            });
+
+            const res = await fetchAuth('/api/horarios/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(registros)
+            });
+
+            if (res.ok) {
+                const toast = document.createElement('div');
+                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
+                toast.textContent = '✅ Horarios guardados correctamente';
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 3000);
+                cargarResumenAsistencia(semana, fechasDeSemana(semana));
+            } else {
+                alert('❌ Error al guardar. Verifica la conexión.');
+            }
+        }
+
+        async function cargarResumenAsistencia(semana, fechas) {
+            try {
+                const res = await fetchAuth('/api/horarios/resumen?semana=' + semana);
+                if (!res.ok) { document.getElementById('resumenAsistencia').innerHTML = '<p style="color:#6b7280; padding:12px;">Sin datos de asistencia aún.</p>'; return; }
+                const data = await res.json();
+                if (!data.length) { document.getElementById('resumenAsistencia').innerHTML = '<p style="color:#6b7280; padding:12px;">Sin registros de check-in para esta semana.</p>'; return; }
+
+                let html = `<table><thead><tr>
+                    <th>Técnico</th>`;
+                fechas.forEach((f, i) => {
+                    const [,mes,dia] = f.split('-');
+                    html += `<th style="text-align:center;">${DIAS[i]}<br><span style="font-size:0.75rem;font-weight:400;">${dia}/${mes}</span></th>`;
+                });
+                html += `</tr></thead><tbody>`;
+
+                // Agrupar por técnico
+                const porTecnico = {};
+                data.forEach(r => {
+                    if (!porTecnico[r.username]) porTecnico[r.username] = {};
+                    porTecnico[r.username][r.fecha] = r;
+                });
+
+                Object.entries(porTecnico).forEach(([username, dias]) => {
+                    html += `<tr><td><b>${username}</b></td>`;
+                    fechas.forEach(fecha => {
+                        const r = dias[fecha];
+                        if (!r) {
+                            html += `<td style="text-align:center; color:#9ca3af;">—</td>`;
+                        } else if (r.retardo_min > 0) {
+                            html += `<td style="text-align:center;">
+                                <span class="badge" style="background:#fef3c7; color:#92400e;">⏱ +${r.retardo_min} min</span>
+                            </td>`;
+                        } else {
+                            html += `<td style="text-align:center;">
+                                <span class="badge" style="background:#dcfce7; color:#16a34a;">✅ ${r.hora_checkin}</span>
+                            </td>`;
+                        }
+                    });
+                    html += `</tr>`;
+                });
+
+                html += `</tbody></table>`;
+                document.getElementById('resumenAsistencia').innerHTML = html;
+            } catch(e) {
+                document.getElementById('resumenAsistencia').innerHTML = '<p style="color:#dc2626;">Error al cargar resumen.</p>';
+            }
+        }
+
+        function exportarHorarios() {
+            const tabla = document.querySelector('#tablaHorarios table');
+            if (!tabla) return;
+            let csv = 'Técnico';
+            const semana = document.getElementById('semanaInicio').value;
+            const fechas = fechasDeSemana(semana);
+            fechas.forEach((f,i) => { csv += `,${DIAS[i]} Entrada,${DIAS[i]} Salida`; });
+            csv += '\\n';
+            tecnicosData.forEach(tec => {
+                csv += tec.username;
+                fechas.forEach(fecha => {
+                    const e = document.getElementById('e_' + tec.username + '_' + fecha)?.value || '';
+                    const s = document.getElementById('s_' + tec.username + '_' + fecha)?.value || '';
+                    csv += `,${e},${s}`;
+                });
+                csv += '\\n';
+            });
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'horarios_semana_' + semana + '.csv';
+            a.click();
+        }
+
+        init();
+    </script>
+    """
+    return HTMLResponse(content=pagina_con_menu("🗓 Horarios Semanales", contenido, "horarios"))
