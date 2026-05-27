@@ -2604,3 +2604,5 @@ async def horarios_admin():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("🗓 Horarios Semanales", contenido, "horarios"))
+
+
