@@ -97,26 +97,35 @@ async def guardar_selfie(base64_image: str, username: str, fecha: str):
 # ==================== ENDPOINTS ====================
 @router.get("/api/asistencia/configuracion")
 async def get_configuracion():
+    """Obtiene la configuración actual de asistencia"""
     return _configuracion_asistencia
 
 
 @router.post("/api/asistencia/configuracion")
 async def set_configuracion(config: ConfiguracionAsistencia):
+    """Actualiza la configuración de asistencia"""
     global _configuracion_asistencia
     _configuracion_asistencia = config.dict()
-    return {"mensaje": "Configuración actualizada"}
+    return {"mensaje": "Configuración actualizada", "config": _configuracion_asistencia}
 
 
 @router.get("/api/asistencia/generar-qr")
 async def generar_qr(request: Request):
+    """Genera el QR de asistencia con la configuración actual"""
     config = _configuracion_asistencia
     token = generar_token_seguro(config["lat_fija"], config["lon_fija"], config["radio_metros"])
     qr_url = f"{str(request.base_url).rstrip('/')}/app/checkin?token={token}"
-    return {"qr_url": qr_url, "config": config, "expiracion_segundos": config["tiempo_expiracion"]}
+    print(f"QR generado: {qr_url}")  # Log para depuración
+    return {
+        "qr_url": qr_url, 
+        "config": config, 
+        "expiracion_segundos": config["tiempo_expiracion"]
+    }
 
 
 @router.post("/api/asistencia/registrar")
 async def registrar_asistencia(registro: RegistroAsistencia, request: Request):
+    """Registra la asistencia del técnico con validación de ubicación y selfie"""
     from db import execute_write
     
     # Validar token
@@ -197,6 +206,7 @@ async def registrar_asistencia(registro: RegistroAsistencia, request: Request):
 
 @router.get("/api/asistencia/registros")
 async def obtener_registros(fecha: Optional[str] = None):
+    """Obtiene los registros de asistencia para una fecha específica"""
     from db import execute_read
     
     if fecha:
