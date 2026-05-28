@@ -1,7 +1,16 @@
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
+# Importar módulos de asistencia
+from asistencia import router as asistencia_router
+from asistencia.horarios_routes import router as horarios_router
+from asistencia.templates import get_checkin_template, ASISTENCIA_STYLES
+
 router = APIRouter()
+
+# Incluir routers de asistencia
+router.include_router(asistencia_router)
+router.include_router(horarios_router)
 
 # ------------------------------------------------------------
 # ESTILOS GLOBALES PREMIUM (botones grandes y modales con scroll)
@@ -92,13 +101,60 @@ BASE_STYLE = """
     .modal-content { background: white; padding: 24px; border-radius: 16px; width: 90%; max-width: 500px; max-height: 80vh; overflow-y: auto; box-shadow: 0 12px 40px rgba(0,0,0,0.2); }
     .modal-content input { margin-bottom: 10px; }
     .modal-content .btn-primary, .modal-content .btn-danger, .modal-content .btn-success { margin-top: 8px; }
-    .hamburger {
-        display: none; position: fixed; top: 14px; left: 14px; z-index: 300;
-        background: var(--carrier-blue); color: white; border: none; border-radius: 10px;
-        width: 44px; height: 44px; font-size: 1.3rem; cursor: pointer;
-        box-shadow: 0 4px 12px rgba(0,43,91,0.35); align-items: center; justify-content: center;
-    }
+    .hamburger { display: none; position: fixed; top: 14px; left: 14px; z-index: 300; background: var(--carrier-blue); color: white; border: none; border-radius: 10px; width: 44px; height: 44px; font-size: 1.3rem; cursor: pointer; box-shadow: 0 4px 12px rgba(0,43,91,0.35); align-items: center; justify-content: center; }
     .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.45); z-index: 99; }
+    /* Estilos para la tabla de estatus mejorada */
+    .status-table-wrapper {
+        overflow-x: auto;
+        border-radius: 16px;
+        background: white;
+        box-shadow: 0 4px 20px rgba(0,43,91,0.08);
+    }
+    .status-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.75rem;
+        min-width: 1000px;
+    }
+    .status-table th {
+        background: linear-gradient(135deg, #002B5B, #0057A8);
+        color: white;
+        padding: 12px 8px;
+        text-align: center;
+        font-weight: 600;
+        font-size: 0.75rem;
+        border-right: 1px solid rgba(255,255,255,0.15);
+    }
+    .status-table th:last-child { border-right: none; }
+    .status-table td {
+        padding: 10px 8px;
+        text-align: center;
+        border-bottom: 1px solid #e5e7eb;
+    }
+    .status-table tbody tr:hover td { background: #e8f0fb; }
+    .status-table .lote-cell { font-weight: 700; color: #002B5B; background: #f8fafc; }
+    .status-table .unit-cell { font-family: monospace; font-weight: 600; }
+    .status-badge-complete {
+        display: inline-block;
+        width: 28px;
+        height: 28px;
+        line-height: 28px;
+        background: #16a34a;
+        color: white;
+        border-radius: 50%;
+        font-weight: bold;
+        font-size: 1rem;
+    }
+    .status-badge-pending {
+        display: inline-block;
+        width: 28px;
+        height: 28px;
+        line-height: 28px;
+        background: #f3f4f6;
+        color: #9ca3af;
+        border-radius: 50%;
+        font-size: 0.8rem;
+    }
     @media (max-width: 768px) {
         .main-header { font-size: 1.2rem; }
         .kpi-num { font-size: 1.6rem; }
@@ -247,6 +303,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
     </html>
     """
 
+
 # ------------------------------------------------------------
 # LOGIN
 # ------------------------------------------------------------
@@ -308,6 +365,7 @@ async def login():
     </html>
     """
 
+
 # ------------------------------------------------------------
 # DASHBOARD (solo admin/visor) - TABLA DE ESTADÍSTICAS MEJORADA
 # ------------------------------------------------------------
@@ -321,7 +379,7 @@ async def dashboard():
         <div id="pieChart" style="background:white; border-radius:16px; padding:20px; box-shadow:0 4px 12px rgba(0,43,91,0.08); min-height:420px;"></div>
     </div>
     <div class="section-title">📋 Estatus de Proceso por Unidad</div>
-    <div id="statusTable" style="overflow-x:auto; margin-bottom:32px;"></div>
+    <div id="statusTable" style="margin-bottom:32px;"></div>
     <div class="section-title">📦 Lotes y Series por Unidad</div>
     <div id="lotesContainer" style="margin-bottom:32px;"></div>
     <div class="section-title admin-only">📂 Descarga de Evidencias por Unidad</div>
@@ -356,21 +414,52 @@ async def dashboard():
                     Plotly.newPlot('pieChart', [{ values: [conteos.completada, conteos.en_proceso, conteos.pendiente], labels: ['Completadas', 'En Proceso', 'Pendientes'], marker: { colors: ['#16a34a', '#d97706', '#dc2626'] }, hole: 0.55, type: 'pie' }], { title: 'Distribución Global', paper_bgcolor: 'transparent', font: { family: 'Inter, sans-serif' } });
                     const unidadesRes = await fetchAuth('/api/unidades/'); const unidades = await unidadesRes.json();
                     if (unidades.length) {
-                        // Tabla de estatus con formato de tabla
                         const completadasSet = new Set(asignaciones.filter(a => a.estado === 'completada').map(a => a.unidad + '||' + a.actividad_id));
-                        let headers = '</table><th>LOTE</th><th>#Económico</th>';
-                        actividades.forEach(a => headers += `<th>${a}</th>`);
-                        headers += '</tr>';
-                        let body = '';
-                        unidades.forEach(u => {
-                            body += `<tr><td>${u.id_lote || ''}</td><td>${u.unit_number}</td>`;
+                        
+                        // TABLA DE ESTATUS MEJORADA
+                        let tableHtml = `
+                            <div class="status-table-wrapper">
+                                <table class="status-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 100px;">LOTE</th>
+                                            <th style="width: 100px;">#Económico</th>
+                                            ${actividades.map(a => `<th style="min-width: 65px;">${a}</th>`).join('')}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                        `;
+                        
+                        unidades.forEach((u, idx) => {
+                            const bgColor = idx % 2 === 0 ? 'white' : '#fafafa';
+                            tableHtml += `
+                                        <tr style="background: ${bgColor};">
+                                            <td class="lote-cell">${u.id_lote || '—'}</td>
+                                            <td class="unit-cell">${u.unit_number}</td>
+                            `;
                             actividades.forEach(act => {
                                 const completada = completadasSet.has(u.unit_number + '||' + act);
-                                body += `<td style="text-align:center; font-weight:bold;">${completada ? '✔' : '—'}</td>`;
+                                tableHtml += `
+                                            <td>
+                                                ${completada 
+                                                    ? '<span class="status-badge-complete">✓</span>' 
+                                                    : '<span class="status-badge-pending">—</span>'}
+                                            </td>
+                                `;
                             });
-                            body += '</tr>';
+                            tableHtml += `
+                                        </tr>
+                            `;
                         });
-                        document.getElementById('statusTable').innerHTML = `<table class="data-table" style="width:100%; border-collapse:collapse;">${headers}<tbody>${body}</tbody></table>`;
+                        
+                        tableHtml += `
+                                    </tbody>
+                                </table>
+                            </div>
+                        `;
+                        
+                        document.getElementById('statusTable').innerHTML = tableHtml;
+                        
                         // Lotes y series
                         const lotesMap = {};
                         unidades.forEach(u => {
@@ -386,7 +475,7 @@ async def dashboard():
                                     <table class="data-table" style="width:100%;">
                                         <thead><tr><th>#Económico</th>${Object.values(camposSeries).map(s => `<th>${s}</th>`).join('')}</tr></thead>
                                         <tbody>${units.map(u => `<tr><td>${u.unit_number}</td>${Object.keys(camposSeries).map(k => `<td>${u[k] || '—'}</td>`).join('')}</tr>`).join('')}</tbody>
-                                    ~
+                                    </table>
                                 </div>
                             </div>`;
                         }
@@ -403,6 +492,7 @@ async def dashboard():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("📊 Panel de Rendimiento Operativo", contenido, "dashboard"))
+
 
 # ------------------------------------------------------------
 # ASIGNACIONES (admin)
@@ -499,6 +589,7 @@ async def asignaciones():
     """
     return HTMLResponse(content=pagina_con_menu("🎯 Control de Asignaciones", contenido, "asignaciones"))
 
+
 # ------------------------------------------------------------
 # TICKETS (admin)
 # ------------------------------------------------------------
@@ -548,6 +639,7 @@ async def tickets():
     """
     return HTMLResponse(content=pagina_con_menu("🎫 Gestión de Tickets", contenido, "tickets"))
 
+
 # ------------------------------------------------------------
 # INVENTARIO (admin)
 # ------------------------------------------------------------
@@ -575,7 +667,7 @@ async def inventario():
             document.getElementById('infoBar').innerHTML = `🗄 Inventario Principal &nbsp;·&nbsp; ${datos.length} registros &nbsp;·&nbsp; ${columnas.length} columnas`;
             renderTabla();
         }
-        function renderTabla() { let html = '<table><thead><tr><th>#</th>'; columnas.forEach(c => html += `<th>${c}</th>`); html += '<th>Acción</th></tr></thead><tbody>'; datos.forEach((fila, idx) => { html += `<tr><td style="text-align:center;">${idx+1}</td>`; columnas.forEach(c => html += `<td><input type="text" value="${fila[c] || ''}" onchange="datos[${idx}]['${c}'] = this.value" style="margin:0;"></td>`); html += `<td><button class="btn-danger" onclick="eliminarFila(${idx})">🗑</button></td>`; }); html += '</tbody></table>'; document.getElementById('inventarioTable').innerHTML = html; }
+        function renderTabla() { let html = '<table class="data-table"><thead><tr><th>#</th>'; columnas.forEach(c => html += `<th>${c}</th>`); html += '<th>Acción</th></tr></thead><tbody>'; datos.forEach((fila, idx) => { html += `<tr><td style="text-align:center;">${idx+1}</td>`; columnas.forEach(c => html += `<td><input type="text" value="${fila[c] || ''}" onchange="datos[${idx}]['${c}'] = this.value" style="margin:0;"></td>`); html += `<td><button class="btn-danger" onclick="eliminarFila(${idx})">🗑</button></td>`; }); html += '</tbody></table>'; document.getElementById('inventarioTable').innerHTML = html; }
         function agregarFila() { datos.push(Object.fromEntries(columnas.map(c => [c, '']))); renderTabla(); }
         function eliminarFila(idx) { if (confirm('¿Eliminar fila?')) { datos.splice(idx,1); renderTabla(); } }
         async function guardarInventario() { await fetchAuth('/api/inventario/datos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos) }); alert('Inventario guardado'); }
@@ -589,6 +681,7 @@ async def inventario():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("📦 Gestión de Inventarios", contenido, "inventario"))
+
 
 # ------------------------------------------------------------
 # REGISTRO DE UNIDADES (admin)
@@ -610,7 +703,7 @@ async def unidades():
     <div id="unidadesList"></div>
     <script>
         const fetchAuth = window.fetchAuth;
-        async function cargarUnidades() { const res = await fetchAuth('/api/unidades/'); const unidades = await res.json(); let html = '<table><thead><tr><th>#Económico</th><th>Lote</th><th>VIN</th><th>Reefer Serial</th><th>Modelo</th><th>Motor</th><th>Compresor</th></tr></thead><tbody>'; if (Array.isArray(unidades)) unidades.forEach(u => html += `<tr><td>${u.unit_number}</td><td>${u.id_lote||''}</td><td style="font-family:monospace;">${u.vin_number||''}</td><td>${u.reefer_serial||''}</td><td>${u.reefer_model||''}</td><td style="font-family:monospace;">${u.engine_serial||''}</td><td>${u.compressor_serial||''}</td>`); html += '</tbody></table>'; document.getElementById('unidadesList').innerHTML = html; }
+        async function cargarUnidades() { const res = await fetchAuth('/api/unidades/'); const unidades = await res.json(); let html = '<table class="data-table"><thead><tr><th>#Económico</th><th>Lote</th><th>VIN</th><th>Reefer Serial</th><th>Modelo</th><th>Motor</th><th>Compresor</th></tr></thead><tbody>'; if (Array.isArray(unidades)) unidades.forEach(u => html += `<tr><td>${u.unit_number}</td><td>${u.id_lote||''}<td><td style="font-family:monospace;">${u.vin_number||''}</td><td>${u.reefer_serial||''}</td><td>${u.reefer_model||''}</td><td style="font-family:monospace;">${u.engine_serial||''}</td><td>${u.compressor_serial||''}</td>`); html += '</tbody></table>'; document.getElementById('unidadesList').innerHTML = html; }
         document.getElementById('unidadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const data = {
@@ -634,6 +727,7 @@ async def unidades():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("📸 Registro de Unidades", contenido, "unidades"))
+
 
 # ------------------------------------------------------------
 # GESTIÓN DE USUARIOS (admin) - se añadió opción "visor"
@@ -665,7 +759,7 @@ async def usuarios():
             try {
                 const res = await fetchAuth('/api/usuarios/');
                 const usuarios = await res.json();
-                let html = '<table><thead><tr><th>Usuario</th><th>Rol</th><th style="text-align:center;">Acciones</th></tr></thead><tbody>';
+                let html = '<table class="data-table"><thead><tr><th>Usuario</th><th>Rol</th><th style="text-align:center;">Acciones</th></tr></thead><tbody>';
                 if (Array.isArray(usuarios)) {
                     usuarios.forEach(u => {
                         const rolTexto = u.role === 'admin' ? '🛡 Administrador' : (u.role === 'tecnico' ? '🔧 Técnico' : '👁 Visor');
@@ -781,6 +875,7 @@ async def usuarios():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("👥 Gestión de Usuarios", contenido, "usuarios"))
+
 
 # ------------------------------------------------------------
 # PANEL DE ADMINISTRACIÓN (admin) — CRUD interactivo
@@ -1665,6 +1760,7 @@ async def mis_tareas():
     """
     return HTMLResponse(content=pagina_con_menu("🎯 Mis Tareas", contenido, "mis-tareas"))
 
+
 # ------------------------------------------------------------
 # NUEVA SOLICITUD
 # ------------------------------------------------------------
@@ -1708,6 +1804,7 @@ async def solicitud():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("🔔 Nueva Solicitud", contenido, "solicitud"))
+
 
 # ------------------------------------------------------------
 # MIS TICKETS
@@ -1820,6 +1917,7 @@ async def mis_tickets():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("🎫 Mis Tickets", contenido, "mis-tickets"))
+
 
 # ------------------------------------------------------------
 # PANEL DE ASIGNACIÓN POR CLUSTER (CORREGIDO, SIN DEPENDENCIAS)
@@ -1985,9 +2083,10 @@ async def panel_cluster():
 # ------------------------------------------------------------
 @router.get("/app/asistencia", response_class=HTMLResponse)
 async def asistencia_admin():
-    contenido = """
-    <script>if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; }</script>
+    contenido = f"""
+    <script>if (window.role !== 'admin' && window.role !== 'visor') {{ window.location.href = '/app/mis-tareas'; }}</script>
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    {ASISTENCIA_STYLES}
 
     <!-- Configuración de geoposición fija -->
     <div class="evidencia-info" style="margin-bottom:20px;">
@@ -2067,91 +2166,91 @@ async def asistencia_admin():
             const radio = parseInt(document.getElementById('radioMetros').value);
             if (isNaN(lat) || isNaN(lon) || isNaN(radio)) return alert('Completa todos los campos de configuración.');
 
-            const token = btoa(`asistencia:${lat}:${lon}:${radio}:${Date.now()}`);
-            const url = `${window.location.origin}/app/checkin?token=${encodeURIComponent(token)}&lat=${lat}&lon=${lon}&radio=${radio}`;
+            const token = btoa(`asistencia:${{lat}}:${{lon}}:${{radio}}:${{Date.now()}}`);
+            const url = `${{window.location.origin}}/app/checkin?token=${{encodeURIComponent(token)}}&lat=${{lat}}&lon=${{lon}}&radio=${{radio}}`;
 
             document.getElementById('qrCanvas').innerHTML = '';
-            new QRCode(document.getElementById('qrCanvas'), {
+            new QRCode(document.getElementById('qrCanvas'), {{
                 text: url,
                 width: 220,
                 height: 220,
                 colorDark: '#002B5B',
                 colorLight: '#ffffff',
                 correctLevel: QRCode.CorrectLevel.H
-            });
+            }});
 
             document.getElementById('qrLatLabel').textContent = lat;
             document.getElementById('qrLonLabel').textContent = lon;
             document.getElementById('qrRadioLabel').textContent = radio;
-            document.getElementById('mapaLink').innerHTML = `<a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" style="color:#0057A8; font-size:0.85rem;">🗺 Ver en Google Maps</a>`;
+            document.getElementById('mapaLink').innerHTML = `<a href="https://www.google.com/maps?q=${{lat}},${{lon}}" target="_blank" style="color:#0057A8; font-size:0.85rem;">🗺 Ver en Google Maps</a>`;
             document.getElementById('qrSection').style.display = 'block';
 
             // Timer de 5 minutos
             if (timerInterval) clearInterval(timerInterval);
             segundosRestantes = 300;
             actualizarTimer();
-            timerInterval = setInterval(() => {
+            timerInterval = setInterval(() => {{
                 segundosRestantes--;
                 actualizarTimer();
-                if (segundosRestantes <= 0) {
+                if (segundosRestantes <= 0) {{
                     clearInterval(timerInterval);
                     document.getElementById('qrCanvas').innerHTML = '<p style="color:#dc2626; font-weight:600;">⏱ QR expirado. Regenera.</p>';
-                }
-            }, 1000);
+                }}
+            }}, 1000);
         }
 
-        function actualizarTimer() {
+        function actualizarTimer() {{
             const m = String(Math.floor(segundosRestantes / 60)).padStart(2, '0');
             const s = String(segundosRestantes % 60).padStart(2, '0');
             const el = document.getElementById('qrTimer');
             if (el) el.textContent = m + ':' + s;
-        }
+        }}
 
-        async function cargarRegistros() {
+        async function cargarRegistros() {{
             const fecha = document.getElementById('fechaFiltro').value;
-            try {
-                const res = await fetchAuth(`/api/asistencia/registros?fecha=${fecha}`);
-                if (!res.ok) { document.getElementById('tablaAsistencia').innerHTML = '<p style="color:#6b7280;">Sin registros para esta fecha.</p>'; return; }
+            try {{
+                const res = await fetchAuth(`/api/asistencia/registros?fecha=${{fecha}}`);
+                if (!res.ok) {{ document.getElementById('tablaAsistencia').innerHTML = '<p style="color:#6b7280;">Sin registros para esta fecha.</p>'; return; }}
                 const data = await res.json();
-                if (!data.length) { document.getElementById('tablaAsistencia').innerHTML = '<p style="color:#6b7280; padding:12px;">No hay registros para esta fecha.</p>'; return; }
-                let html = `<table><thead><tr>
+                if (!data.length) {{ document.getElementById('tablaAsistencia').innerHTML = '<p style="color:#6b7280; padding:12px;">No hay registros para esta fecha.</p>'; return; }}
+                let html = `<table class="data-table"><thead><tr>
                     <th>#</th><th>Técnico</th><th>Hora Entrada</th><th>Latitud</th><th>Longitud</th><th>Distancia</th><th>Estado</th>
                 </tr></thead><tbody>`;
-                data.forEach((r, i) => {
+                data.forEach((r, i) => {{
                     const estadoBadge = r.dentro_radio
                         ? '<span class="badge" style="background:#dcfce7; color:#16a34a;">✅ Dentro</span>'
                         : '<span class="badge" style="background:#fee2e2; color:#dc2626;">❌ Fuera</span>';
                     html += `<tr>
-                        <td>${i+1}</td>
-                        <td><b>${r.username}</b></td>
-                        <td>${r.hora}</td>
-                        <td>${r.lat_tecnico}</td>
-                        <td>${r.lon_tecnico}</td>
-                        <td>${r.distancia_m} m</td>
-                        <td>${estadoBadge}</td>
+                        <td>${{i+1}}</td>
+                        <td><b>${{r.username}}</b></td>
+                        <td>${{r.hora}}</td>
+                        <td>${{r.lat_tecnico}}</td>
+                        <td>${{r.lon_tecnico}}</td>
+                        <td>${{r.distancia_m}} m</td>
+                        <td>${{estadoBadge}}</td>
                     </tr>`;
-                });
+                }});
                 html += '</tbody></table>';
                 document.getElementById('tablaAsistencia').innerHTML = html;
-            } catch (e) {
+            }} catch (e) {{
                 document.getElementById('tablaAsistencia').innerHTML = '<p style="color:#dc2626;">Error al cargar registros.</p>';
-            }
-        }
+            }}
+        }}
 
-        function exportarCSV() {
+        function exportarCSV() {{
             const tabla = document.querySelector('#tablaAsistencia table');
             if (!tabla) return alert('No hay datos para exportar.');
             let csv = '';
-            tabla.querySelectorAll('tr').forEach(row => {
+            tabla.querySelectorAll('tr').forEach(row => {{
                 const cols = [...row.querySelectorAll('th, td')].map(c => '"' + c.innerText.replace(/"/g, '""') + '"');
                 csv += cols.join(',') + '\\n';
-            });
-            const blob = new Blob([csv], { type: 'text/csv' });
+            }});
+            const blob = new Blob([csv], {{ type: 'text/csv' }});
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = `asistencia_${document.getElementById('fechaFiltro').value}.csv`;
+            a.download = `asistencia_${{document.getElementById('fechaFiltro').value}}.csv`;
             a.click();
-        }
+        }}
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("📍 Control de Asistencia", contenido, "asistencia"))
@@ -2162,204 +2261,7 @@ async def asistencia_admin():
 # ------------------------------------------------------------
 @router.get("/app/checkin", response_class=HTMLResponse)
 async def checkin_tecnico():
-    contenido = """
-    <script>if (window.role !== 'tecnico') { window.location.href = '/app/dashboard'; }</script>
-
-    <div style="max-width:480px; margin:0 auto;">
-
-        <!-- Estado inicial -->
-        <div id="estadoInicial">
-            <div class="evidencia-info" style="margin-bottom:20px; text-align:center;">
-                <div style="font-size:3rem; margin-bottom:8px;">📍</div>
-                <b style="font-size:1.1rem;">Registro de Asistencia</b><br>
-                <span style="font-size:0.88rem;">Escanea el código QR para registrar tu entrada.</span>
-            </div>
-
-            <!-- Cámara para escanear QR -->
-            <div style="background:white; border-radius:16px; padding:20px; box-shadow:0 4px 16px rgba(0,43,91,0.1); margin-bottom:20px; text-align:center;">
-                <div class="section-title" style="margin-top:0;">📷 Escanear QR</div>
-                <video id="qrVideo" style="width:100%; border-radius:10px; max-height:280px; background:#000;" autoplay playsinline></video>
-                <canvas id="qrCanvasHidden" style="display:none;"></canvas>
-                <p id="scanStatus" style="font-size:0.85rem; color:#6b7280; margin-top:8px;">Iniciando cámara...</p>
-                <button class="btn-primary" style="margin-top:10px;" onclick="iniciarCamara()">🔄 Activar Cámara</button>
-            </div>
-
-            <!-- O bien, si ya viene con token en URL -->
-            <div id="tokenUrlSection" style="display:none; background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px; padding:16px; margin-bottom:20px; text-align:center;">
-                <p style="font-size:0.9rem; margin-bottom:12px;">✅ QR detectado desde enlace</p>
-                <button class="btn-primary" onclick="procesarDesdeURL()">📍 Registrar mi Asistencia</button>
-            </div>
-        </div>
-
-        <!-- Estado de procesamiento -->
-        <div id="estadoProcesando" style="display:none; text-align:center; padding:40px 20px;">
-            <div style="font-size:3rem; margin-bottom:12px;">⏳</div>
-            <p style="font-weight:600; color:#374151;">Obteniendo tu ubicación...</p>
-            <p style="font-size:0.85rem; color:#6b7280;">Asegúrate de tener el GPS activado.</p>
-        </div>
-
-        <!-- Resultado -->
-        <div id="estadoResultado" style="display:none; text-align:center; padding:20px;">
-        </div>
-
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-    <script>
-        let streamCamera = null;
-        let scanLoop = null;
-        let qrParams = null;
-
-        // Revisar si ya vienen parámetros en la URL
-        window.addEventListener('DOMContentLoaded', () => {
-            const params = new URLSearchParams(window.location.search);
-            if (params.has('lat') && params.has('lon') && params.has('radio')) {
-                qrParams = {
-                    lat: parseFloat(params.get('lat')),
-                    lon: parseFloat(params.get('lon')),
-                    radio: parseInt(params.get('radio'))
-                };
-                document.getElementById('tokenUrlSection').style.display = 'block';
-            } else {
-                iniciarCamara();
-            }
-        });
-
-        function iniciarCamara() {
-            document.getElementById('scanStatus').textContent = 'Solicitando acceso a la cámara...';
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-                .then(stream => {
-                    streamCamera = stream;
-                    const video = document.getElementById('qrVideo');
-                    video.srcObject = stream;
-                    video.play();
-                    document.getElementById('scanStatus').textContent = '🔍 Apunta al código QR...';
-                    scanLoop = setInterval(() => escanearFrame(), 400);
-                })
-                .catch(() => {
-                    document.getElementById('scanStatus').textContent = '⚠️ No se pudo acceder a la cámara. Usa el enlace directo del QR.';
-                });
-        }
-
-        function escanearFrame() {
-            const video = document.getElementById('qrVideo');
-            const canvas = document.getElementById('qrCanvasHidden');
-            if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const code = jsQR(imageData.data, imageData.width, imageData.height);
-            if (code) {
-                clearInterval(scanLoop);
-                if (streamCamera) streamCamera.getTracks().forEach(t => t.stop());
-                try {
-                    const url = new URL(code.data);
-                    const p = url.searchParams;
-                    qrParams = {
-                        lat: parseFloat(p.get('lat')),
-                        lon: parseFloat(p.get('lon')),
-                        radio: parseInt(p.get('radio'))
-                    };
-                    if (isNaN(qrParams.lat) || isNaN(qrParams.lon)) throw new Error('QR inválido');
-                    document.getElementById('scanStatus').textContent = '✅ QR leído correctamente';
-                    procesarCheckin();
-                } catch {
-                    document.getElementById('scanStatus').textContent = '❌ QR no reconocido. Intenta de nuevo.';
-                    scanLoop = setInterval(() => escanearFrame(), 400);
-                }
-            }
-        }
-
-        function procesarDesdeURL() {
-            if (!qrParams) return alert('No se detectaron parámetros del QR.');
-            procesarCheckin();
-        }
-
-        function procesarCheckin() {
-            document.getElementById('estadoInicial').style.display = 'none';
-            document.getElementById('estadoProcesando').style.display = 'block';
-
-            if (!navigator.geolocation) {
-                mostrarResultado(false, 'Tu navegador no soporta geolocalización.');
-                return;
-            }
-
-            navigator.geolocation.getCurrentPosition(
-                pos => {
-                    const latTec = pos.coords.latitude;
-                    const lonTec = pos.coords.longitude;
-                    const distancia = calcularDistancia(latTec, lonTec, qrParams.lat, qrParams.lon);
-                    const dentroRadio = distancia <= qrParams.radio;
-                    enviarRegistro(latTec, lonTec, distancia, dentroRadio);
-                },
-                err => {
-                    mostrarResultado(false, 'No se pudo obtener tu ubicación GPS. Activa la localización e intenta de nuevo.');
-                },
-                { enableHighAccuracy: true, timeout: 10000 }
-            );
-        }
-
-        async function enviarRegistro(latTec, lonTec, distancia, dentroRadio) {
-            try {
-                const res = await fetchAuth('/api/asistencia/registrar', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        lat_fija: qrParams.lat,
-                        lon_fija: qrParams.lon,
-                        radio: qrParams.radio,
-                        lat_tecnico: latTec,
-                        lon_tecnico: lonTec,
-                        distancia_m: Math.round(distancia),
-                        dentro_radio: dentroRadio
-                    })
-                });
-                const data = await res.json();
-                mostrarResultado(dentroRadio, data.mensaje || (dentroRadio ? 'Asistencia registrada.' : 'Estás fuera del área permitida.'), latTec, lonTec, Math.round(distancia));
-            } catch {
-                mostrarResultado(false, 'Error al conectar con el servidor. Verifica tu conexión.');
-            }
-        }
-
-        function mostrarResultado(exito, mensaje, lat, lon, distancia) {
-            document.getElementById('estadoProcesando').style.display = 'none';
-            const el = document.getElementById('estadoResultado');
-            el.style.display = 'block';
-            const ahora = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
-            const iconoGrande = exito ? '✅' : '❌';
-            const color = exito ? '#16a34a' : '#dc2626';
-            const bg = exito ? '#dcfce7' : '#fee2e2';
-            const border = exito ? '#86efac' : '#fca5a5';
-            el.innerHTML = `
-                <div style="background:${bg}; border:2px solid ${border}; border-radius:20px; padding:32px 24px;">
-                    <div style="font-size:4rem; margin-bottom:12px;">${iconoGrande}</div>
-                    <h2 style="color:${color}; font-size:1.4rem; margin-bottom:8px;">${exito ? '¡Asistencia Registrada!' : 'No se pudo registrar'}</h2>
-                    <p style="color:#374151; font-size:0.95rem; margin-bottom:16px;">${mensaje}</p>
-                    ${lat ? `<div style="background:white; border-radius:12px; padding:12px; font-size:0.85rem; color:#374151; margin-bottom:16px; text-align:left;">
-                        <p>🕐 <b>Hora:</b> ${ahora}</p>
-                        <p>👤 <b>Técnico:</b> ${window.username}</p>
-                        <p>📍 <b>Tu ubicación:</b> ${lat.toFixed(5)}, ${lon.toFixed(5)}</p>
-                        <p>📏 <b>Distancia al punto:</b> ${distancia} m</p>
-                    </div>` : ''}
-                    <button class="btn-primary" onclick="window.location.href='/app/mis-tareas'">🏠 Ir a Mis Tareas</button>
-                </div>`;
-        }
-
-        // Haversine: distancia en metros entre dos coordenadas
-        function calcularDistancia(lat1, lon1, lat2, lon2) {
-            const R = 6371000;
-            const dLat = (lat2 - lat1) * Math.PI / 180;
-            const dLon = (lon2 - lon1) * Math.PI / 180;
-            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                      Math.sin(dLon/2) * Math.sin(dLon/2);
-            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        }
-    </script>
-    """
-    return HTMLResponse(content=pagina_con_menu("📍 Registrar Asistencia", contenido, "checkin"))
+    return HTMLResponse(content=pagina_con_menu("📍 Registrar Asistencia", get_checkin_template(), "checkin"))
 
 
 # ------------------------------------------------------------
@@ -2368,20 +2270,25 @@ async def checkin_tecnico():
 @router.get("/app/horarios", response_class=HTMLResponse)
 async def horarios_admin():
     contenido = """
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <script>if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; }</script>
 
-    <!-- Selector de semana -->
-    <div style="display:flex; gap:16px; align-items:center; margin-bottom:20px; flex-wrap:wrap;">
+    <!-- Barra de acciones -->
+    <div style="display:flex; gap:12px; align-items:flex-end; margin-bottom:20px; flex-wrap:wrap;">
         <div>
             <label style="font-size:0.82rem; font-weight:600; color:#374151;">Semana (Lunes)</label>
             <input type="date" id="semanaInicio" style="width:auto; margin-bottom:0;" onchange="cargarHorarios()">
         </div>
-        <button class="btn-primary" style="width:auto; padding:12px 24px;" onclick="guardarHorarios()">💾 Guardar Horarios</button>
-        <button class="btn-warning" style="width:auto; padding:12px 24px;" onclick="exportarHorarios()">📥 Exportar Excel</button>
+        <button class="btn-primary" style="width:auto; padding:12px 20px;" onclick="guardarHorarios()">💾 Guardar</button>
+        <button class="btn-warning" style="width:auto; padding:12px 20px;" onclick="exportarExcel()">📥 Exportar Excel</button>
+        <label style="background:#0057A8; color:white; border-radius:10px; padding:12px 20px; font-weight:600; font-size:1rem; cursor:pointer; display:inline-block;">
+            📤 Importar Excel <input type="file" accept=".xlsx,.csv" style="display:none;" onchange="importarExcel(this)">
+        </label>
+        <button class="btn-success" style="width:auto; padding:12px 20px;" onclick="abrirModalNombres()">✏️ Editar Nombres</button>
     </div>
 
     <div class="evidencia-info" style="margin-bottom:16px; font-size:0.85rem;">
-        <b>📋 Instrucciones:</b> Configura ENTRADA y SALIDA por día para cada técnico. Deja en blanco si descansa. El sistema calculará automáticamente el retardo al comparar con el check-in QR.
+        <b>📋 Instrucciones:</b> Configura ENTRADA y SALIDA por día. Exporta la plantilla, llénala en Excel e importa. Los nombres mostrados son editables con el botón ✏️.
     </div>
 
     <!-- Tabla de horarios -->
@@ -2389,28 +2296,50 @@ async def horarios_admin():
         <div id="tablaHorarios"></div>
     </div>
 
-    <!-- Resumen de asistencia de la semana -->
+    <!-- Resumen de asistencia -->
     <div class="section-title">📊 Resumen de Asistencia de la Semana</div>
     <div id="resumenAsistencia" style="overflow-x:auto;"></div>
 
-    <script>
-        const DIAS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+    <!-- Modal editar nombres -->
+    <div id="modalNombres" class="modal">
+        <div class="modal-content" style="max-width:480px;">
+            <h3 style="color:var(--carrier-blue); margin-bottom:16px;">✏️ Editar Nombres de Técnicos</h3>
+            <p style="font-size:0.85rem; color:#6b7280; margin-bottom:16px;">El nombre completo se mostrará en la tabla de horarios. El username no cambia.</p>
+            <div id="listaNombres"></div>
+            <div style="display:flex; gap:10px; margin-top:16px;">
+                <button class="btn-primary" onclick="guardarNombres()">💾 Guardar Nombres</button>
+                <button class="btn-danger" onclick="document.getElementById('modalNombres').style.display='none'">Cancelar</button>
+            </div>
+        </div>
+    </div>
 
-        // Poner lunes de la semana actual por defecto
+    <script>
+        const fetchAuth = window.fetchAuth;
+        const DIAS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+        let tecnicosData = [];
+        let nombresMap = {}; // username -> nombre completo
+
+        // Lunes de la semana actual
         const hoy = new Date();
-        const diaSemana = hoy.getDay();
-        const diffLunes = diaSemana === 0 ? -6 : 1 - diaSemana;
+        const diffLunes = hoy.getDay() === 0 ? -6 : 1 - hoy.getDay();
         const lunes = new Date(hoy);
         lunes.setDate(hoy.getDate() + diffLunes);
         document.getElementById('semanaInicio').value = lunes.toISOString().slice(0, 10);
-
-        let tecnicosData = [];
 
         async function init() {
             const res = await fetchAuth('/api/usuarios/');
             const usuarios = await res.json();
             tecnicosData = usuarios.filter(u => u.role === 'tecnico');
+            // Cargar nombres guardados del localStorage
+            const guardados = localStorage.getItem('nombresCompletos');
+            if (guardados) nombresMap = JSON.parse(guardados);
+            // Inicializar con username si no hay nombre guardado
+            tecnicosData.forEach(t => { if (!nombresMap[t.username]) nombresMap[t.username] = t.username; });
             cargarHorarios();
+        }
+
+        function getNombre(username) {
+            return nombresMap[username] || username;
         }
 
         function fechasDeSemana(lunesStr) {
@@ -2428,66 +2357,45 @@ async def horarios_admin():
             const semana = document.getElementById('semanaInicio').value;
             if (!semana) return;
             const fechas = fechasDeSemana(semana);
-
-            // Intentar cargar horarios guardados
             let horariosGuardados = {};
             try {
                 const res = await fetchAuth('/api/horarios/?semana=' + semana);
                 if (res.ok) {
                     const data = await res.json();
-                    data.forEach(h => {
-                        const key = h.username + '_' + h.fecha;
-                        horariosGuardados[key] = h;
-                    });
+                    data.forEach(h => { horariosGuardados[h.username + '_' + h.fecha] = h; });
                 }
             } catch(e) {}
 
-            // Construir tabla
-            let html = `<table>
-                <thead>
-                    <tr>
-                        <th rowspan="2" style="min-width:160px;">Técnico</th>`;
-
+            let html = `<table class="data-table"><thead><tr>
+                <th rowspan="2" style="min-width:180px;">Técnico</th>`;
             fechas.forEach((f, i) => {
-                const [anio, mes, dia] = f.split('-');
+                const [,mes,dia] = f.split('-');
                 html += `<th colspan="2" style="text-align:center; background:#f0f4ff;">${DIAS[i]}<br><span style="font-weight:400; font-size:0.78rem;">${dia}/${mes}</span></th>`;
             });
-
-            html += `</tr><tr>`;
+            html += `</tr>`;
             fechas.forEach(() => {
                 html += `<th style="font-size:0.75rem; color:#6b7280; background:#f8fafc;">Entrada</th>
                          <th style="font-size:0.75rem; color:#6b7280; background:#f8fafc;">Salida</th>`;
             });
-            html += `</tr></thead><tbody>`;
+            html += `</thead><tbody>`;
 
             tecnicosData.forEach(tec => {
-                html += `<tr><td><b>${tec.username}</b></td>`;
+                html += `<tr><td style="background:#f8fafc;"><b>${getNombre(tec.username)}</b><br><span style="font-size:0.72rem;color:#9ca3af;">${tec.username}</span></td>`;
                 fechas.forEach(fecha => {
                     const key = tec.username + '_' + fecha;
                     const h = horariosGuardados[key] || {};
-                    const entrada = h.hora_entrada || '';
-                    const salida = h.hora_salida || '';
                     html += `<td style="padding:6px;">
-                        <input type="time" id="e_${tec.username}_${fecha}"
-                            value="${entrada}"
-                            style="width:100px; margin-bottom:0; padding:6px; font-size:0.82rem;"
-                            ${h.estado === 'vacaciones' ? 'disabled placeholder="VAC"' : ''}
-                            ${h.estado === 'descanso' ? 'disabled' : ''}>
-                    </td>
-                    <td style="padding:6px;">
-                        <input type="time" id="s_${tec.username}_${fecha}"
-                            value="${salida}"
-                            style="width:100px; margin-bottom:0; padding:6px; font-size:0.82rem;"
-                            ${h.estado === 'vacaciones' ? 'disabled' : ''}
-                            ${h.estado === 'descanso' ? 'disabled' : ''}>
+                        <input type="time" id="e_${tec.username}_${fecha}" value="${h.hora_entrada||''}"
+                            style="width:100px; margin-bottom:0; padding:6px; font-size:0.82rem;">
+                    </td><td style="padding:6px;">
+                        <input type="time" id="s_${tec.username}_${fecha}" value="${h.hora_salida||''}"
+                            style="width:100px; margin-bottom:0; padding:6px; font-size:0.82rem;">
                     </td>`;
                 });
                 html += `</tr>`;
             });
-
             html += `</tbody></table>`;
             document.getElementById('tablaHorarios').innerHTML = html;
-
             cargarResumenAsistencia(semana, fechas);
         }
 
@@ -2495,114 +2403,159 @@ async def horarios_admin():
             const semana = document.getElementById('semanaInicio').value;
             const fechas = fechasDeSemana(semana);
             const registros = [];
-
             tecnicosData.forEach(tec => {
                 fechas.forEach(fecha => {
-                    const entrada = document.getElementById('e_' + tec.username + '_' + fecha)?.value || '';
-                    const salida  = document.getElementById('s_' + tec.username + '_' + fecha)?.value || '';
                     registros.push({
                         username: tec.username,
-                        fecha: fecha,
-                        hora_entrada: entrada,
-                        hora_salida: salida,
-                        semana: semana
+                        fecha, semana,
+                        hora_entrada: document.getElementById('e_' + tec.username + '_' + fecha)?.value || '',
+                        hora_salida:  document.getElementById('s_' + tec.username + '_' + fecha)?.value || ''
                     });
                 });
             });
-
             const res = await fetchAuth('/api/horarios/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(registros)
             });
-
             if (res.ok) {
-                const toast = document.createElement('div');
-                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
-                toast.textContent = '✅ Horarios guardados correctamente';
-                document.body.appendChild(toast);
-                setTimeout(() => toast.remove(), 3000);
-                cargarResumenAsistencia(semana, fechasDeSemana(semana));
-            } else {
-                alert('❌ Error al guardar. Verifica la conexión.');
-            }
+                const t = document.createElement('div');
+                t.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;z-index:600;';
+                t.textContent = '✅ Horarios guardados';
+                document.body.appendChild(t);
+                setTimeout(() => t.remove(), 3000);
+            } else { alert('❌ Error al guardar.'); }
         }
 
+        // ── EXPORTAR a Excel (.xlsx) ──────────────────────────────
+        function exportarExcel() {
+            const semana = document.getElementById('semanaInicio').value;
+            const fechas = fechasDeSemana(semana);
+            const encabezado = ['Técnico (username)', 'Nombre Completo'];
+            fechas.forEach((f,i) => { encabezado.push(DIAS[i]+' Entrada', DIAS[i]+' Salida'); });
+            const filas = [encabezado];
+            tecnicosData.forEach(tec => {
+                const fila = [tec.username, getNombre(tec.username)];
+                fechas.forEach(fecha => {
+                    fila.push(
+                        document.getElementById('e_' + tec.username + '_' + fecha)?.value || '',
+                        document.getElementById('s_' + tec.username + '_' + fecha)?.value || ''
+                    );
+                });
+                filas.push(fila);
+            });
+            const ws = XLSX.utils.aoa_to_sheet(filas);
+            ws['!cols'] = encabezado.map((h,i) => ({ wch: i < 2 ? 22 : 14 }));
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Horarios');
+            XLSX.writeFile(wb, 'horarios_semana_' + semana + '.xlsx');
+        }
+
+        // ── IMPORTAR desde Excel (.xlsx o .csv) ──────────────────
+        function importarExcel(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const semana = document.getElementById('semanaInicio').value;
+            const fechas = fechasDeSemana(semana);
+            const reader = new FileReader();
+            reader.onload = e => {
+                try {
+                    const wb = XLSX.read(e.target.result, { type: 'array' });
+                    const ws = wb.Sheets[wb.SheetNames[0]];
+                    const filas = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+                    if (filas.length < 2) return alert('El archivo está vacío o no tiene datos.');
+
+                    // Primera fila = encabezados, buscar índices
+                    const headers = filas[0].map(h => String(h).trim());
+                    const idxUser = headers.findIndex(h => h.toLowerCase().includes('username'));
+                    if (idxUser === -1) return alert('No se encontró columna "Técnico (username)". Usa la plantilla exportada.');
+
+                    let importados = 0;
+                    filas.slice(1).forEach(fila => {
+                        const username = String(fila[idxUser] || '').trim();
+                        if (!username) return;
+                        fechas.forEach((fecha, i) => {
+                            const idxE = headers.findIndex(h => h.includes(DIAS[i]) && h.toLowerCase().includes('entrada'));
+                            const idxS = headers.findIndex(h => h.includes(DIAS[i]) && h.toLowerCase().includes('salida'));
+                            const eEl = document.getElementById('e_' + username + '_' + fecha);
+                            const sEl = document.getElementById('s_' + username + '_' + fecha);
+                            if (eEl && idxE !== -1) { eEl.value = String(fila[idxE] || '').trim(); }
+                            if (sEl && idxS !== -1) { sEl.value = String(fila[idxS] || '').trim(); }
+                        });
+                        importados++;
+                    });
+                    input.value = '';
+                    const t = document.createElement('div');
+                    t.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#0057A8;color:white;padding:14px 28px;border-radius:50px;font-weight:700;z-index:600;';
+                    t.textContent = `📤 ${importados} técnicos importados. Revisa y guarda.`;
+                    document.body.appendChild(t);
+                    setTimeout(() => t.remove(), 4000);
+                } catch(err) { alert('Error al leer el archivo: ' + err.message); }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // ── MODAL NOMBRES ─────────────────────────────────────────
+        function abrirModalNombres() {
+            let html = '';
+            tecnicosData.forEach(tec => {
+                html += `<div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                    <span style="width:120px; font-size:0.82rem; color:#6b7280; flex-shrink:0;">${tec.username}</span>
+                    <input type="text" id="nombre_${tec.username}" value="${getNombre(tec.username)}"
+                        placeholder="Nombre completo"
+                        style="flex:1; margin-bottom:0; padding:8px; font-size:0.9rem;">
+                </div>`;
+            });
+            document.getElementById('listaNombres').innerHTML = html;
+            document.getElementById('modalNombres').style.display = 'flex';
+        }
+
+        function guardarNombres() {
+            tecnicosData.forEach(tec => {
+                const val = document.getElementById('nombre_' + tec.username)?.value.trim();
+                if (val) nombresMap[tec.username] = val;
+            });
+            localStorage.setItem('nombresCompletos', JSON.stringify(nombresMap));
+            document.getElementById('modalNombres').style.display = 'none';
+            cargarHorarios();
+            const t = document.createElement('div');
+            t.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;z-index:600;';
+            t.textContent = '✅ Nombres actualizados';
+            document.body.appendChild(t);
+            setTimeout(() => t.remove(), 2500);
+        }
+
+        // ── RESUMEN ASISTENCIA ────────────────────────────────────
         async function cargarResumenAsistencia(semana, fechas) {
             try {
                 const res = await fetchAuth('/api/horarios/resumen?semana=' + semana);
-                if (!res.ok) { document.getElementById('resumenAsistencia').innerHTML = '<p style="color:#6b7280; padding:12px;">Sin datos de asistencia aún.</p>'; return; }
+                if (!res.ok) { document.getElementById('resumenAsistencia').innerHTML = '<p style="color:#6b7280;padding:12px;">Sin datos aún.</p>'; return; }
                 const data = await res.json();
-                if (!data.length) { document.getElementById('resumenAsistencia').innerHTML = '<p style="color:#6b7280; padding:12px;">Sin registros de check-in para esta semana.</p>'; return; }
-
-                let html = `<table><thead><tr>
-                    <th>Técnico</th>`;
-                fechas.forEach((f, i) => {
+                if (!data.length) { document.getElementById('resumenAsistencia').innerHTML = '<p style="color:#6b7280;padding:12px;">Sin check-ins esta semana.</p>'; return; }
+                let html = `<table class="data-table"><thead><tr><th>Técnico</th>`;
+                fechas.forEach((f,i) => {
                     const [,mes,dia] = f.split('-');
                     html += `<th style="text-align:center;">${DIAS[i]}<br><span style="font-size:0.75rem;font-weight:400;">${dia}/${mes}</span></th>`;
                 });
-                html += `</tr></thead><tbody>`;
-
-                // Agrupar por técnico
+                html += `</thead><tbody>`;
                 const porTecnico = {};
-                data.forEach(r => {
-                    if (!porTecnico[r.username]) porTecnico[r.username] = {};
-                    porTecnico[r.username][r.fecha] = r;
-                });
-
+                data.forEach(r => { if (!porTecnico[r.username]) porTecnico[r.username] = {}; porTecnico[r.username][r.fecha] = r; });
                 Object.entries(porTecnico).forEach(([username, dias]) => {
-                    html += `<tr><td><b>${username}</b></td>`;
+                    html += `<tr style="background:#f8fafc;"><td><b>${getNombre(username)}</b><br><span style="font-size:0.72rem;color:#9ca3af;">${username}</span></td>`;
                     fechas.forEach(fecha => {
                         const r = dias[fecha];
-                        if (!r) {
-                            html += `<td style="text-align:center; color:#9ca3af;">—</td>`;
-                        } else if (r.retardo_min > 0) {
-                            html += `<td style="text-align:center;">
-                                <span class="badge" style="background:#fef3c7; color:#92400e;">⏱ +${r.retardo_min} min</span>
-                            </td>`;
-                        } else {
-                            html += `<td style="text-align:center;">
-                                <span class="badge" style="background:#dcfce7; color:#16a34a;">✅ ${r.hora_checkin}</span>
-                            </td>`;
-                        }
+                        if (!r) html += `<td style="text-align:center;color:#9ca3af;">—</td>`;
+                        else if (r.retardo_min > 0) html += `<td style="text-align:center;"><span class="badge" style="background:#fef3c7;color:#92400e;">⏱ +${r.retardo_min} min</span></td>`;
+                        else html += `<td style="text-align:center;"><span class="badge" style="background:#dcfce7;color:#16a34a;">✅ ${r.hora_checkin}</span></td>`;
                     });
                     html += `</tr>`;
                 });
-
                 html += `</tbody></table>`;
                 document.getElementById('resumenAsistencia').innerHTML = html;
-            } catch(e) {
-                document.getElementById('resumenAsistencia').innerHTML = '<p style="color:#dc2626;">Error al cargar resumen.</p>';
-            }
-        }
-
-        function exportarHorarios() {
-            const tabla = document.querySelector('#tablaHorarios table');
-            if (!tabla) return;
-            let csv = 'Técnico';
-            const semana = document.getElementById('semanaInicio').value;
-            const fechas = fechasDeSemana(semana);
-            fechas.forEach((f,i) => { csv += `,${DIAS[i]} Entrada,${DIAS[i]} Salida`; });
-            csv += '\\n';
-            tecnicosData.forEach(tec => {
-                csv += tec.username;
-                fechas.forEach(fecha => {
-                    const e = document.getElementById('e_' + tec.username + '_' + fecha)?.value || '';
-                    const s = document.getElementById('s_' + tec.username + '_' + fecha)?.value || '';
-                    csv += `,${e},${s}`;
-                });
-                csv += '\\n';
-            });
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = 'horarios_semana_' + semana + '.csv';
-            a.click();
+            } catch(e) { document.getElementById('resumenAsistencia').innerHTML = '<p style="color:#dc2626;">Error al cargar resumen.</p>'; }
         }
 
         init();
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("🗓 Horarios Semanales", contenido, "horarios"))
-
-
