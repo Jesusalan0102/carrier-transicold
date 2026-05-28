@@ -1,13 +1,57 @@
-# asistencia/templates.py
+# backend/asistencia/templates.py
 ASISTENCIA_STYLES = """
 <style>
     .asistencia-container { max-width: 600px; margin: 0 auto; }
-    .gps-status { position: fixed; top: 10px; right: 10px; background: #f0fdf4; padding: 8px 16px; border-radius: 50px; font-size: 0.75rem; font-weight: 600; z-index: 1000; }
-    .gps-status.warning { background: #fef3c7; color: #92400e; }
-    .gps-status.error { background: #fee2e2; color: #991b1b; }
-    .selfie-preview { width: 120px; height: 120px; border-radius: 60px; object-fit: cover; margin: 10px auto; border: 3px solid #0057A8; cursor: pointer; }
-    .camera-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 2000; display: none; flex-direction: column; justify-content: center; align-items: center; }
-    .camera-modal video { max-width: 90%; border-radius: 12px; }
+    .gps-status { 
+        position: fixed; 
+        top: 10px; 
+        right: 10px; 
+        background: #f0fdf4; 
+        padding: 8px 16px; 
+        border-radius: 50px; 
+        font-size: 0.75rem; 
+        font-weight: 600; 
+        z-index: 1000;
+        border: 1px solid #86efac;
+        color: #166534;
+    }
+    .gps-status.warning { 
+        background: #fef3c7; 
+        color: #92400e; 
+        border-color: #fde68a;
+    }
+    .gps-status.error { 
+        background: #fee2e2; 
+        color: #991b1b; 
+        border-color: #fca5a5;
+    }
+    .selfie-preview { 
+        width: 120px; 
+        height: 120px; 
+        border-radius: 60px; 
+        object-fit: cover; 
+        margin: 10px auto; 
+        border: 3px solid #0057A8; 
+        cursor: pointer; 
+    }
+    .camera-modal { 
+        position: fixed; 
+        top: 0; 
+        left: 0; 
+        width: 100%; 
+        height: 100%; 
+        background: rgba(0,0,0,0.9); 
+        z-index: 2000; 
+        display: none; 
+        flex-direction: column; 
+        justify-content: center; 
+        align-items: center; 
+    }
+    .camera-modal video { 
+        max-width: 90%; 
+        max-height: 80vh; 
+        border-radius: 12px; 
+    }
 </style>
 """
 
@@ -21,7 +65,7 @@ def get_checkin_template() -> str:
             <div class="evidencia-info" style="margin-bottom:20px; text-align:center;">
                 <div style="font-size:3rem;">📍</div>
                 <b>Registro de Asistencia</b><br>
-                <span>Escanea el código QR de la oficina</span>
+                <span>Escanea el código QR de la oficina para registrar tu entrada.</span>
             </div>
             <div style="background:white; border-radius:16px; padding:20px;">
                 <div class="section-title">📷 Escanear QR</div>
@@ -36,9 +80,9 @@ def get_checkin_template() -> str:
             <h3>Toma una Selfie</h3>
             <p>Necesitamos una foto tuya para validar tu identidad.</p>
             <div id="selfiePreview"><img id="selfieImg" class="selfie-preview" style="display:none;"><div id="noSelfieMsg"><button class="btn-primary" onclick="abrirCamaraSelfie()">📸 Tomar Selfie</button></div></div>
-            <button id="btnContinuar" class="btn-success" style="display:none;" onclick="procesarCheckinCompleto()">✅ Confirmar</button>
+            <button id="btnContinuar" class="btn-success" style="display:none;" onclick="procesarCheckinCompleto()">✅ Confirmar y Registrar Asistencia</button>
         </div>
-        <div id="estadoProcesando" style="display:none; text-align:center; padding:40px;"><div style="font-size:3rem;">⏳</div><p>Registrando...</p></div>
+        <div id="estadoProcesando" style="display:none; text-align:center; padding:40px;"><div style="font-size:3rem;">⏳</div><p>Registrando tu asistencia...</p><p id="progressMsg"></p></div>
         <div id="estadoResultado" style="display:none; text-align:center;"></div>
     </div>
     <div id="cameraModal" class="camera-modal">
@@ -134,6 +178,7 @@ def get_checkin_template() -> str:
             
             document.getElementById('estadoSelfie').style.display = 'none';
             document.getElementById('estadoProcesando').style.display = 'block';
+            document.getElementById('progressMsg').textContent = 'Verificando ubicación y guardando selfie...';
             
             try {
                 const res = await fetchAuth('/api/asistencia/registrar', {
