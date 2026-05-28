@@ -1,4 +1,4 @@
-# asistencia/horarios_routes.py
+# backend/asistencia/horarios_routes.py
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
@@ -19,91 +19,56 @@ class HorarioBulk(BaseModel):
 
 @router.get("/api/horarios/")
 async def get_horarios(semana: str, username: Optional[str] = None):
-    """Obtiene los horarios para una semana específica"""
-    from db import get_db_connection
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    from db import execute_read
     
     if username:
-        cursor.execute("""
-            SELECT * FROM horarios 
-            WHERE semana = ? AND username = ?
-        """, (semana, username))
+        registros = execute_read("SELECT * FROM horarios WHERE semana = %s AND username = %s", (semana, username))
     else:
-        cursor.execute("SELECT * FROM horarios WHERE semana = ?", (semana,))
+        registros = execute_read("SELECT * FROM horarios WHERE semana = %s", (semana,))
     
-    horarios = cursor.fetchall()
-    conn.close()
-    
-    resultado = []
-    for row in horarios:
-        resultado.append(dict(row))
-    
-    return resultado
+    return registros
 
 
 @router.post("/api/horarios/")
 async def guardar_horarios(horarios: HorarioBulk):
-    """Guarda o actualiza horarios en masa"""
-    from db import get_db_connection
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    from db import execute_write
     
     guardados = 0
     for h in horarios.registros:
-        cursor.execute("""
-            INSERT OR REPLACE INTO horarios (username, fecha, semana, hora_entrada, hora_salida)
-            VALUES (?, ?, ?, ?, ?)
+        execute_write("""
+            INSERT INTO horarios (username, fecha, semana, hora_entrada, hora_salida)
+            VALUES (%s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+            hora_entrada = VALUES(hora_entrada),
+            hora_salida = VALUES(hora_salida)
         """, (h.username, h.fecha, h.semana, h.hora_entrada, h.hora_salida))
         guardados += 1
-    
-    conn.commit()
-    conn.close()
     
     return {"mensaje": f"{guardados} horarios guardados"}
 
 
 @router.get("/api/horarios/resumen")
 async def get_resumen_asistencia(semana: str):
-    """Obtiene el resumen de asistencia para la semana"""
-    from db import get_db_connection
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    from db import execute_read
     
     # Obtener horarios configurados
-    cursor.execute("SELECT * FROM horarios WHERE semana = ?", (semana,))
-    horarios = cursor.fetchall()
+    horarios = execute_read("SELECT * FROM horarios WHERE semana = %s", (semana,))
     horarios_dict = {}
     for h in horarios:
-        horarios_dict[f"{h['username']}_{h['fecha']}"] = {
-            "entrada": h["hora_entrada"], 
-            "salida": h["hora_salida"]
-        }
+        horarios_dict[f"{h['username']}_{h['fecha']}"] = {"entrada": h["hora_entrada"], "salida": h["hora_salida"]}
     
-    # Obtener asistencias reales de la semana
+    # Obtener asistencias reales
     try:
         semana_date = datetime.strptime(semana, "%Y-%m-%d")
         fin_semana = semana_date + timedelta(days=7)
-        
-        cursor.execute("""
+        asistencias = execute_read("""
             SELECT username, fecha, hora, lat_tecnico, lon_tecnico, distancia_m, dentro_radio
             FROM asistencia 
-            WHERE fecha >= ? AND fecha < ?
+            WHERE fecha >= %s AND fecha < %s
             ORDER BY fecha, hora
         """, (semana, fin_semana.strftime("%Y-%m-%d")))
     except:
-        cursor.execute("""
-            SELECT username, fecha, hora, lat_tecnico, lon_tecnico, distancia_m, dentro_radio
-            FROM asistencia 
-            WHERE fecha LIKE ?
-            ORDER BY fecha, hora
-        """, (semana + '%',))
-    
-    asistencias = cursor.fetchall()
-    conn.close()
+        asistencias = execute_read("SELECT username, fecha, hora, lat_tecnico, lon_tecnico, distancia_m, dentro_radio FROM asistencia WHERE fecha LIKE %s ORDER BY fecha, hora", (semana + '%',))
     
     # Procesar resumen
     resumen = []
@@ -114,7 +79,6 @@ async def get_resumen_asistencia(semana: str):
         
         horario = horarios_dict.get(f"{username}_{fecha}", {})
         
-        # Calcular retardo si hay horario configurado
         retardo = 0
         if horario.get("entrada") and hora > horario["entrada"]:
             try:
