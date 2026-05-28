@@ -1043,9 +1043,12 @@ async def panel_cluster():
 # ------------------------------------------------------------
 @router.get("/app/asistencia", response_class=HTMLResponse)
 async def asistencia_admin():
-    contenido = f"""
-    <script>if (window.role !== 'admin' && window.role !== 'visor') {{ window.location.href = '/app/mis-tareas'; }}</script>
-    {ASISTENCIA_STYLES}
+    contenido = (
+        """
+    <script>if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; }</script>
+    """
+        + ASISTENCIA_STYLES +
+        """
     <div class="asistencia-container">
         <div class="evidencia-info" style="margin-bottom:20px;">
             <b>📍 Configuración de Asistencia</b><br>
@@ -1078,123 +1081,134 @@ async def asistencia_admin():
         let timerInterval = null, segundosRestantes = 0;
         document.getElementById('fechaFiltro').value = new Date().toISOString().slice(0,10);
         cargarRegistros();
-        async function cargarConfiguracion() {{
+
+        async function cargarConfiguracion() {
             const res = await fetchAuth('/api/asistencia/configuracion');
-            if (res.ok) {{
+            if (res.ok) {
                 const config = await res.json();
                 document.getElementById('latFija').value = config.lat_fija;
                 document.getElementById('lonFija').value = config.lon_fija;
                 document.getElementById('radioMetros').value = config.radio_metros;
-            }}
-        }}
-        async function guardarConfiguracion() {{
-            const config = {{ lat_fija: parseFloat(document.getElementById('latFija').value), lon_fija: parseFloat(document.getElementById('lonFija').value), radio_metros: parseInt(document.getElementById('radioMetros').value) }};
-            await fetchAuth('/api/asistencia/configuracion', {{ method: 'POST', headers: {{ 'Content-Type': 'application/json' }}, body: JSON.stringify(config) }});
+            }
+        }
+
+        async function guardarConfiguracion() {
+            const config = {
+                lat_fija: parseFloat(document.getElementById('latFija').value),
+                lon_fija: parseFloat(document.getElementById('lonFija').value),
+                radio_metros: parseInt(document.getElementById('radioMetros').value)
+            };
+            await fetchAuth('/api/asistencia/configuracion', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(config) });
             alert('Configuración guardada');
-        }}
-        function usarUbicacionActual() {{
+        }
+
+        function usarUbicacionActual() {
             if (!navigator.geolocation) return alert('GPS no soportado');
-            navigator.geolocation.getCurrentPosition(pos => {{
+            navigator.geolocation.getCurrentPosition(pos => {
                 document.getElementById('latFija').value = pos.coords.latitude.toFixed(6);
                 document.getElementById('lonFija').value = pos.coords.longitude.toFixed(6);
                 alert('Coordenadas actualizadas');
-            }});
-        }}
-       async function generarQR() {
-    console.log("Iniciando generación de QR...");
-    
-    const lat = parseFloat(document.getElementById('latFija').value);
-    const lon = parseFloat(document.getElementById('lonFija').value);
-    const radio = parseInt(document.getElementById('radioMetros').value);
-    
-    console.log("Valores:", {lat, lon, radio});
-    
-    if (isNaN(lat) || isNaN(lon) || isNaN(radio)) {
-        alert('Completa todos los campos de configuración.');
-        return;
-    }
-
-    try {
-        // Primero guardar la configuración
-        console.log("Guardando configuración...");
-        await guardarConfiguracion();
-        
-        // Luego obtener el QR
-        console.log("Solicitando QR al servidor...");
-        const res = await fetchAuth('/api/asistencia/generar-qr');
-        const data = await res.json();
-        
-        console.log("Respuesta del servidor:", data);
-        
-        // Limpiar el contenedor anterior
-        const qrContainer = document.getElementById('qrCanvas');
-        qrContainer.innerHTML = '';
-        
-        // Verificar que la librería QRCode esté disponible
-        if (typeof QRCode === 'undefined') {
-            console.error("QRCode no está definido. Cargando librería...");
-            // Cargar la librería dinámicamente
-            await new Promise((resolve, reject) => {
-                const script = document.createElement('script');
-                script.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
-                script.onload = resolve;
-                script.onerror = reject;
-                document.head.appendChild(script);
             });
         }
-        
-        // Generar el QR
-        new QRCode(qrContainer, {
-            text: data.qr_url,
-            width: 220,
-            height: 220,
-            colorDark: '#002B5B',
-            colorLight: '#ffffff',
-            correctLevel: QRCode.CorrectLevel.H
-        });
 
-        // Actualizar etiquetas
-        document.getElementById('qrLatLabel').textContent = data.config.lat_fija;
-        document.getElementById('qrLonLabel').textContent = data.config.lon_fija;
-        document.getElementById('qrRadioLabel').textContent = data.config.radio_metros;
-        document.getElementById('mapaLink').innerHTML = `<a href="https://www.google.com/maps?q=${data.config.lat_fija},${data.config.lon_fija}" target="_blank" style="color:#0057A8;">🗺 Ver en Google Maps</a>`;
-        
-        // Mostrar la sección del QR
-        document.getElementById('qrSection').style.display = 'block';
-        
-        // Iniciar timer
-        if (timerInterval) clearInterval(timerInterval);
-        segundosRestantes = data.expiracion_segundos || 300;
-        
-        const actualizarTimer = () => {
-            const m = String(Math.floor(segundosRestantes / 60)).padStart(2, '0');
-            const s = String(segundosRestantes % 60).padStart(2, '0');
-            const timerEl = document.getElementById('qrTimer');
-            if (timerEl) timerEl.textContent = `${m}:${s}`;
-        };
-        
-        actualizarTimer();
-        timerInterval = setInterval(() => {
-            segundosRestantes--;
-            actualizarTimer();
-            if (segundosRestantes <= 0) {
-                clearInterval(timerInterval);
-                const canvas = document.getElementById('qrCanvas');
-                if (canvas) canvas.innerHTML = '<p style="color:#dc2626; font-weight:600;">⏱ QR expirado. Regenera.</p>';
+        async function generarQR() {
+            const lat = parseFloat(document.getElementById('latFija').value);
+            const lon = parseFloat(document.getElementById('lonFija').value);
+            const radio = parseInt(document.getElementById('radioMetros').value);
+            if (isNaN(lat) || isNaN(lon) || isNaN(radio)) {
+                alert('Completa todos los campos de configuración.');
+                return;
             }
-        }, 1000);
-        
-        console.log("QR generado exitosamente");
-        
-    } catch(e) {
-        console.error('Error detallado:', e);
-        alert('Error al generar el QR: ' + (e.message || 'Error desconocido'));
-    }
-}
+            try {
+                await guardarConfiguracion();
+                const res = await fetchAuth('/api/asistencia/generar-qr');
+                const data = await res.json();
+                const qrContainer = document.getElementById('qrCanvas');
+                qrContainer.innerHTML = '';
+                if (typeof QRCode === 'undefined') {
+                    await new Promise((resolve, reject) => {
+                        const script = document.createElement('script');
+                        script.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+                        script.onload = resolve;
+                        script.onerror = reject;
+                        document.head.appendChild(script);
+                    });
+                }
+                new QRCode(qrContainer, {
+                    text: data.qr_url,
+                    width: 220,
+                    height: 220,
+                    colorDark: '#002B5B',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.H
+                });
+                document.getElementById('qrLatLabel').textContent = data.config.lat_fija;
+                document.getElementById('qrLonLabel').textContent = data.config.lon_fija;
+                document.getElementById('qrRadioLabel').textContent = data.config.radio_metros;
+                document.getElementById('mapaLink').innerHTML = '<a href="https://www.google.com/maps?q=' + data.config.lat_fija + ',' + data.config.lon_fija + '" target="_blank" style="color:#0057A8;">🗺 Ver en Google Maps</a>';
+                document.getElementById('qrSection').style.display = 'block';
+                if (timerInterval) clearInterval(timerInterval);
+                segundosRestantes = data.expiracion_segundos || 300;
+                const actualizarTimer = () => {
+                    const m = String(Math.floor(segundosRestantes / 60)).padStart(2, '0');
+                    const s = String(segundosRestantes % 60).padStart(2, '0');
+                    const timerEl = document.getElementById('qrTimer');
+                    if (timerEl) timerEl.textContent = m + ':' + s;
+                };
+                actualizarTimer();
+                timerInterval = setInterval(() => {
+                    segundosRestantes--;
+                    actualizarTimer();
+                    if (segundosRestantes <= 0) {
+                        clearInterval(timerInterval);
+                        const canvas = document.getElementById('qrCanvas');
+                        if (canvas) canvas.innerHTML = '<p style="color:#dc2626; font-weight:600;">⏱ QR expirado. Regenera.</p>';
+                    }
+                }, 1000);
+            } catch(e) {
+                console.error('Error detallado:', e);
+                alert('Error al generar el QR: ' + (e.message || 'Error desconocido'));
+            }
+        }
 
-# ------------------------------------------------------------
-# CHECKIN – PÁGINA DEL TÉCNICO
-# ------------------------------------------------------------
+        async function cargarRegistros() {
+            const fecha = document.getElementById('fechaFiltro').value;
+            try {
+                const res = await fetchAuth('/api/asistencia/registros' + (fecha ? '?fecha=' + fecha : ''));
+                if (!res.ok) { document.getElementById('tablaAsistencia').innerHTML = '<p>Error al cargar registros.</p>'; return; }
+                const data = await res.json();
+                if (!data.length) { document.getElementById('tablaAsistencia').innerHTML = '<p>Sin registros para esta fecha.</p>'; return; }
+                let html = '<table class="data-table"><thead><tr><th>Técnico</th><th>Fecha</th><th>Hora Check-in</th><th>Distancia</th><th>Estado</th></tr></thead><tbody>';
+                data.forEach(r => {
+                    const estado = r.aprobado ? '<span class="badge" style="background:#16a34a;color:white;">✅ Aprobado</span>' : '<span class="badge" style="background:#dc2626;color:white;">❌ Rechazado</span>';
+                    html += '<tr><td><b>' + r.username + '</b></td><td>' + r.fecha + '</td><td>' + r.hora_checkin + '</td><td>' + (r.distancia_metros ? r.distancia_metros.toFixed(0) + ' m' : '—') + '</td><td>' + estado + '</td></tr>';
+                });
+                html += '</tbody></table>';
+                document.getElementById('tablaAsistencia').innerHTML = html;
+            } catch(e) { document.getElementById('tablaAsistencia').innerHTML = '<p>Error de conexión.</p>'; }
+        }
+
+        function exportarCSV() {
+            const fecha = document.getElementById('fechaFiltro').value;
+            fetchAuth('/api/asistencia/registros' + (fecha ? '?fecha=' + fecha : '')).then(res => res.json()).then(data => {
+                if (!data.length) return alert('Sin datos para exportar');
+                const headers = ['Técnico','Fecha','Hora Check-in','Distancia (m)','Aprobado'];
+                const rows = data.map(r => [r.username, r.fecha, r.hora_checkin, r.distancia_metros ? r.distancia_metros.toFixed(0) : '', r.aprobado ? 'Sí' : 'No']);
+                const csv = [headers, ...rows].map(r => r.join(',')).join('\\n');
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url; a.download = 'asistencia_' + (fecha || 'all') + '.csv'; a.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            });
+        }
+
+        cargarConfiguracion();
+    </script>
+    """
+    )
+    return HTMLResponse(content=pagina_con_menu("📍 Control de Asistencia", contenido, "asistencia"))
+
+
 @router.get("/app/checkin", response_class=HTMLResponse)
 async def checkin_tecnico():
     return HTMLResponse(content=pagina_con_menu("📍 Registrar Asistencia", get_checkin_template(), "checkin"))
