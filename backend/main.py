@@ -11,9 +11,13 @@ from routers.evidencias_router import router as evidencias_router
 from routers.toma_valores_router import router as toma_valores_router
 from routers.comentarios_router import router as comentarios_router
 from routers.ws import router as ws_router
-from routers.cluster_router import router as cluster_router   # <-- NUEVO
+from routers.cluster_router import router as cluster_router
 from db import init_db
 from routers.web_router import router as web_router
+
+# IMPORTAR NUEVOS MÓDULOS DE ASISTENCIA
+from asistencia import router as asistencia_api_router
+from asistencia.horarios_routes import router as horarios_api_router
 
 app = FastAPI(
     title="Carrier Transicold API",
@@ -32,6 +36,46 @@ app.add_middleware(
 @app.on_event("startup")
 def startup():
     init_db()
+    # Crear tablas de asistencia si no existen
+    from db import get_db_connection
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Crear tabla asistencia
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS asistencia (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            fecha TEXT NOT NULL,
+            hora TEXT NOT NULL,
+            lat_fija REAL NOT NULL,
+            lon_fija REAL NOT NULL,
+            radio_metros INTEGER NOT NULL,
+            lat_tecnico REAL NOT NULL,
+            lon_tecnico REAL NOT NULL,
+            distancia_m REAL NOT NULL,
+            gps_accuracy REAL,
+            selfie_path TEXT,
+            dentro_radio INTEGER DEFAULT 0,
+            fecha_registro TEXT NOT NULL
+        )
+    ''')
+    
+    # Crear tabla horarios
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS horarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            fecha TEXT NOT NULL,
+            semana TEXT NOT NULL,
+            hora_entrada TEXT,
+            hora_salida TEXT,
+            UNIQUE(username, fecha)
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
 
 app.include_router(auth_router)
 app.include_router(dashboard_router)
@@ -44,8 +88,12 @@ app.include_router(evidencias_router)
 app.include_router(toma_valores_router)
 app.include_router(comentarios_router)
 app.include_router(ws_router)
-app.include_router(cluster_router)      # <-- NUEVO
+app.include_router(cluster_router)
 app.include_router(web_router)
+
+# INCLUIR LOS NUEVOS ROUTERS DE ASISTENCIA
+app.include_router(asistencia_api_router)
+app.include_router(horarios_api_router)
 
 @app.get("/")
 def root():
