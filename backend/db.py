@@ -2,6 +2,7 @@
 import sqlite3
 import os
 import hashlib
+from typing import Optional, List, Dict, Any
 
 DB_PATH = os.getenv("DATABASE_URL", "carrier.db")
 if DB_PATH.startswith("sqlite:///"):
@@ -12,6 +13,44 @@ def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def execute_query(sql: str, params: tuple = ()) -> List[Dict[str, Any]]:
+    """Ejecuta una consulta SELECT y retorna los resultados como lista de diccionarios"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(sql, params)
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def execute_write(sql: str, params: tuple = ()) -> int:
+    """Ejecuta una consulta INSERT/UPDATE/DELETE y retorna el último ID insertado"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(sql, params)
+    conn.commit()
+    last_id = cursor.lastrowid
+    conn.close()
+    return last_id
+
+
+def execute_read(sql: str, params: tuple = ()) -> List[Dict[str, Any]]:
+    """Alias de execute_query para compatibilidad con código existente"""
+    return execute_query(sql, params)
+
+
+def execute_write_many(sql: str, params_list: List[tuple]) -> int:
+    """Ejecuta múltiples inserciones/actualizaciones en lote"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.executemany(sql, params_list)
+    conn.commit()
+    count = cursor.rowcount
+    conn.close()
+    return count
+
 
 def init_db():
     """Inicializa la base de datos con todas las tablas necesarias"""
@@ -179,13 +218,19 @@ def init_db():
         cursor.execute("INSERT INTO usuarios (username, password, role) VALUES (?, ?, ?)",
                        ("admin", admin_pass, "admin"))
     
-    # Insertar actividades por defecto si no existen (opcional)
-    actividades_default = [
-        'Cableado', 'Programación', 'Soldadura', 'Check de fugas', 'Vacío',
-        'Cerrado', 'Pre-viaje', 'Horas Corridas', 'Standby', 'GPS',
-        'Corriendo', 'Inspección', 'Accesorios', 'Toma de Valores',
-        'Evidencia', 'Toma de Series'
-    ]
+    # Crear un técnico de ejemplo si no hay técnicos
+    cursor.execute("SELECT * FROM usuarios WHERE role = 'tecnico' LIMIT 1")
+    if not cursor.fetchone():
+        tecnico_pass = hashlib.sha256("tecnico123".encode()).hexdigest()
+        cursor.execute("INSERT INTO usuarios (username, password, role) VALUES (?, ?, ?)",
+                       ("tecnico", tecnico_pass, "tecnico"))
+    
+    # Crear un usuario visor de ejemplo
+    cursor.execute("SELECT * FROM usuarios WHERE role = 'visor' LIMIT 1")
+    if not cursor.fetchone():
+        visor_pass = hashlib.sha256("visor123".encode()).hexdigest()
+        cursor.execute("INSERT INTO usuarios (username, password, role) VALUES (?, ?, ?)",
+                       ("visor", visor_pass, "visor"))
     
     conn.commit()
     conn.close()
