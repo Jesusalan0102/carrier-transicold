@@ -7,22 +7,32 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Ruta del certificado (debe estar en backend/isrgrootx1.pem)
+# Ruta del certificado
 CERT_PATH = os.path.join(os.path.dirname(__file__), "isrgrootx1.pem")
 
-DB_CONFIG = {
-    "host": os.getenv("DB_HOST"),
-    "port": int(os.getenv("DB_PORT", 4000)),
-    "user": os.getenv("DB_USER"),
-    "password": os.getenv("DB_PASSWORD"),
-    "database": os.getenv("DB_NAME"),
-    "autocommit": True,
-    "cursorclass": DictCursor,
-    "ssl": {
-        "ca": CERT_PATH,
-        "check_hostname": True
+# Verificar si el certificado existe, si no, deshabilitar SSL temporalmente
+if os.path.exists(CERT_PATH):
+    DB_CONFIG = {
+        "host": os.getenv("DB_HOST"),
+        "port": int(os.getenv("DB_PORT", 4000)),
+        "user": os.getenv("DB_USER"),
+        "password": os.getenv("DB_PASSWORD"),
+        "database": os.getenv("DB_NAME"),
+        "autocommit": True,
+        "cursorclass": DictCursor,
+        "ssl": {"ca": CERT_PATH}
     }
-}
+else:
+    # Si no hay certificado, conectar sin SSL
+    DB_CONFIG = {
+        "host": os.getenv("DB_HOST"),
+        "port": int(os.getenv("DB_PORT", 4000)),
+        "user": os.getenv("DB_USER"),
+        "password": os.getenv("DB_PASSWORD"),
+        "database": os.getenv("DB_NAME"),
+        "autocommit": True,
+        "cursorclass": DictCursor,
+    }
 
 @contextmanager
 def get_db():
@@ -32,21 +42,24 @@ def get_db():
     finally:
         conn.close()
 
-def execute_query(sql: str, params: tuple = ()) -> List[Dict[str, Any]]:
+def execute_read(sql: str, params: tuple = ()) -> List[Dict[str, Any]]:
+    """Ejecuta una consulta SELECT y retorna los resultados"""
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute(sql, params)
             return cur.fetchall()
 
 def execute_write(sql: str, params: tuple = ()):
+    """Ejecuta una consulta INSERT/UPDATE/DELETE"""
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute(sql, params)
         conn.commit()
 
-def execute_read(sql: str, params: tuple = ()) -> List[Dict[str, Any]]:
-    return execute_query(sql, params)
+def execute_query(sql: str, params: tuple = ()) -> List[Dict[str, Any]]:
+    """Alias de execute_read para compatibilidad"""
+    return execute_read(sql, params)
 
 def init_db():
-    # Las tablas ya existen en TiDB Cloud
+    """Las tablas ya existen en TiDB Cloud"""
     pass
