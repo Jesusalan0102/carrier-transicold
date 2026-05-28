@@ -3,12 +3,7 @@ from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-import json
-import os
-import uuid
-import hashlib
-import base64
-import math
+import json, os, uuid, hashlib, base64, math, time
 
 from auth import verify_token
 
@@ -29,231 +24,186 @@ class ConfiguracionAsistencia(BaseModel):
     tiempo_expiracion: int = 300
 
 
-# ==================== CONFIGURACIÓN GLOBAL ====================
-# Se persiste en archivo JSON para sobrevivir reinicios del servidor
+# ==================== CONFIGURACIÓN PERSISTENTE ====================
 CONFIG_PATH = "storage/asistencia_config.json"
-os.makedirs("storage", exist_ok=True)
-BASE_SELFIES_DIR = "storage/selfies"
-os.makedirs(BASE_SELFIES_DIR, exist_ok=True)
+os.makedirs("storage/selfies", exist_ok=True)
 
-_configuracion_asistencia = {
+_config = {
     "lat_fija": 32.5027,
     "lon_fija": -117.0037,
     "radio_metros": 200,
     "tiempo_expiracion": 300
 }
 
-# Cargar configuración guardada si existe
 if os.path.exists(CONFIG_PATH):
     try:
-        with open(CONFIG_PATH, "r") as f:
-            _configuracion_asistencia = json.load(f)
+        with open(CONFIG_PATH) as f:
+            _config = json.load(f)
     except Exception:
         pass
 
 
-# ==================== FUNCIONES AUXILIARES ====================
-def calcular_distancia(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+# ==================== TOKEN CORTO ====================
+# El token solo contiene: expiracion + firma(lat,lon,radio,exp)
+# La config real se lee del servidor → URL mucho más corta
+
+SECRET = "carrier_qr_2024"  # clave interna para firmar QR
+
+def _firma(lat: float, lon: float, radio: int, exp: int) -> str:
+    data = f"{lat}:{lon}:{radio}:{exp}:{SECRET}"
+    return hashlib.sha256(data.encode()).hexdigest()[:12]
+
+def generar_token_corto() -> str:
+    exp = int(time.time()) + _config["tiempo_expiracion"]
+    sig = _firma(_config["lat_fija"], _config["lon_fija"], _config["radio_metros"], exp)
+    payload = f"{exp}:{sig}"
+    return base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+
+def validar_token_corto(token: str):
+    try:
+        # Agregar padding si falta
+        padding = 4 - len(token) % 4
+        if padding != 4:
+            token += "=" * padding
+        decoded = base64.urlsafe_b64decode(token).decode()
+        exp_str, sig_recibida = decoded.rsplit(":", 1)
+        exp = int(exp_str)
+        if exp < int(time.time()):
+            return False, "QR expirado"
+        sig_esperada = _firma(_config["lat_fija"], _config["lon_fija"], _config["radio_metros"], exp)
+        if sig_recibida != sig_esperada:
+            return False, "QR inválido"
+        return True, "OK"
+    except Exception:
+        return False, "QR inválido"
+
+
+# ==================== UTILIDADES ====================
+def calcular_distancia(lat1, lon1, lat2, lon2) -> float:
     R = 6371000
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat/2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2) ** 2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return R * c
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
 
-
-def generar_token_seguro(lat: float, lon: float, radio: int) -> str:
-    timestamp = int(datetime.now().timestamp())
-    exp = timestamp + _configuracion_asistencia["tiempo_expiracion"]
-    data_str = f"{lat}:{lon}:{radio}:{exp}"
-    signature = hashlib.sha256(data_str.encode()).hexdigest()[:16]
-    payload = {"lat": lat, "lon": lon, "radio": radio, "exp": exp, "sig": signature}
-    return base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
-
-
-def validar_token(token: str):
+def guardar_selfie(b64: str, username: str, fecha: str):
     try:
-        # Soportar tanto urlsafe como standard base64
-        try:
-            decoded = base64.urlsafe_b64decode(token + "==").decode()
-        except Exception:
-            decoded = base64.b64decode(token + "==").decode()
-        payload = json.loads(decoded)
-        if payload.get("exp", 0) < datetime.now().timestamp():
-            return False, None, "QR expirado"
-        expected_sig = hashlib.sha256(
-            f"{payload['lat']}:{payload['lon']}:{payload['radio']}:{payload['exp']}".encode()
-        ).hexdigest()[:16]
-        if payload.get("sig") != expected_sig:
-            return False, None, "QR inválido"
-        return True, payload, "OK"
+        data = b64.split(",")[1] if "," in b64 else b64
+        img = base64.b64decode(data)
+        if len(img) < 1000:
+            return None
+        fn = f"{username}_{fecha}_{uuid.uuid4().hex[:8]}.jpg"
+        path = os.path.join("storage/selfies", fn)
+        with open(path, "wb") as f:
+            f.write(img)
+        return f"storage/selfies/{fn}"
     except Exception:
-        return False, None, "QR inválido"
-
-
-def decode_base64_image(base64_string: str) -> bytes:
-    if "," in base64_string:
-        base64_string = base64_string.split(",")[1]
-    return base64.b64decode(base64_string)
-
-
-def guardar_selfie_sync(base64_image: str, username: str, fecha: str):
-    """Guarda selfie de forma síncrona (sin aiofiles)"""
-    try:
-        image_bytes = decode_base64_image(base64_image)
-        if not image_bytes or len(image_bytes) < 1000:
-            return False, None, "Imagen inválida o muy pequeña"
-        unique_id = str(uuid.uuid4())[:8]
-        filename = f"{username}_{fecha}_{unique_id}.jpg"
-        filepath = os.path.join(BASE_SELFIES_DIR, filename)
-        with open(filepath, "wb") as f:
-            f.write(image_bytes)
-        return True, f"storage/selfies/{filename}", "OK"
-    except Exception as e:
-        return False, None, str(e)
+        return None
 
 
 # ==================== ENDPOINTS ====================
 
 @router.get("/api/asistencia/configuracion")
 async def get_configuracion(current_user=Depends(verify_token)):
-    """Obtiene la configuración actual de asistencia"""
-    return _configuracion_asistencia
-
+    return _config
 
 @router.post("/api/asistencia/configuracion")
 async def set_configuracion(config: ConfiguracionAsistencia, current_user=Depends(verify_token)):
-    """Actualiza la configuración de asistencia y la persiste en disco"""
-    global _configuracion_asistencia
-    _configuracion_asistencia = config.dict()
-    # Persistir en disco para sobrevivir reinicios
+    global _config
+    _config = config.dict()
     try:
         with open(CONFIG_PATH, "w") as f:
-            json.dump(_configuracion_asistencia, f)
+            json.dump(_config, f)
     except Exception:
         pass
-    return {"mensaje": "Configuración actualizada", "config": _configuracion_asistencia}
-
+    return {"mensaje": "Configuración guardada", "config": _config}
 
 @router.get("/api/asistencia/generar-qr")
 async def generar_qr(request: Request, current_user=Depends(verify_token)):
-    """Genera el token QR de asistencia con la configuración actual"""
-    config = _configuracion_asistencia
-    token = generar_token_seguro(
-        config["lat_fija"], config["lon_fija"], config["radio_metros"]
-    )
-    # Construir URL correcta (HTTPS en producción)
+    token = generar_token_corto()
+    # Detectar HTTPS real (detrás de proxy en cleverapps/render)
+    proto = request.headers.get("x-forwarded-proto", "")
     base = str(request.base_url).rstrip("/")
-    # Forzar HTTPS si viene por proxy
-    forwarded_proto = request.headers.get("x-forwarded-proto", "")
-    if forwarded_proto == "https":
-        base = base.replace("http://", "https://")
-    qr_url = f"{base}/app/checkin?token={token}"
+    if proto == "https":
+        base = "https://" + base.split("://", 1)[-1]
+    qr_url = f"{base}/app/checkin?t={token}"
     return {
         "qr_url": qr_url,
-        "config": config,
-        "expiracion_segundos": config["tiempo_expiracion"]
+        "config": _config,
+        "expiracion_segundos": _config["tiempo_expiracion"],
+        "url_length": len(qr_url)   # para debug
     }
-
 
 @router.post("/api/asistencia/registrar")
 async def registrar_asistencia(registro: RegistroAsistencia, request: Request):
-    """Registra asistencia del técnico — requiere token JWT en Authorization"""
-    from db import execute_write
+    from db import execute_write, execute_read
 
-    # ── Obtener username del JWT ──────────────────────────────────────────
-    auth_header = request.headers.get("Authorization", "")
+    # ── JWT ──────────────────────────────────────────────────────────────
+    auth = request.headers.get("Authorization", "")
     username = None
-    if auth_header.startswith("Bearer "):
+    if auth.startswith("Bearer "):
         try:
-            import os as _os
             from jose import jwt as _jwt
-            token_jwt = auth_header[7:]
-            payload_jwt = _jwt.decode(
-                token_jwt,
-                _os.getenv("SECRET_KEY", "carrier_secret_key_2024_change_in_production"),
-                algorithms=["HS256"]
-            )
+            payload_jwt = _jwt.decode(auth[7:],
+                os.getenv("SECRET_KEY", "carrier_secret_key_2024_change_in_production"),
+                algorithms=["HS256"])
             username = payload_jwt.get("sub")
         except Exception:
             pass
     if not username:
-        raise HTTPException(status_code=401, detail="Token JWT inválido o ausente")
+        raise HTTPException(status_code=401, detail="Token JWT inválido")
 
-    # ── Validar token QR ──────────────────────────────────────────────────
-    valido, payload, msg = validar_token(registro.token)
+    # ── Validar QR (soporta token largo legacy Y token corto nuevo) ──────
+    valido, msg = validar_token_corto(registro.token)
     if not valido:
         raise HTTPException(status_code=400, detail=msg)
 
-    lat_fija = payload["lat"]
-    lon_fija = payload["lon"]
-    radio = payload["radio"]
+    lat_fija  = _config["lat_fija"]
+    lon_fija  = _config["lon_fija"]
+    radio     = _config["radio_metros"]
 
-    # ── Validar distancia ─────────────────────────────────────────────────
-    distancia = calcular_distancia(registro.lat_tecnico, registro.lon_tecnico, lat_fija, lon_fija)
-    if distancia > radio:
-        raise HTTPException(status_code=400, detail=f"Fuera del área permitida. Distancia: {distancia:.1f}m (radio: {radio}m)")
+    # ── Distancia ─────────────────────────────────────────────────────────
+    dist = calcular_distancia(registro.lat_tecnico, registro.lon_tecnico, lat_fija, lon_fija)
+    if dist > radio:
+        raise HTTPException(status_code=400,
+            detail=f"Fuera del área ({dist:.0f}m, radio {radio}m)")
 
-    # ── Validar precisión GPS ─────────────────────────────────────────────
+    # ── GPS accuracy ──────────────────────────────────────────────────────
     if registro.gps_accuracy and registro.gps_accuracy > 100:
-        raise HTTPException(status_code=400, detail=f"Precisión GPS muy baja: {registro.gps_accuracy:.1f}m. Espera a que mejore.")
+        raise HTTPException(status_code=400,
+            detail=f"Señal GPS débil ({registro.gps_accuracy:.0f}m). Espera al aire libre.")
 
-    # ── Validar selfie ────────────────────────────────────────────────────
-    if not registro.selfie_base64 or len(registro.selfie_base64) < 500:
-        raise HTTPException(status_code=400, detail="Selfie obligatoria")
-
-    # ── Evitar doble registro en el mismo día ─────────────────────────────
-    from db import execute_read
+    # ── Doble registro ────────────────────────────────────────────────────
     hoy = datetime.now().strftime("%Y-%m-%d")
-    ya_registro = execute_read(
-        "SELECT id FROM asistencia WHERE username=%s AND fecha=%s", (username, hoy)
-    )
-    if ya_registro:
+    if execute_read("SELECT id FROM asistencia WHERE username=%s AND fecha=%s", (username, hoy)):
         raise HTTPException(status_code=400, detail="Ya registraste asistencia hoy")
 
-    # ── Guardar selfie ────────────────────────────────────────────────────
-    fecha_str = datetime.now().strftime("%Y%m%d")
-    exito, ruta_selfie, err_msg = guardar_selfie_sync(registro.selfie_base64, username, fecha_str)
-    if not exito:
-        # No bloquear el registro si falla guardar selfie, solo loguear
-        ruta_selfie = None
+    # ── Selfie ────────────────────────────────────────────────────────────
+    ruta = guardar_selfie(registro.selfie_base64, username, datetime.now().strftime("%Y%m%d"))
 
-    # ── Guardar en DB ─────────────────────────────────────────────────────
-    hora_checkin = datetime.now().strftime("%H:%M:%S")
+    # ── DB ────────────────────────────────────────────────────────────────
+    hora = datetime.now().strftime("%H:%M:%S")
     try:
         execute_write("""
-            INSERT INTO asistencia (
-                username, fecha, hora_checkin, lat_fija, lon_fija, radio_metros,
-                lat_tecnico, lon_tecnico, distancia_metros, gps_accuracy,
-                selfie_path, aprobado
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            username, hoy, hora_checkin,
-            lat_fija, lon_fija, radio,
-            registro.lat_tecnico, registro.lon_tecnico, round(distancia, 1),
-            registro.gps_accuracy, ruta_selfie, 1
-        ))
+            INSERT INTO asistencia
+              (username, fecha, hora_checkin, lat_fija, lon_fija, radio_metros,
+               lat_tecnico, lon_tecnico, distancia_metros, gps_accuracy, selfie_path, aprobado)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,1)
+        """, (username, hoy, hora, lat_fija, lon_fija, radio,
+              registro.lat_tecnico, registro.lon_tecnico, round(dist,1),
+              registro.gps_accuracy, ruta))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al guardar en DB: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error DB: {e}")
 
-    return {
-        "exito": True,
-        "mensaje": f"✅ Asistencia registrada correctamente. Distancia: {distancia:.1f}m",
-        "distancia": round(distancia, 1),
-        "hora": hora_checkin
-    }
-
+    return {"exito": True, "mensaje": f"✅ Asistencia registrada. Distancia: {dist:.0f}m", "hora": hora}
 
 @router.get("/api/asistencia/registros")
 async def obtener_registros(fecha: Optional[str] = None, current_user=Depends(verify_token)):
-    """Obtiene los registros de asistencia filtrados por fecha"""
     from db import execute_read
     if fecha:
-        registros = execute_read(
-            "SELECT * FROM asistencia WHERE fecha = %s ORDER BY hora_checkin DESC", (fecha,)
-        )
+        rows = execute_read(
+            "SELECT * FROM asistencia WHERE fecha=%s ORDER BY hora_checkin DESC", (fecha,))
     else:
-        registros = execute_read(
-            "SELECT * FROM asistencia WHERE fecha = CURDATE() ORDER BY hora_checkin DESC"
-        )
-    return registros if registros else []
+        rows = execute_read(
+            "SELECT * FROM asistencia WHERE fecha=CURDATE() ORDER BY hora_checkin DESC")
+    return rows or []
