@@ -1140,7 +1140,7 @@ async def asistencia_admin():
                     height: 220,
                     colorDark: '#002B5B',
                     colorLight: '#ffffff',
-                    correctLevel: QRCode.CorrectLevel.H
+                    correctLevel: QRCode.CorrectLevel.L
                 });
                 document.getElementById('qrLatLabel').textContent = data.config.lat_fija;
                 document.getElementById('qrLonLabel').textContent = data.config.lon_fija;
