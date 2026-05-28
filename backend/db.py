@@ -1,238 +1,52 @@
-# db.py
-import sqlite3
+import pymysql
+from pymysql.cursors import DictCursor
+from contextlib import contextmanager
+from typing import List, Dict, Any
 import os
-import hashlib
-from typing import Optional, List, Dict, Any
+from dotenv import load_dotenv
 
-DB_PATH = os.getenv("DATABASE_URL", "carrier.db")
-if DB_PATH.startswith("sqlite:///"):
-    DB_PATH = DB_PATH.replace("sqlite:///", "")
+load_dotenv()
 
-def get_db_connection():
-    """Retorna una conexión a la base de datos SQLite"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+# Ruta del certificado (debe estar en backend/isrgrootx1.pem)
+CERT_PATH = os.path.join(os.path.dirname(__file__), "isrgrootx1.pem")
 
+DB_CONFIG = {
+    "host": os.getenv("DB_HOST"),
+    "port": int(os.getenv("DB_PORT", 4000)),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+    "database": os.getenv("DB_NAME"),
+    "autocommit": True,
+    "cursorclass": DictCursor,
+    "ssl": {
+        "ca": CERT_PATH,
+        "check_hostname": True
+    }
+}
+
+@contextmanager
+def get_db():
+    conn = pymysql.connect(**DB_CONFIG)
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 def execute_query(sql: str, params: tuple = ()) -> List[Dict[str, Any]]:
-    """Ejecuta una consulta SELECT y retorna los resultados como lista de diccionarios"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(sql, params)
-    rows = cursor.fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            return cur.fetchall()
 
-
-def execute_write(sql: str, params: tuple = ()) -> int:
-    """Ejecuta una consulta INSERT/UPDATE/DELETE y retorna el último ID insertado"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(sql, params)
-    conn.commit()
-    last_id = cursor.lastrowid
-    conn.close()
-    return last_id
-
+def execute_write(sql: str, params: tuple = ()):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+        conn.commit()
 
 def execute_read(sql: str, params: tuple = ()) -> List[Dict[str, Any]]:
-    """Alias de execute_query para compatibilidad con código existente"""
     return execute_query(sql, params)
 
-
-def execute_write_many(sql: str, params_list: List[tuple]) -> int:
-    """Ejecuta múltiples inserciones/actualizaciones en lote"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.executemany(sql, params_list)
-    conn.commit()
-    count = cursor.rowcount
-    conn.close()
-    return count
-
-
 def init_db():
-    """Inicializa la base de datos con todas las tablas necesarias"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # ========== TABLAS EXISTENTES ==========
-    
-    # Tabla de usuarios
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS usuarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'tecnico'
-        )
-    ''')
-    
-    # Tabla de unidades
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS unidades (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            unit_number TEXT UNIQUE NOT NULL,
-            id_lote TEXT,
-            vin_number TEXT,
-            reefer_serial TEXT,
-            reefer_model TEXT,
-            evaporator_serial_mjs11 TEXT,
-            evaporator_serial_mjd22 TEXT,
-            engine_serial TEXT,
-            compressor_serial TEXT,
-            generator_serial TEXT,
-            battery_charger_serial TEXT
-        )
-    ''')
-    
-    # Tabla de asignaciones
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS asignaciones (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            unidad TEXT NOT NULL,
-            tecnico TEXT NOT NULL,
-            actividad_id TEXT NOT NULL,
-            estado TEXT DEFAULT 'pendiente',
-            comentario TEXT,
-            fecha_asignacion TEXT DEFAULT CURRENT_TIMESTAMP,
-            fecha_completado TEXT,
-            FOREIGN KEY (tecnico) REFERENCES usuarios(username)
-        )
-    ''')
-    
-    # Tabla de tickets
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS tickets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ticket_num TEXT UNIQUE NOT NULL,
-            unit_number TEXT NOT NULL,
-            vin_number TEXT,
-            descripcion TEXT NOT NULL,
-            creado_por TEXT NOT NULL,
-            tecnico_asignado TEXT NOT NULL,
-            atendido INTEGER DEFAULT 0,
-            reporte_enviado INTEGER DEFAULT 0,
-            reporte_texto TEXT,
-            fecha_creacion TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    # Tabla de inventario config
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS inventario_config (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            columnas TEXT
-        )
-    ''')
-    
-    # Tabla de inventario datos
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS inventario_datos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            datos TEXT
-        )
-    ''')
-    
-    # Tabla de toma de valores campos
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS toma_valores_campos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            campo_nombre TEXT UNIQUE NOT NULL
-        )
-    ''')
-    
-    # Tabla de toma de valores registros
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS toma_valores_registros (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            asignacion_id INTEGER NOT NULL,
-            valores TEXT NOT NULL,
-            fecha_registro TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    # Tabla de evidencias
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS evidencias (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            unit_number TEXT NOT NULL,
-            tecnico TEXT NOT NULL,
-            filename TEXT NOT NULL,
-            filepath TEXT NOT NULL,
-            fecha_subida TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    # Tabla de comentarios
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS comentarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            asignacion_id INTEGER NOT NULL,
-            usuario TEXT NOT NULL,
-            comentario TEXT NOT NULL,
-            fecha TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    # ========== TABLAS NUEVAS DE ASISTENCIA ==========
-    
-    # Tabla de horarios
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS horarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
-            fecha TEXT NOT NULL,
-            semana TEXT NOT NULL,
-            hora_entrada TEXT,
-            hora_salida TEXT,
-            UNIQUE(username, fecha)
-        )
-    ''')
-    
-    # Tabla de asistencia
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS asistencia (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
-            fecha TEXT NOT NULL,
-            hora TEXT NOT NULL,
-            lat_fija REAL NOT NULL,
-            lon_fija REAL NOT NULL,
-            radio_metros INTEGER NOT NULL,
-            lat_tecnico REAL NOT NULL,
-            lon_tecnico REAL NOT NULL,
-            distancia_m REAL NOT NULL,
-            gps_accuracy REAL,
-            selfie_path TEXT,
-            dentro_radio INTEGER DEFAULT 0,
-            fecha_registro TEXT NOT NULL
-        )
-    ''')
-    
-    # Crear usuario admin por defecto si no existe
-    cursor.execute("SELECT * FROM usuarios WHERE username = 'admin'")
-    if not cursor.fetchone():
-        admin_pass = hashlib.sha256("admin123".encode()).hexdigest()
-        cursor.execute("INSERT INTO usuarios (username, password, role) VALUES (?, ?, ?)",
-                       ("admin", admin_pass, "admin"))
-    
-    # Crear un técnico de ejemplo si no hay técnicos
-    cursor.execute("SELECT * FROM usuarios WHERE role = 'tecnico' LIMIT 1")
-    if not cursor.fetchone():
-        tecnico_pass = hashlib.sha256("tecnico123".encode()).hexdigest()
-        cursor.execute("INSERT INTO usuarios (username, password, role) VALUES (?, ?, ?)",
-                       ("tecnico", tecnico_pass, "tecnico"))
-    
-    # Crear un usuario visor de ejemplo
-    cursor.execute("SELECT * FROM usuarios WHERE role = 'visor' LIMIT 1")
-    if not cursor.fetchone():
-        visor_pass = hashlib.sha256("visor123".encode()).hexdigest()
-        cursor.execute("INSERT INTO usuarios (username, password, role) VALUES (?, ?, ?)",
-                       ("visor", visor_pass, "visor"))
-    
-    conn.commit()
-    conn.close()
-    
-    print("✅ Base de datos inicializada correctamente")
+    # Las tablas ya existen en TiDB Cloud
+    pass
