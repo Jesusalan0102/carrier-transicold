@@ -59,4 +59,6 @@ async def validar_selfie(base64_image: str) -> Tuple[bool, str]:
         return False, "Formato de imagen inválido"
     
     if len(image_bytes) < 5000:
-        return False, "La imagen es demasiado pequeña. Por favor
+        return False, "La imagen es demasiado pequeña. Por favor, toma una selfie válida"
+    
+    return True, "Selfie válida"
