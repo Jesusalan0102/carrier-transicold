@@ -1,4 +1,3 @@
-# web_router.py
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
@@ -85,12 +84,75 @@ BASE_STYLE = """
     .evidencia-info { background: #eff6ff; border: 1px solid #bfdbfe; border-left: 5px solid #3b82f6; border-radius: 10px; padding: 12px 18px; margin-bottom: 14px; }
     .inv-info-bar { background: linear-gradient(90deg, var(--carrier-blue) 0%, var(--carrier-accent) 100%); color: white; padding: 14px 20px; border-radius: 12px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
     .tv-field-badge { background: var(--carrier-light); border: 1px solid #c3d4f0; border-radius: 8px; padding: 6px 12px; font-size: 0.82rem; color: var(--carrier-blue); font-weight: 600; display: inline-block; margin-bottom: 8px; }
+    body.visor-mode .btn-primary,
+    body.visor-mode .btn-danger,
+    body.visor-mode .btn-success,
+    body.visor-mode .btn-warning,
+    body.visor-mode button:not(.logout-btn):not(.hamburger) { display: none !important; }
+    body.visor-mode input, body.visor-mode select, body.visor-mode textarea { pointer-events: none; background: #f9fafb; }
+    body.visor-mode .admin-only { display: none !important; }
+    .visor-banner { background: #fef3c7; border: 1px solid #f59e0b; color: #92400e; padding: 8px 16px; border-radius: 8px; font-size: 0.82rem; font-weight: 600; text-align: center; margin-bottom: 16px; }
+    .login-card { background: white; padding: 36px 40px; border-radius: 20px; box-shadow: 0 12px 40px rgba(0,43,91,0.18); border: 1px solid #e2e8f2; }
+    .user-chip { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.22); border-radius: 50px; padding: 6px 14px; color: white; font-size: 0.82rem; font-weight: 500; display: inline-block; margin-top: 4px; }
+    .logout-btn { background: rgba(220,38,38,0.25); border: 1px solid rgba(220,38,38,0.5); padding: 14px 20px; border-radius: 10px; color: white; font-weight: 600; font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; transition: background 0.2s; flex-shrink: 0; }
+    .logout-btn:hover { background: rgba(220,38,38,0.45); }
     .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 200; }
     .modal-content { background: white; padding: 24px; border-radius: 16px; width: 90%; max-width: 500px; max-height: 80vh; overflow-y: auto; box-shadow: 0 12px 40px rgba(0,0,0,0.2); }
     .modal-content input { margin-bottom: 10px; }
     .modal-content .btn-primary, .modal-content .btn-danger, .modal-content .btn-success { margin-top: 8px; }
     .hamburger { display: none; position: fixed; top: 14px; left: 14px; z-index: 300; background: var(--carrier-blue); color: white; border: none; border-radius: 10px; width: 44px; height: 44px; font-size: 1.3rem; cursor: pointer; box-shadow: 0 4px 12px rgba(0,43,91,0.35); align-items: center; justify-content: center; }
     .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.45); z-index: 99; }
+    .status-table-wrapper {
+        overflow-x: auto;
+        border-radius: 16px;
+        background: white;
+        box-shadow: 0 4px 20px rgba(0,43,91,0.08);
+    }
+    .status-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.75rem;
+        min-width: 1000px;
+    }
+    .status-table th {
+        background: linear-gradient(135deg, #002B5B, #0057A8);
+        color: white;
+        padding: 12px 8px;
+        text-align: center;
+        font-weight: 600;
+        font-size: 0.75rem;
+        border-right: 1px solid rgba(255,255,255,0.15);
+    }
+    .status-table th:last-child { border-right: none; }
+    .status-table td {
+        padding: 10px 8px;
+        text-align: center;
+        border-bottom: 1px solid #e5e7eb;
+    }
+    .status-table tbody tr:hover td { background: #e8f0fb; }
+    .status-table .lote-cell { font-weight: 700; color: #002B5B; background: #f8fafc; }
+    .status-table .unit-cell { font-family: monospace; font-weight: 600; }
+    .status-badge-complete {
+        display: inline-block;
+        width: 28px;
+        height: 28px;
+        line-height: 28px;
+        background: #16a34a;
+        color: white;
+        border-radius: 50%;
+        font-weight: bold;
+        font-size: 1rem;
+    }
+    .status-badge-pending {
+        display: inline-block;
+        width: 28px;
+        height: 28px;
+        line-height: 28px;
+        background: #f3f4f6;
+        color: #9ca3af;
+        border-radius: 50%;
+        font-size: 0.8rem;
+    }
     @media (max-width: 768px) {
         .main-header { font-size: 1.2rem; }
         .kpi-num { font-size: 1.6rem; }
@@ -304,7 +366,7 @@ async def dashboard():
         <div id="pieChart" style="background:white; border-radius:16px; padding:20px; box-shadow:0 4px 12px rgba(0,43,91,0.08); min-height:420px;"></div>
     </div>
     <div class="section-title">📋 Estatus de Proceso por Unidad</div>
-    <div id="statusTable" style="overflow-x:auto; margin-bottom:32px;"></div>
+    <div id="statusTable" style="margin-bottom:32px;"></div>
     <div class="section-title">📦 Lotes y Series por Unidad</div>
     <div id="lotesContainer" style="margin-bottom:32px;"></div>
     <div class="section-title admin-only">📂 Descarga de Evidencias por Unidad</div>
@@ -340,28 +402,58 @@ async def dashboard():
                     const unidadesRes = await fetchAuth('/api/unidades/'); const unidades = await unidadesRes.json();
                     if (unidades.length) {
                         const completadasSet = new Set(asignaciones.filter(a => a.estado === 'completada').map(a => a.unidad + '||' + a.actividad_id));
-                        let headers = '</table><th>LOTE</th><th>#Económico</th>';
-                        actividades.forEach(a => headers += `<th>${a}</th>`);
-                        headers += '</tr>';
-                        let body = '';
-                        unidades.forEach(u => {
-                            body += `<tr><td>${u.id_lote || ''}</td><td>${u.unit_number}</td>`;
+                        let tableHtml = `
+                            <div class="status-table-wrapper">
+                                <table class="status-table">
+                                    <thead>
+                                        <tr>
+                                            <th>LOTE</th>
+                                            <th>#Económico</th>
+                                            ${actividades.map(a => `<th>${a}</th>`).join('')}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                        `;
+                        unidades.forEach((u, idx) => {
+                            const bgColor = idx % 2 === 0 ? 'white' : '#fafafa';
+                            tableHtml += `
+                                        <tr style="background: ${bgColor};">
+                                            <td class="lote-cell">${u.id_lote || '—'}</td>
+                                            <td class="unit-cell">${u.unit_number}</td>
+                            `;
                             actividades.forEach(act => {
                                 const completada = completadasSet.has(u.unit_number + '||' + act);
-                                body += `<td style="text-align:center; font-weight:bold;">${completada ? '✔' : '—'}</td>`;
+                                tableHtml += `
+                                            <td>
+                                                ${completada 
+                                                    ? '<span class="status-badge-complete">✓</span>' 
+                                                    : '<span class="status-badge-pending">—</span>'}
+                                            </td>
+                                `;
                             });
-                            body += '</tr>';
+                            tableHtml += `
+                                        </tr>
+                            `;
                         });
-                        document.getElementById('statusTable').innerHTML = `<table class="data-table" style="width:100%; border-collapse:collapse;">${headers}<tbody>${body}</tbody></table>`;
+                        tableHtml += `
+                                    </tbody>
+                                </table>
+                            </div>
+                        `;
+                        document.getElementById('statusTable').innerHTML = tableHtml;
                         const lotesMap = {};
-                        unidades.forEach(u => { const lote = u.id_lote || 'Sin lote'; if (!lotesMap[lote]) lotesMap[lote] = []; lotesMap[lote].push(u); });
+                        unidades.forEach(u => {
+                            const lote = u.id_lote || 'Sin lote';
+                            if (!lotesMap[lote]) lotesMap[lote] = [];
+                            lotesMap[lote].push(u);
+                        });
                         let lotesHtml = '';
                         for (const [lote, units] of Object.entries(lotesMap)) {
                             lotesHtml += `<div style="margin-bottom:16px; border:1px solid #e0e0e0; border-radius:12px; overflow:hidden;">
                                 <div class="inv-info-bar" style="margin-bottom:0; cursor:pointer;" onclick="var d=this.nextElementSibling;d.style.display=d.style.display==='none'?'block':'none';">📦 Lote: ${lote} (${units.length} unidades) <span style="margin-left:auto;">▼</span></div>
                                 <div style="display:none; padding:16px; background:white; overflow-x:auto;">
                                     <table class="data-table" style="width:100%;">
-                                        <thead><tr><th>#Económico</th>${Object.values(camposSeries).map(s => `<th>${s}</th>`).join('')}</tr></thead>
+                                        <thead><tr><th>#Económico</th>${Object.values(camposSeries).map(s => `<th>${s}</th>`).join('')}</table></thead>
                                         <tbody>${units.map(u => `<tr><td>${u.unit_number}</td>${Object.keys(camposSeries).map(k => `<td>${u[k] || '—'}</td>`).join('')}</tr>`).join('')}</tbody>
                                     </table>
                                 </div>
@@ -383,7 +475,7 @@ async def dashboard():
 
 
 # ------------------------------------------------------------
-# ASIGNACIONES
+# ASIGNACIONES (admin)
 # ------------------------------------------------------------
 @router.get("/app/asignaciones", response_class=HTMLResponse)
 async def asignaciones():
@@ -407,6 +499,9 @@ async def asignaciones():
     <script>
         const fetchAuth = window.fetchAuth;
         const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series'];
+        document.getElementById('unidad').addEventListener('change', () => document.getElementById('msgAsignacion').innerHTML = '');
+        document.getElementById('tecnico').addEventListener('change', () => document.getElementById('msgAsignacion').innerHTML = '');
+        document.getElementById('actividad').addEventListener('change', () => document.getElementById('msgAsignacion').innerHTML = '');
         async function cargarSolicitudes() {
             const lista = document.getElementById('listaSolicitudes');
             lista.innerHTML = '<p style="color:var(--carrier-warn);">Cargando solicitudes...</p>';
@@ -415,8 +510,9 @@ async def asignaciones():
                 if (!res.ok) throw new Error('Error ' + res.status);
                 const solicitudes = await res.json();
                 let html = '';
-                if (!Array.isArray(solicitudes) || solicitudes.length === 0) { html = '<p>✅ Sin solicitudes pendientes.</p>'; }
-                else {
+                if (!Array.isArray(solicitudes) || solicitudes.length === 0) {
+                    html = '<p>✅ Sin solicitudes pendientes.</p>';
+                } else {
                     solicitudes.forEach(s => {
                         html += `<div style="background:white; border-radius:12px; padding:16px; margin-bottom:12px; box-shadow:0 2px 8px rgba(0,0,0,0.05); display:flex; justify-content:space-between; align-items:center;">
                             <div><b>${s.tecnico}</b> solicita <b>${s.actividad_id}</b> — Unidad: <b>${s.unidad}</b></div>
@@ -460,7 +556,7 @@ async def asignaciones():
 
 
 # ------------------------------------------------------------
-# TICKETS
+# TICKETS (admin)
 # ------------------------------------------------------------
 @router.get("/app/tickets", response_class=HTMLResponse)
 async def tickets():
@@ -510,7 +606,7 @@ async def tickets():
 
 
 # ------------------------------------------------------------
-# INVENTARIO
+# INVENTARIO (admin)
 # ------------------------------------------------------------
 @router.get("/app/inventario", response_class=HTMLResponse)
 async def inventario():
@@ -553,7 +649,7 @@ async def inventario():
 
 
 # ------------------------------------------------------------
-# REGISTRO DE UNIDADES
+# REGISTRO DE UNIDADES (admin)
 # ------------------------------------------------------------
 @router.get("/app/unidades", response_class=HTMLResponse)
 async def unidades():
@@ -572,7 +668,7 @@ async def unidades():
     <div id="unidadesList"></div>
     <script>
         const fetchAuth = window.fetchAuth;
-        async function cargarUnidades() { const res = await fetchAuth('/api/unidades/'); const unidades = await res.json(); let html = '<table class="data-table"><thead><tr><th>#Económico</th><th>Lote</th><th>VIN</th><th>Reefer Serial</th><th>Modelo</th><th>Motor</th><th>Compresor</th></tr></thead><tbody>'; if (Array.isArray(unidades)) unidades.forEach(u => html += `<tr><td>${u.unit_number}</td><td>${u.id_lote||''}</td><td style="font-family:monospace;">${u.vin_number||''}</td><td>${u.reefer_serial||''}</td><td>${u.reefer_model||''}</td><td style="font-family:monospace;">${u.engine_serial||''}</td><td>${u.compressor_serial||''}</td></tr>`); html += '</tbody></table>'; document.getElementById('unidadesList').innerHTML = html; }
+        async function cargarUnidades() { const res = await fetchAuth('/api/unidades/'); const unidades = await res.json(); let html = '<table class="data-table"><thead><tr><th>#Económico</th><th>Lote</th><th>VIN</th><th>Reefer Serial</th><th>Modelo</th><th>Motor</th><th>Compresor</th></tr></thead><tbody>'; if (Array.isArray(unidades)) unidades.forEach(u => html += `<tr><td>${u.unit_number}</td><td>${u.id_lote||''}</td><td style="font-family:monospace;">${u.vin_number||''}</td><td>${u.reefer_serial||''}</td><td>${u.reefer_model||''}</td><td style="font-family:monospace;">${u.engine_serial||''}</td><td>${u.compressor_serial||''}</td>`); html += '</tbody></table>'; document.getElementById('unidadesList').innerHTML = html; }
         document.getElementById('unidadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const data = {
@@ -599,7 +695,7 @@ async def unidades():
 
 
 # ------------------------------------------------------------
-# GESTIÓN DE USUARIOS
+# GESTIÓN DE USUARIOS (admin)
 # ------------------------------------------------------------
 @router.get("/app/usuarios", response_class=HTMLResponse)
 async def usuarios():
@@ -623,7 +719,7 @@ async def usuarios():
             if (Array.isArray(usuarios)) usuarios.forEach(u => {
                 const rolTexto = u.role === 'admin' ? '🛡 Administrador' : (u.role === 'tecnico' ? '🔧 Técnico' : '👁 Visor');
                 const acciones = window.role === 'admin' ? `<button class="btn-warning" onclick="abrirModalPassword(${u.id}, '${u.username}')" style="padding:6px 14px;font-size:0.82rem;margin-right:6px;">🔑 Cambiar Contraseña</button><button class="btn-danger" onclick="eliminarUsuario(${u.id}, '${u.username}')" style="padding:6px 14px;font-size:0.82rem;">🗑️ Eliminar</button>` : '—';
-                html += `<tr><td><b>${u.username}</b></td><td>${rolTexto}</td><td style="text-align:center;">${acciones}</td></tr>`;
+                html += `<tr><td><b>${u.username}</b></td><td style="text-align:center;">${rolTexto}</td><td style="text-align:center;">${acciones}</td></tr>`;
             });
             html += '</tbody></table>';
             document.getElementById('usuariosList').innerHTML = html;
@@ -664,7 +760,7 @@ async def usuarios():
 
 
 # ------------------------------------------------------------
-# PANEL DE ADMINISTRACIÓN
+# PANEL DE ADMINISTRACIÓN (admin)
 # ------------------------------------------------------------
 @router.get("/app/admin", response_class=HTMLResponse)
 async def admin():
@@ -736,7 +832,7 @@ async def admin():
             const data = await res.json();
             let html = '<table class="data-table"><thead><tr><th>ID</th><th>#Económico</th><th>Lote</th><th>VIN</th></tr></thead><tbody>';
             data.forEach(r => html += `<tr><td>${r.id}</td><td>${r.unit_number}</td><td>${r.id_lote}</td><td>${r.vin_number}</td></tr>`);
-            html += '</tbody></table>';
+            html += '</tbody><tr>';
             document.getElementById('unidadesContent').innerHTML = html;
         }
         cargarActividades(); cargarUsuariosAdmin(); cargarUnidadesAdmin();
@@ -943,7 +1039,7 @@ async def panel_cluster():
 
 
 # ------------------------------------------------------------
-# ASISTENCIA – ADMIN (QR unificado)
+# ASISTENCIA – ADMIN
 # ------------------------------------------------------------
 @router.get("/app/asistencia", response_class=HTMLResponse)
 async def asistencia_admin():
@@ -1005,6 +1101,11 @@ async def asistencia_admin():
             }});
         }}
         async function generarQR() {{
+            const lat = parseFloat(document.getElementById('latFija').value);
+            const lon = parseFloat(document.getElementById('lonFija').value);
+            const radio = parseInt(document.getElementById('radioMetros').value);
+            if (isNaN(lat) || isNaN(lon) || isNaN(radio)) return alert('Completa todos los campos');
+            await guardarConfiguracion();
             const res = await fetchAuth('/api/asistencia/generar-qr');
             const data = await res.json();
             document.getElementById('qrCanvas').innerHTML = '';
@@ -1015,8 +1116,10 @@ async def asistencia_admin():
             document.getElementById('mapaLink').innerHTML = `<a href="https://www.google.com/maps?q=${{data.config.lat_fija}},${{data.config.lon_fija}}" target="_blank">🗺 Ver mapa</a>`;
             document.getElementById('qrSection').style.display = 'block';
             if (timerInterval) clearInterval(timerInterval);
-            segundosRestantes = 300;
-            timerInterval = setInterval(() => {{ segundosRestantes--; const m = String(Math.floor(segundosRestantes/60)).padStart(2,'0'); const s = String(segundosRestantes%60).padStart(2,'0'); document.getElementById('qrTimer').textContent = m+':'+s; if(segundosRestantes<=0) clearInterval(timerInterval); }}, 1000);
+            segundosRestantes = data.expiracion_segundos || 300;
+            const actualizarTimer = () => {{ const m = String(Math.floor(segundosRestantes/60)).padStart(2,'0'); const s = String(segundosRestantes%60).padStart(2,'0'); document.getElementById('qrTimer').textContent = m+':'+s; }};
+            actualizarTimer();
+            timerInterval = setInterval(() => {{ segundosRestantes--; actualizarTimer(); if(segundosRestantes<=0) {{ clearInterval(timerInterval); document.getElementById('qrCanvas').innerHTML = '<p style="color:#dc2626;">QR expirado</p>'; }} }}, 1000);
         }}
         async function cargarRegistros() {{
             const fecha = document.getElementById('fechaFiltro').value;
@@ -1026,7 +1129,7 @@ async def asistencia_admin():
             if (!registros.length) {{ document.getElementById('tablaAsistencia').innerHTML = '<p>No hay registros</p>'; return; }}
             let html = '<table class="data-table"><thead><tr><th>#</th><th>Técnico</th><th>Hora</th><th>Selfie</th><th>Distancia</th><th>Estado</th></tr></thead><tbody>';
             registros.forEach((r,i) => {{
-                html += `<tr><td>${{i+1}}</td><td><b>${{r.username}}</b></td><td>${{r.hora}}</td><td><a href="/${{r.selfie_path}}" target="_blank">📸 Ver</a></td><td>${{r.distancia_m}} m</td><td>${{r.dentro_radio ? '✅ Dentro' : '❌ Fuera'}}</td></tr>`;
+                html += `<tr><td>${{i+1}}</td><td><b>${{r.username}}</b></td><td>${{r.hora}}</td><td><a href="/${{r.selfie_path}}" target="_blank">📸 Ver</a></td><td>${{r.distancia_m}} m</td><td><span class="badge" style="background:${{r.dentro_radio ? '#dcfce7' : '#fee2e2'}}; color:${{r.dentro_radio ? '#16a34a' : '#dc2626'}};">${{r.dentro_radio ? '✅ Dentro' : '❌ Fuera'}}</span></td></tr>`;
             }});
             html += '</tbody></table>';
             document.getElementById('tablaAsistencia').innerHTML = html;
@@ -1065,12 +1168,14 @@ async def horarios_admin():
         <div><label>Semana (Lunes)</label><input type="date" id="semanaInicio" onchange="cargarHorarios()"></div>
         <button class="btn-primary" onclick="guardarHorarios()">💾 Guardar</button>
         <button class="btn-warning" onclick="exportarExcel()">📥 Exportar Excel</button>
+        <label class="btn-primary" style="background:#0057A8; cursor:pointer;">📤 Importar Excel <input type="file" accept=".xlsx,.csv" style="display:none;" onchange="importarExcel(this)"></label>
         <button class="btn-success" onclick="abrirModalNombres()">✏️ Editar Nombres</button>
     </div>
+    <div class="evidencia-info" style="margin-bottom:16px;">📋 Configura ENTRADA y SALIDA por día. Exporta plantilla, llénala en Excel e importa.</div>
     <div style="overflow-x:auto;" id="tablaHorarios"></div>
     <div class="section-title">📊 Resumen de Asistencia de la Semana</div>
     <div id="resumenAsistencia"></div>
-    <div id="modalNombres" class="modal"><div class="modal-content"><h3>✏️ Editar Nombres de Técnicos</h3><div id="listaNombres"></div><div style="display:flex; gap:10px; margin-top:16px;"><button class="btn-primary" onclick="guardarNombres()">💾 Guardar</button><button class="btn-danger" onclick="document.getElementById('modalNombres').style.display='none'">Cancelar</button></div></div></div>
+    <div id="modalNombres" class="modal"><div class="modal-content"><h3>✏️ Editar Nombres</h3><div id="listaNombres"></div><div style="display:flex; gap:10px; margin-top:16px;"><button class="btn-primary" onclick="guardarNombres()">💾 Guardar</button><button class="btn-danger" onclick="document.getElementById('modalNombres').style.display='none'">Cancelar</button></div></div></div>
     <script>
         const fetchAuth = window.fetchAuth;
         const DIAS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
@@ -1078,71 +1183,115 @@ async def horarios_admin():
         const hoy = new Date(); const diffLunes = hoy.getDay() === 0 ? -6 : 1 - hoy.getDay();
         const lunes = new Date(hoy); lunes.setDate(hoy.getDate() + diffLunes);
         document.getElementById('semanaInicio').value = lunes.toISOString().slice(0,10);
-        function getNombre(username) { return nombresMap[username] || username; }
-        function fechasDeSemana(lunesStr) { const fechas = []; const base = new Date(lunesStr + 'T12:00:00'); for (let i = 0; i < 6; i++) { const d = new Date(base); d.setDate(base.getDate() + i); fechas.push(d.toISOString().slice(0,10)); } return fechas; }
+        function getNombre(u) { return nombresMap[u] || u; }
+        function fechasDeSemana(l) { const f = []; const b = new Date(l+'T12:00:00'); for(let i=0;i<6;i++){ const d=new Date(b); d.setDate(b.getDate()+i); f.push(d.toISOString().slice(0,10)); } return f; }
         async function cargarHorarios() {
-            const semana = document.getElementById('semanaInicio').value; if (!semana) return;
+            const semana = document.getElementById('semanaInicio').value; if(!semana) return;
             const fechas = fechasDeSemana(semana);
             let horariosGuardados = {};
-            try { const res = await fetchAuth('/api/horarios/?semana=' + semana); if (res.ok) { const data = await res.json(); data.forEach(h => { horariosGuardados[h.username + '_' + h.fecha] = h; }); } } catch(e) {}
+            try { const res = await fetchAuth('/api/horarios/?semana='+semana); if(res.ok){ const data=await res.json(); data.forEach(h=>{ horariosGuardados[h.username+'_'+h.fecha]=h; }); } } catch(e){}
             let html = '<table class="data-table"><thead><tr><th rowspan="2">Técnico</th>';
-            fechas.forEach((f, i) => { const [,mes,dia] = f.split('-'); html += `<th colspan="2">${DIAS[i]}<br><span style="font-size:0.75rem;">${dia}/${mes}</span></th>`; });
-            html += '</tr><tr>'; fechas.forEach(() => { html += '<th>Entrada</th><th>Salida</th>'; }); html += '</tr></thead><tbody>';
+            fechas.forEach((f,i)=>{ const [,mes,dia]=f.split('-'); html+=`<th colspan="2">${DIAS[i]}<br><span style="font-size:0.75rem;">${dia}/${mes}</span></th>`; });
+            html+='</thead><tbody>';
             const usuariosRes = await fetchAuth('/api/usuarios/'); const usuarios = await usuariosRes.json();
-            tecnicosData = usuarios.filter(u => u.role === 'tecnico');
-            const guardados = localStorage.getItem('nombresCompletos'); if (guardados) nombresMap = JSON.parse(guardados);
-            tecnicosData.forEach(t => { if (!nombresMap[t.username]) nombresMap[t.username] = t.username; });
-            tecnicosData.forEach(tec => {
-                html += `<tr><td><b>${getNombre(tec.username)}</b><br><span style="font-size:0.72rem;">${tec.username}</span></td>`;
-                fechas.forEach(fecha => {
-                    const key = tec.username + '_' + fecha; const h = horariosGuardados[key] || {};
-                    html += `<td><input type="time" id="e_${tec.username}_${fecha}" value="${h.hora_entrada||''}" style="width:100px;"></td><td><input type="time" id="s_${tec.username}_${fecha}" value="${h.hora_salida||''}" style="width:100px;"></td>`;
+            tecnicosData = usuarios.filter(u=>u.role==='tecnico');
+            const guardados = localStorage.getItem('nombresCompletos'); if(guardados) nombresMap=JSON.parse(guardados);
+            tecnicosData.forEach(t=>{ if(!nombresMap[t.username]) nombresMap[t.username]=t.username; });
+            tecnicosData.forEach(tec=>{
+                html+=`<tr><td style="background:#f8fafc;"><b>${getNombre(tec.username)}</b><br><span style="font-size:0.72rem;">${tec.username}</span></td>`;
+                fechas.forEach(fecha=>{
+                    const key=tec.username+'_'+fecha; const h=horariosGuardados[key]||{};
+                    html+=`<td><input type="time" id="e_${tec.username}_${fecha}" value="${h.hora_entrada||''}" style="width:100px;"></td><td><input type="time" id="s_${tec.username}_${fecha}" value="${h.hora_salida||''}" style="width:100px;"></td>`;
                 });
-                html += '</tr>';
+                html+='</tr>';
             });
-            html += '</tbody></table>';
+            html+='</tbody></table>';
             document.getElementById('tablaHorarios').innerHTML = html;
             cargarResumenAsistencia(semana, fechas);
         }
         async function guardarHorarios() {
             const semana = document.getElementById('semanaInicio').value; const fechas = fechasDeSemana(semana);
             const registros = [];
-            tecnicosData.forEach(tec => { fechas.forEach(fecha => { registros.push({ username: tec.username, fecha, semana, hora_entrada: document.getElementById('e_' + tec.username + '_' + fecha)?.value || '', hora_salida: document.getElementById('s_' + tec.username + '_' + fecha)?.value || '' }); }); });
-            await fetchAuth('/api/horarios/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registros }) });
-            alert('Horarios guardados');
+            tecnicosData.forEach(tec=>{ fechas.forEach(fecha=>{ registros.push({ username: tec.username, fecha, semana, hora_entrada: document.getElementById('e_'+tec.username+'_'+fecha)?.value||'', hora_salida: document.getElementById('s_'+tec.username+'_'+fecha)?.value||'' }); }); });
+            const res = await fetchAuth('/api/horarios/', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ registros }) });
+            if(res.ok){ const t=document.createElement('div'); t.style.cssText='position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;'; t.textContent='✅ Horarios guardados'; document.body.appendChild(t); setTimeout(()=>t.remove(),3000); }
+            else alert('Error al guardar');
         }
-        function exportarExcel() { alert('Exportar Excel - Implementar'); }
+        function exportarExcel() {
+            const semana = document.getElementById('semanaInicio').value; const fechas = fechasDeSemana(semana);
+            const encabezado = ['Técnico (username)', 'Nombre Completo']; fechas.forEach((f,i)=>{ encabezado.push(DIAS[i]+' Entrada', DIAS[i]+' Salida'); });
+            const filas = [encabezado];
+            tecnicosData.forEach(tec=>{
+                const fila = [tec.username, getNombre(tec.username)];
+                fechas.forEach(fecha=>{ fila.push(document.getElementById('e_'+tec.username+'_'+fecha)?.value||'', document.getElementById('s_'+tec.username+'_'+fecha)?.value||''); });
+                filas.push(fila);
+            });
+            const ws = XLSX.utils.aoa_to_sheet(filas); ws['!cols']=encabezado.map((h,i)=>({ wch: i<2?22:14 }));
+            const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Horarios');
+            XLSX.writeFile(wb, 'horarios_semana_'+semana+'.xlsx');
+        }
+        function importarExcel(input) {
+            const file = input.files[0]; if(!file) return;
+            const semana = document.getElementById('semanaInicio').value; const fechas = fechasDeSemana(semana);
+            const reader = new FileReader();
+            reader.onload = e => {
+                try {
+                    const wb = XLSX.read(e.target.result, { type:'array' });
+                    const ws = wb.Sheets[wb.SheetNames[0]];
+                    const filas = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
+                    if(filas.length<2) return alert('Archivo vacío');
+                    const headers = filas[0].map(h=>String(h).trim());
+                    const idxUser = headers.findIndex(h=>h.toLowerCase().includes('username'));
+                    if(idxUser===-1) return alert('No se encontró columna "Técnico (username)"');
+                    let importados=0;
+                    filas.slice(1).forEach(fila=>{
+                        const username = String(fila[idxUser]||'').trim();
+                        if(!username) return;
+                        fechas.forEach((fecha,i)=>{
+                            const idxE = headers.findIndex(h=>h.includes(DIAS[i]) && h.toLowerCase().includes('entrada'));
+                            const idxS = headers.findIndex(h=>h.includes(DIAS[i]) && h.toLowerCase().includes('salida'));
+                            const eEl = document.getElementById('e_'+username+'_'+fecha);
+                            const sEl = document.getElementById('s_'+username+'_'+fecha);
+                            if(eEl && idxE!==-1) eEl.value = String(fila[idxE]||'').trim();
+                            if(sEl && idxS!==-1) sEl.value = String(fila[idxS]||'').trim();
+                        });
+                        importados++;
+                    });
+                    input.value='';
+                    const t=document.createElement('div'); t.style.cssText='position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#0057A8;color:white;padding:14px 28px;border-radius:50px;'; t.textContent=`📤 ${importados} técnicos importados`; document.body.appendChild(t); setTimeout(()=>t.remove(),4000);
+                } catch(err){ alert('Error: '+err.message); }
+            };
+            reader.readAsArrayBuffer(file);
+        }
         function abrirModalNombres() {
-            let html = '';
-            tecnicosData.forEach(tec => { html += `<div><span>${tec.username}</span><input type="text" id="nombre_${tec.username}" value="${getNombre(tec.username)}"></div>`; });
+            let html=''; tecnicosData.forEach(tec=>{ html+=`<div><span>${tec.username}</span><input type="text" id="nombre_${tec.username}" value="${getNombre(tec.username)}"></div>`; });
             document.getElementById('listaNombres').innerHTML = html;
             document.getElementById('modalNombres').style.display = 'flex';
         }
         function guardarNombres() {
-            tecnicosData.forEach(tec => { const val = document.getElementById('nombre_' + tec.username)?.value.trim(); if (val) nombresMap[tec.username] = val; });
+            tecnicosData.forEach(tec=>{ const val = document.getElementById('nombre_'+tec.username)?.value.trim(); if(val) nombresMap[tec.username]=val; });
             localStorage.setItem('nombresCompletos', JSON.stringify(nombresMap));
-            document.getElementById('modalNombres').style.display = 'none';
+            document.getElementById('modalNombres').style.display='none';
             cargarHorarios();
         }
         async function cargarResumenAsistencia(semana, fechas) {
             try {
-                const res = await fetchAuth('/api/horarios/resumen?semana=' + semana);
-                if (!res.ok) { document.getElementById('resumenAsistencia').innerHTML = '<p>Sin datos</p>'; return; }
+                const res = await fetchAuth('/api/horarios/resumen?semana='+semana);
+                if(!res.ok){ document.getElementById('resumenAsistencia').innerHTML='<p>Sin datos</p>'; return; }
                 const data = await res.json();
-                if (!data.length) { document.getElementById('resumenAsistencia').innerHTML = '<p>Sin check-ins</p>'; return; }
-                let html = '<table class="data-table"><thead><tr><th>Técnico</th>';
-                fechas.forEach((f,i) => { const [,mes,dia] = f.split('-'); html += `<th>${DIAS[i]}<br><span style="font-size:0.75rem;">${dia}/${mes}</span></th>`; });
-                html += '</tr></thead><tbody>';
-                const porTecnico = {};
-                data.forEach(r => { if (!porTecnico[r.username]) porTecnico[r.username] = {}; porTecnico[r.username][r.fecha] = r; });
-                Object.entries(porTecnico).forEach(([username, dias]) => {
-                    html += `<tr><td><b>${getNombre(username)}</b></td>`;
-                    fechas.forEach(fecha => { const r = dias[fecha]; html += `<td>${r ? (r.retardo_min > 0 ? `⏱ +${r.retardo_min} min` : `✅ ${r.hora_checkin}`) : '—'}</td>`; });
-                    html += '</tr>';
+                if(!data.length){ document.getElementById('resumenAsistencia').innerHTML='<p>Sin check-ins</p>'; return; }
+                let html='<table class="data-table"><thead><tr><th>Técnico</th>';
+                fechas.forEach((f,i)=>{ const [,mes,dia]=f.split('-'); html+=`<th>${DIAS[i]}<br><span style="font-size:0.75rem;">${dia}/${mes}</span></th>`; });
+                html+='</thead><tbody>';
+                const porTecnico={}; data.forEach(r=>{ if(!porTecnico[r.username]) porTecnico[r.username]={}; porTecnico[r.username][r.fecha]=r; });
+                Object.entries(porTecnico).forEach(([username, dias])=>{
+                    html+=`<tr><td style="background:#f8fafc;"><b>${getNombre(username)}</b><br><span style="font-size:0.72rem;">${username}</span></td>`;
+                    fechas.forEach(fecha=>{ const r=dias[fecha]; html+=`<td>${r ? (r.retardo_min>0 ? `<span class="badge" style="background:#fef3c7;">⏱ +${r.retardo_min} min</span>` : `<span class="badge" style="background:#dcfce7;">✅ ${r.hora_checkin}</span>`) : '—'}</td>`; });
+                    html+='</tr>';
                 });
-                html += '</tbody></table>';
+                html+='</tbody></table>';
                 document.getElementById('resumenAsistencia').innerHTML = html;
-            } catch(e) { document.getElementById('resumenAsistencia').innerHTML = '<p>Error</p>'; }
+            } catch(e){ document.getElementById('resumenAsistencia').innerHTML='<p>Error</p>'; }
         }
         cargarHorarios();
     </script>
