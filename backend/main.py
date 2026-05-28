@@ -36,46 +36,6 @@ app.add_middleware(
 @app.on_event("startup")
 def startup():
     init_db()
-    # Crear tablas de asistencia si no existen
-    from db import get_db_connection
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # Crear tabla asistencia
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS asistencia (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
-            fecha TEXT NOT NULL,
-            hora TEXT NOT NULL,
-            lat_fija REAL NOT NULL,
-            lon_fija REAL NOT NULL,
-            radio_metros INTEGER NOT NULL,
-            lat_tecnico REAL NOT NULL,
-            lon_tecnico REAL NOT NULL,
-            distancia_m REAL NOT NULL,
-            gps_accuracy REAL,
-            selfie_path TEXT,
-            dentro_radio INTEGER DEFAULT 0,
-            fecha_registro TEXT NOT NULL
-        )
-    ''')
-    
-    # Crear tabla horarios
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS horarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
-            fecha TEXT NOT NULL,
-            semana TEXT NOT NULL,
-            hora_entrada TEXT,
-            hora_salida TEXT,
-            UNIQUE(username, fecha)
-        )
-    ''')
-    
-    conn.commit()
-    conn.close()
 
 app.include_router(auth_router)
 app.include_router(dashboard_router)
