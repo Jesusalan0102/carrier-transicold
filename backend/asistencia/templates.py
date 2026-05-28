@@ -131,8 +131,8 @@ def get_checkin_template() -> str:
                             if (streamQR) streamQR.getTracks().forEach(t => t.stop());
                             try {
                                 const url = new URL(code.data);
-                                const token = url.searchParams.get('token');
-                                if (!token) throw new Error();
+                                const token = url.searchParams.get('t') || url.searchParams.get('token');
+                                if (!token) throw new Error('QR sin token');
                                 qrData = { token };
                                 document.getElementById('scanStatus').textContent = '✅ QR válido';
                                 document.getElementById('estadoInicial').style.display = 'none';
