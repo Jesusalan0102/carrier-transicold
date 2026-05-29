@@ -11,3 +11,4 @@ requests==2.32.3
 DBUtils>=3.0
 aiofiles
 sqlalchemy
+cryptography
