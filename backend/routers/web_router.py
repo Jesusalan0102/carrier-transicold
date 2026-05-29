@@ -1067,7 +1067,7 @@ async def asistencia_admin():
         <div id="qrSection" style="display:none; margin-bottom:32px;">
             <div class="section-title">📲 QR para Escanear</div>
             <div style="display:flex; gap:32px; align-items:flex-start; flex-wrap:wrap;">
-                <div style="background:white; padding:24px; border-radius:16px; text-align:center;"><div id="qrCanvas"></div><p>Válido por <b id="qrTimer">05:00</b></p><button class="btn-primary" onclick="generarQR()">🔄 Regenerar</button></div>
+                <div style="background:white; padding:24px; border-radius:16px; text-align:center;"><div id="qrCanvas"></div><p style="color:#16a34a; font-weight:600;">✅ QR Permanente — sin expiración</p><p style="font-size:0.8rem; color:#6b7280;">Se regenera solo al cambiar la configuración</p><button class="btn-primary" onclick="generarQR()">🔄 Regenerar QR</button></div>
                 <div style="flex:1;"><div class="inv-info-bar">📍 Punto de asistencia</div><p><b>Lat:</b> <span id="qrLatLabel"></span></p><p><b>Lon:</b> <span id="qrLonLabel"></span></p><p><b>Radio:</b> <span id="qrRadioLabel"></span> m</p><div id="mapaLink"></div></div>
             </div>
         </div>
@@ -1078,8 +1078,7 @@ async def asistencia_admin():
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <script>
         const fetchAuth = window.fetchAuth;
-        let timerInterval = null, segundosRestantes = 0;
-        document.getElementById('fechaFiltro').value = new Date().toISOString().slice(0,10);
+        document.getElementById('fechaFiltro').value = new Date().toLocaleDateString('sv-SE', {timeZone:'America/Tijuana'});
         cargarRegistros();
 
         async function cargarConfiguracion() {
@@ -1147,24 +1146,7 @@ async def asistencia_admin():
                 document.getElementById('qrRadioLabel').textContent = data.config.radio_metros;
                 document.getElementById('mapaLink').innerHTML = '<a href="https://www.google.com/maps?q=' + data.config.lat_fija + ',' + data.config.lon_fija + '" target="_blank" style="color:#0057A8;">🗺 Ver en Google Maps</a>';
                 document.getElementById('qrSection').style.display = 'block';
-                if (timerInterval) clearInterval(timerInterval);
-                segundosRestantes = data.expiracion_segundos || 300;
-                const actualizarTimer = () => {
-                    const m = String(Math.floor(segundosRestantes / 60)).padStart(2, '0');
-                    const s = String(segundosRestantes % 60).padStart(2, '0');
-                    const timerEl = document.getElementById('qrTimer');
-                    if (timerEl) timerEl.textContent = m + ':' + s;
-                };
-                actualizarTimer();
-                timerInterval = setInterval(() => {
-                    segundosRestantes--;
-                    actualizarTimer();
-                    if (segundosRestantes <= 0) {
-                        clearInterval(timerInterval);
-                        const canvas = document.getElementById('qrCanvas');
-                        if (canvas) canvas.innerHTML = '<p style="color:#dc2626; font-weight:600;">⏱ QR expirado. Regenera.</p>';
-                    }
-                }, 1000);
+                // QR permanente — sin temporizador
             } catch(e) {
                 console.error('Error detallado:', e);
                 alert('Error al generar el QR: ' + (e.message || 'Error desconocido'));
@@ -1238,9 +1220,10 @@ async def horarios_admin():
         const fetchAuth = window.fetchAuth;
         const DIAS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
         let tecnicosData = [], nombresMap = {};
-        const hoy = new Date(); const diffLunes = hoy.getDay() === 0 ? -6 : 1 - hoy.getDay();
-        const lunes = new Date(hoy); lunes.setDate(hoy.getDate() + diffLunes);
-        document.getElementById('semanaInicio').value = lunes.toISOString().slice(0,10);
+        const ahoraTJ = new Date(new Date().toLocaleString('en-US', {timeZone:'America/Tijuana'}));
+        const diffLunes = ahoraTJ.getDay() === 0 ? -6 : 1 - ahoraTJ.getDay();
+        const lunes = new Date(ahoraTJ); lunes.setDate(ahoraTJ.getDate() + diffLunes);
+        document.getElementById('semanaInicio').value = lunes.toLocaleDateString('sv-SE', {timeZone:'America/Tijuana'});
         function getNombre(u) { return nombresMap[u] || u; }
         function fechasDeSemana(l) { const f = []; const b = new Date(l+'T12:00:00'); for(let i=0;i<6;i++){ const d=new Date(b); d.setDate(b.getDate()+i); f.push(d.toISOString().slice(0,10)); } return f; }
         async function cargarHorarios() {
@@ -1302,6 +1285,17 @@ async def horarios_admin():
                     const idxUser = headers.findIndex(h=>h.toLowerCase().includes('username'));
                     if(idxUser===-1) return alert('No se encontró columna "Técnico (username)"');
                     let importados=0;
+                    function limpiarHora(v) {
+                        const s = String(v||'').trim();
+                        if(!s || s.toLowerCase()==='descansa') return '';
+                        if(!isNaN(s) && s.indexOf(':')===-1) {
+                            const totalMin = Math.round(parseFloat(s) * 1440);
+                            const hh = String(Math.floor(totalMin/60)).padStart(2,'0');
+                            const mm = String(totalMin%60).padStart(2,'0');
+                            return hh+':'+mm;
+                        }
+                        return s.length >= 5 ? s.slice(0,5) : s;
+                    }
                     filas.slice(1).forEach(fila=>{
                         const username = String(fila[idxUser]||'').trim();
                         if(!username) return;
@@ -1310,8 +1304,8 @@ async def horarios_admin():
                             const idxS = headers.findIndex(h=>h.includes(DIAS[i]) && h.toLowerCase().includes('salida'));
                             const eEl = document.getElementById('e_'+username+'_'+fecha);
                             const sEl = document.getElementById('s_'+username+'_'+fecha);
-                            if(eEl && idxE!==-1) eEl.value = String(fila[idxE]||'').trim();
-                            if(sEl && idxS!==-1) sEl.value = String(fila[idxS]||'').trim();
+                            if(eEl && idxE!==-1) eEl.value = limpiarHora(fila[idxE]);
+                            if(sEl && idxS!==-1) sEl.value = limpiarHora(fila[idxS]);
                         });
                         importados++;
                     });
