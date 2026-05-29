@@ -57,3 +57,18 @@ class InventarioSave(BaseModel):
 
 class CampoTVCreate(BaseModel):
     campo_nombre: str
+
+class Asistencia(Base):
+    __tablename__ = "asistencia"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, index=True)
+    fecha = Column(Date, index=True)
+    hora_checkin = Column(String)
+    latitud = Column(Float, nullable=True)
+    longitud = Column(Float, nullable=True)
+    distancia_metros = Column(Float, nullable=True)
+    aprobado = Column(Boolean, default=False)
+    ip_address = Column(String, nullable=True)
+    user_agent = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
