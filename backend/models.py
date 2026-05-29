@@ -58,7 +58,6 @@ class InventarioSave(BaseModel):
 class CampoTVCreate(BaseModel):
     campo_nombre: str
 
-# Modelos Pydantic para Asistencia (consistente con el resto del archivo)
 class AsistenciaCreate(BaseModel):
     username: str
     fecha: date
