@@ -51,7 +51,7 @@ app.include_router(ws_router)
 app.include_router(cluster_router)
 app.include_router(web_router)
 app.include_router(asistencia_api_router)
-app.include_router(horarios_api_router)
+
 
 @app.get("/")
 def root():
