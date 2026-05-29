@@ -193,8 +193,8 @@ def get_checkin_template() -> str:
                     })
                 });
                 const data = await res.json();
-                mostrarResultado(res.ok, data.mensaje);
-            } catch(err) { mostrarResultado(false, err.message); }
+                mostrarResultado(res.ok, data.mensaje || data.detail || 'Error al procesar la solicitud');
+            } catch(err) { mostrarResultado(false, err.message || 'Error de conexión con el servidor'); }
         }
         
         function mostrarResultado(exito, mensaje) {
@@ -205,7 +205,21 @@ def get_checkin_template() -> str:
         }
         
         obtenerUbicacion();
-        iniciarCamara();
         setInterval(obtenerUbicacion, 10000);
+
+        // Si el técnico ya viene con token en la URL (escaneó QR con cámara nativa del teléfono)
+        // saltar directo a la selfie sin necesidad de escanear de nuevo con el navegador
+        (function() {
+            const params = new URLSearchParams(window.location.search);
+            const tokenUrl = params.get('t') || params.get('token');
+            if (tokenUrl) {
+                qrData = { token: tokenUrl };
+                document.getElementById('scanStatus').textContent = '✅ QR detectado desde URL';
+                document.getElementById('estadoInicial').style.display = 'none';
+                document.getElementById('estadoSelfie').style.display = 'block';
+            } else {
+                iniciarCamara();
+            }
+        })();
     </script>
     """
