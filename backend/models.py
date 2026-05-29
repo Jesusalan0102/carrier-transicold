@@ -1,86 +1,53 @@
-from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime, date
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Time
+from sqlalchemy.orm import relationship
+from datetime import datetime
+from database import Base
 
-class LoginRequest(BaseModel):
-    username: str
-    password: str
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), unique=True, index=True)
+    email = Column(String(100), unique=True, index=True)
+    hashed_password = Column(String(200))
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    role: str
-    username: str
+class Horario(Base):
+    __tablename__ = "horarios"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    dia_semana = Column(Integer)  # 0=Lunes, 1=Martes, etc.
+    hora_entrada = Column(Time)
+    hora_salida = Column(Time)
+    
+    user = relationship("User", back_populates="horarios")
 
-class UserCreate(BaseModel):
-    username: str
-    password: str
-    role: str
+class AsistenciaConfig(Base):
+    __tablename__ = "asistencia_config"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    tolerancia_minutos = Column(Integer, default=15)
+    requiere_justificacion = Column(Boolean, default=True)
+    
+    user = relationship("User", back_populates="config")
 
-class UnidadCreate(BaseModel):
-    unit_number: str
-    id_lote: str
-    vin_number: Optional[str] = ""
-    reefer_serial: Optional[str] = ""
-    reefer_model: Optional[str] = ""
-    evaporator_serial_mjs11: Optional[str] = ""
-    evaporator_serial_mjd22: Optional[str] = ""
-    engine_serial: Optional[str] = ""
-    compressor_serial: Optional[str] = ""
-    generator_serial: Optional[str] = ""
-    battery_charger_serial: Optional[str] = ""
+class AsistenciaRegistro(Base):
+    __tablename__ = "asistencia_registros"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    fecha = Column(DateTime, default=datetime.utcnow)
+    tipo = Column(String(20))  # 'entrada' o 'salida'
+    latitud = Column(String(20), nullable=True)
+    longitud = Column(String(20), nullable=True)
+    observacion = Column(String(500), nullable=True)
+    
+    user = relationship("User", back_populates="registros")
 
-class AsignacionCreate(BaseModel):
-    unidad: str
-    actividad_id: str
-    tecnico: str
-    estado: str = "pendiente"
-
-class AsignacionUpdate(BaseModel):
-    estado: Optional[str] = None
-    tecnico: Optional[str] = None
-    actividad_id: Optional[str] = None
-    comentario: Optional[str] = None
-
-class TicketCreate(BaseModel):
-    unit_number: str
-    vin_number: Optional[str] = ""
-    descripcion: str
-    tecnico: str
-
-class TicketReport(BaseModel):
-    reporte: str
-
-class InventarioSave(BaseModel):
-    filas: List[dict]
-    columnas: List[str]
-
-class CampoTVCreate(BaseModel):
-    campo_nombre: str
-
-class AsistenciaCreate(BaseModel):
-    username: str
-    fecha: date
-    hora_checkin: str
-    latitud: Optional[float] = None
-    longitud: Optional[float] = None
-    distancia_metros: Optional[float] = None
-    aprobado: bool = False
-    ip_address: Optional[str] = None
-    user_agent: Optional[str] = None
-
-class AsistenciaResponse(BaseModel):
-    id: int
-    username: str
-    fecha: date
-    hora_checkin: str
-    latitud: Optional[float] = None
-    longitud: Optional[float] = None
-    distancia_metros: Optional[float] = None
-    aprobado: bool
-    ip_address: Optional[str] = None
-    user_agent: Optional[str] = None
-    created_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
+# Agregar relaciones a User
+User.horarios = relationship("Horario", back_populates="user")
+User.config = relationship("AsistenciaConfig", back_populates="user", uselist=False)
+User.registros = relationship("AsistenciaRegistro", back_populates="user")
