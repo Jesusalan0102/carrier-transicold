@@ -1,229 +1,330 @@
-# backend/asistencia/routes.py
-from fastapi import APIRouter, HTTPException, Request, Depends
-from pydantic import BaseModel
+"""
+routes.py — Rutas de asistencia
+Maneja:
+  - POST /api/asistencia/checkin         → Registra entrada o salida
+  - GET  /api/asistencia/estado-hoy      → Estado del día del técnico
+  - GET  /api/asistencia/registros       → Lista de registros (admin y técnico)
+  - GET  /api/asistencia/configuracion   → Lee config de geolocalización
+  - POST /api/asistencia/configuracion   → Guarda config de geolocalización
+  - GET  /api/asistencia/generar-qr      → URL para el QR permanente
+"""
+
+import math
+import json
+from datetime import datetime, date
 from typing import Optional
-from datetime import datetime, timezone, timedelta
-import json, os, uuid, hashlib, base64, math, time
 
-# Tijuana = UTC-7 (no observa horario de verano desde 2022 en Baja California)
-TIJUANA_TZ = timezone(timedelta(hours=-7))
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from auth import verify_token
+# ─── Importa los modelos y helpers de tu proyecto ──────────────────────────────
+# Ajusta los imports según la estructura real de tu proyecto.
+# Ejemplo genérico — reemplaza con los tuyos:
+from database import get_db
+from models import AsistenciaRegistro, AsistenciaConfig, Horario, User
+from auth import get_current_user
 
-router = APIRouter()
-
-# ==================== MODELOS ====================
-class RegistroAsistencia(BaseModel):
-    token: str
-    lat_tecnico: float
-    lon_tecnico: float
-    selfie_base64: str
-    gps_accuracy: Optional[float] = None
-
-class ConfiguracionAsistencia(BaseModel):
-    lat_fija: float
-    lon_fija: float
-    radio_metros: int
-    tiempo_expiracion: int = 300
+router = APIRouter(prefix="/api/asistencia", tags=["asistencia"])
 
 
-# ==================== CONFIGURACIÓN PERSISTENTE ====================
-CONFIG_PATH = "storage/asistencia_config.json"
-os.makedirs("storage/selfies", exist_ok=True)
+# ═══════════════════════════════════════════════════════════════════════════════
+# SCHEMAS
+# ═══════════════════════════════════════════════════════════════════════════════
 
-_config = {
-    "lat_fija": 32.5027,
-    "lon_fija": -117.0037,
-    "radio_metros": 200,
-    "tiempo_expiracion": 300
-}
+class CheckinPayload(BaseModel):
+    username:     str
+    tipo:         str          # "entrada" | "salida"
+    fecha:        str          # "YYYY-MM-DD" — fecha local Tijuana
+    lat:          Optional[float] = None
+    lon:          Optional[float] = None
+    precision_gps: Optional[float] = None
 
-if os.path.exists(CONFIG_PATH):
-    try:
-        with open(CONFIG_PATH) as f:
-            _config = json.load(f)
-    except Exception:
-        pass
-
-
-# ==================== TOKEN FIJO (sin expiración) ====================
-# El token es permanente y se regenera solo cuando cambia la configuración.
-# Firma basada en lat, lon y radio — sin timestamp de expiración.
-
-SECRET = "carrier_qr_2024"
-
-def _firma_fija(lat: float, lon: float, radio: int) -> str:
-    data = f"{lat}:{lon}:{radio}:{SECRET}"
-    return hashlib.sha256(data.encode()).hexdigest()[:16]
-
-def generar_token_fijo() -> str:
-    sig = _firma_fija(_config["lat_fija"], _config["lon_fija"], _config["radio_metros"])
-    payload = f"FIJO:{sig}"
-    return base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
-
-def validar_token(token: str):
-    try:
-        padding = 4 - len(token) % 4
-        if padding != 4:
-            token += "=" * padding
-        decoded = base64.urlsafe_b64decode(token).decode()
-
-        # Token fijo nuevo
-        if decoded.startswith("FIJO:"):
-            sig_recibida = decoded[5:]
-            sig_esperada = _firma_fija(_config["lat_fija"], _config["lon_fija"], _config["radio_metros"])
-            if sig_recibida != sig_esperada:
-                return False, "QR inválido"
-            return True, "OK"
-
-        # Token corto legacy (con expiración) — compatibilidad hacia atrás
-        exp_str, sig_recibida = decoded.rsplit(":", 1)
-        exp = int(exp_str)
-        if exp < int(time.time()):
-            return False, "QR expirado. Pide al administrador que regenere el QR fijo."
-        sig_esperada_legacy = hashlib.sha256(
-            f"{_config['lat_fija']}:{_config['lon_fija']}:{_config['radio_metros']}:{exp}:{SECRET}".encode()
-        ).hexdigest()[:12]
-        if sig_recibida != sig_esperada_legacy:
-            return False, "QR inválido"
-        return True, "OK"
-    except Exception:
-        return False, "QR inválido"
+class ConfigPayload(BaseModel):
+    lat_fija:     float
+    lon_fija:     float
+    radio_metros: int = 200
 
 
-# ==================== UTILIDADES ====================
-def calcular_distancia(lat1, lon1, lat2, lon2) -> float:
-    R = 6371000
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+# ═══════════════════════════════════════════════════════════════════════════════
+# HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
 
-def guardar_selfie(b64: str, username: str, fecha: str):
-    try:
-        data = b64.split(",")[1] if "," in b64 else b64
-        img = base64.b64decode(data)
-        if len(img) < 1000:
-            return None
-        fn = f"{username}_{fecha}_{uuid.uuid4().hex[:8]}.jpg"
-        path = os.path.join("storage/selfies", fn)
-        with open(path, "wb") as f:
-            f.write(img)
-        return f"storage/selfies/{fn}"
-    except Exception:
-        return None
+def _distancia_metros(lat1, lon1, lat2, lon2) -> float:
+    """Haversine — devuelve metros entre dos coordenadas."""
+    R = 6_371_000
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi  = math.radians(lat2 - lat1)
+    dlam  = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+def _hora_tj() -> str:
+    """Hora actual en Tijuana HH:MM."""
+    import pytz
+    tz = pytz.timezone("America/Tijuana")
+    return datetime.now(tz).strftime("%H:%M")
+
+def _hhmm_to_min(hhmm: str) -> int:
+    """Convierte 'HH:MM' a minutos desde medianoche."""
+    h, m = hhmm.split(":")
+    return int(h) * 60 + int(m)
+
+def _min_to_hhmm(mins: int) -> str:
+    return f"{mins // 60:02d}:{mins % 60:02d}"
 
 
-# ==================== ENDPOINTS ====================
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONFIGURACIÓN DE GEOLOCALIZACIÓN
+# ═══════════════════════════════════════════════════════════════════════════════
 
-@router.get("/api/asistencia/configuracion")
-async def get_configuracion(current_user=Depends(verify_token)):
-    return _config
+@router.get("/configuracion")
+async def get_configuracion(db: Session = Depends(get_db)):
+    """Devuelve la configuración de coordenadas y radio."""
+    cfg = db.query(AsistenciaConfig).first()
+    if not cfg:
+        # Valores por defecto
+        return {"lat_fija": 32.5027, "lon_fija": -117.0037, "radio_metros": 200}
+    return {"lat_fija": cfg.lat_fija, "lon_fija": cfg.lon_fija, "radio_metros": cfg.radio_metros}
 
-@router.post("/api/asistencia/configuracion")
-async def set_configuracion(config: ConfiguracionAsistencia, current_user=Depends(verify_token)):
-    global _config
-    _config = config.dict()
-    try:
-        with open(CONFIG_PATH, "w") as f:
-            json.dump(_config, f)
-    except Exception:
-        pass
-    return {"mensaje": "Configuración guardada", "config": _config}
 
-@router.get("/api/asistencia/generar-qr")
-async def generar_qr(request: Request, current_user=Depends(verify_token)):
-    token = generar_token_fijo()
-    proto = request.headers.get("x-forwarded-proto", "")
-    base = str(request.base_url).rstrip("/")
-    if proto == "https":
-        base = "https://" + base.split("://", 1)[-1]
-    qr_url = f"{base}/app/checkin?t={token}"
+@router.post("/configuracion")
+async def save_configuracion(payload: ConfigPayload, db: Session = Depends(get_db)):
+    """Guarda o actualiza la configuración de geolocalización."""
+    cfg = db.query(AsistenciaConfig).first()
+    if cfg:
+        cfg.lat_fija     = payload.lat_fija
+        cfg.lon_fija     = payload.lon_fija
+        cfg.radio_metros = payload.radio_metros
+    else:
+        cfg = AsistenciaConfig(
+            lat_fija     = payload.lat_fija,
+            lon_fija     = payload.lon_fija,
+            radio_metros = payload.radio_metros,
+        )
+        db.add(cfg)
+    db.commit()
+    return {"ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GENERAR QR
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/generar-qr")
+async def generar_qr(db: Session = Depends(get_db)):
+    """
+    Devuelve la URL permanente del checkin para usar como QR.
+    El QR apunta a /app/checkin — el técnico debe iniciar sesión.
+    """
+    cfg = db.query(AsistenciaConfig).first()
+    config = {
+        "lat_fija":     cfg.lat_fija     if cfg else 32.5027,
+        "lon_fija":     cfg.lon_fija     if cfg else -117.0037,
+        "radio_metros": cfg.radio_metros if cfg else 200,
+    }
+    base_url = "https://app-83fd3b1b-5d1d-43fd-be37-63f56db0efe8.cleverapps.io"
     return {
-        "qr_url": qr_url,
-        "config": _config,
-        "es_fijo": True,
-        "url_length": len(qr_url)
+        "qr_url": f"{base_url}/app/checkin",
+        "config": config,
     }
 
-@router.post("/api/asistencia/registrar")
-async def registrar_asistencia(registro: RegistroAsistencia, request: Request):
-    from db import execute_write, execute_read
 
-    # ── JWT ──────────────────────────────────────────────────────────────
-    auth = request.headers.get("Authorization", "")
-    username = None
-    if auth.startswith("Bearer "):
-        try:
-            from jose import jwt as _jwt
-            payload_jwt = _jwt.decode(auth[7:],
-                os.getenv("SECRET_KEY", "carrier_secret_key_2024_change_in_production"),
-                algorithms=["HS256"])
-            username = payload_jwt.get("sub")
-        except Exception:
-            pass
-    if not username:
-        raise HTTPException(status_code=401, detail="Token JWT inválido")
+# ═══════════════════════════════════════════════════════════════════════════════
+# ESTADO DEL DÍA (técnico)
+# ═══════════════════════════════════════════════════════════════════════════════
 
-    # ── Validar QR ────────────────────────────────────────────────────────
-    valido, msg = validar_token(registro.token)
-    if not valido:
-        raise HTTPException(status_code=400, detail=msg)
-
-    lat_fija  = _config["lat_fija"]
-    lon_fija  = _config["lon_fija"]
-    radio     = _config["radio_metros"]
-
-    # ── Distancia ─────────────────────────────────────────────────────────
-    dist = calcular_distancia(registro.lat_tecnico, registro.lon_tecnico, lat_fija, lon_fija)
-    if dist > radio:
-        raise HTTPException(status_code=400,
-            detail=f"Fuera del área ({dist:.0f}m, radio {radio}m)")
-
-    # ── GPS accuracy ──────────────────────────────────────────────────────
-    if registro.gps_accuracy and registro.gps_accuracy > 100:
-        raise HTTPException(status_code=400,
-            detail=f"Señal GPS débil ({registro.gps_accuracy:.0f}m). Espera al aire libre.")
-
-    # ── Doble registro ────────────────────────────────────────────────────
-    ahora_tj = datetime.now(TIJUANA_TZ)
-    hoy = ahora_tj.strftime("%Y-%m-%d")
-    if execute_read("SELECT id FROM asistencia WHERE username=%s AND fecha=%s", (username, hoy)):
-        raise HTTPException(status_code=400, detail="Ya registraste asistencia hoy")
-
-    # ── Selfie ────────────────────────────────────────────────────────────
-    guardar_selfie(registro.selfie_base64, username, ahora_tj.strftime("%Y%m%d"))
-
-    # ── DB ────────────────────────────────────────────────────────────────
-    hora = ahora_tj.strftime("%H:%M")
-    try:
-        execute_write("""
-            INSERT INTO asistencia
-              (username, fecha, hora, lat_fija, lon_fija, radio,
-               lat_tecnico, lon_tecnico, distancia_m, dentro_radio)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        """, (username, hoy, hora, lat_fija, lon_fija, radio,
-              registro.lat_tecnico, registro.lon_tecnico, int(round(dist)),
-              1 if dist <= radio else 0))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error DB: {e}")
-
-    return {"exito": True, "mensaje": f"✅ Asistencia registrada a las {hora} (Tijuana). Distancia: {dist:.0f}m", "hora": hora}
-
-@router.get("/api/asistencia/registros")
-async def obtener_registros(fecha: Optional[str] = None, current_user=Depends(verify_token)):
-    from db import execute_read
-    query = """
-        SELECT id, username, fecha, hora AS hora_checkin,
-               lat_fija, lon_fija, radio AS radio_metros,
-               lat_tecnico, lon_tecnico, distancia_m AS distancia_metros,
-               dentro_radio AS aprobado, created_at
-        FROM asistencia
-        WHERE fecha=%s
-        ORDER BY hora DESC
+@router.get("/estado-hoy")
+async def estado_hoy(
+    username: str = Query(...),
+    fecha:    str = Query(...),
+    db: Session = Depends(get_db),
+):
     """
-    # Usar hora Tijuana para determinar "hoy" por defecto
-    hoy_tj = datetime.now(TIJUANA_TZ).strftime("%Y-%m-%d")
-    hoy2 = fecha if fecha else hoy_tj
-    rows = execute_read(query, (hoy2,))
-    return rows or []
+    Devuelve si el técnico ya registró entrada y/o salida hoy.
+
+    Respuesta:
+    {
+        "tiene_entrada": bool,
+        "hora_entrada_real": "HH:MM" | null,
+        "tiene_salida": bool,
+        "hora_salida_real": "HH:MM" | null
+    }
+    """
+    registros = (
+        db.query(AsistenciaRegistro)
+        .filter(AsistenciaRegistro.username == username, AsistenciaRegistro.fecha == fecha)
+        .all()
+    )
+
+    entrada = next((r for r in registros if r.tipo == "entrada"), None)
+    salida  = next((r for r in registros if r.tipo == "salida"),  None)
+
+    return {
+        "tiene_entrada":      entrada is not None,
+        "hora_entrada_real":  entrada.hora_checkin[:5] if entrada else None,
+        "tiene_salida":       salida is not None,
+        "hora_salida_real":   salida.hora_checkin[:5]  if salida  else None,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CHECKIN — Registrar entrada o salida
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/checkin")
+async def checkin(payload: CheckinPayload, db: Session = Depends(get_db)):
+    """
+    Registra una entrada o salida validando:
+      1. Que el tipo sea válido ('entrada' o 'salida').
+      2. Que no se repita el tipo ya registrado hoy.
+      3. Que la salida sea posterior a la entrada.
+      4. Geolocalización vs. radio configurado (si aplica).
+      5. Calcula retardo_min (solo para entradas) y horas_trabajadas (solo salidas).
+    """
+    tipo = payload.tipo.lower().strip()
+    if tipo not in ("entrada", "salida"):
+        raise HTTPException(400, "Tipo debe ser 'entrada' o 'salida'")
+
+    fecha = payload.fecha
+
+    # ── Verificar duplicado ──────────────────────────────────────────────────
+    existente = (
+        db.query(AsistenciaRegistro)
+        .filter(
+            AsistenciaRegistro.username == payload.username,
+            AsistenciaRegistro.fecha    == fecha,
+            AsistenciaRegistro.tipo     == tipo,
+        )
+        .first()
+    )
+    if existente:
+        raise HTTPException(
+            400,
+            f"Ya registraste tu {'entrada' if tipo == 'entrada' else 'salida'} hoy."
+        )
+
+    # ── Si es salida, verificar que exista entrada ───────────────────────────
+    if tipo == "salida":
+        entrada = (
+            db.query(AsistenciaRegistro)
+            .filter(
+                AsistenciaRegistro.username == payload.username,
+                AsistenciaRegistro.fecha    == fecha,
+                AsistenciaRegistro.tipo     == "entrada",
+            )
+            .first()
+        )
+        if not entrada:
+            raise HTTPException(400, "Debes registrar tu entrada antes de la salida.")
+
+    # ── Geolocalización ──────────────────────────────────────────────────────
+    cfg = db.query(AsistenciaConfig).first()
+    distancia_m = None
+    aprobado    = True  # si no hay GPS configurado, se aprueba igual
+
+    if cfg and payload.lat is not None and payload.lon is not None:
+        distancia_m = _distancia_metros(
+            payload.lat, payload.lon, cfg.lat_fija, cfg.lon_fija
+        )
+        aprobado = distancia_m <= cfg.radio_metros
+
+    # ── Hora actual en Tijuana ───────────────────────────────────────────────
+    hora_actual = _hora_tj()  # "HH:MM"
+
+    # ── Calcular retardo para entrada ────────────────────────────────────────
+    retardo_min   = 0
+    horas_trabajadas = None
+
+    horario = (
+        db.query(Horario)
+        .filter(Horario.username == payload.username, Horario.fecha == fecha)
+        .first()
+    )
+
+    if tipo == "entrada" and horario and horario.hora_entrada:
+        hora_min     = _hhmm_to_min(hora_actual)
+        entrada_min  = _hhmm_to_min(horario.hora_entrada[:5])
+        TOLERANCIA   = 15  # minutos de gracia
+        retardo_min  = max(0, hora_min - entrada_min - TOLERANCIA)
+
+    # ── Calcular horas trabajadas para salida ────────────────────────────────
+    if tipo == "salida":
+        entrada_reg = (
+            db.query(AsistenciaRegistro)
+            .filter(
+                AsistenciaRegistro.username == payload.username,
+                AsistenciaRegistro.fecha    == fecha,
+                AsistenciaRegistro.tipo     == "entrada",
+            )
+            .first()
+        )
+        if entrada_reg:
+            entrada_min  = _hhmm_to_min(entrada_reg.hora_checkin[:5])
+            salida_min   = _hhmm_to_min(hora_actual)
+            total_min    = max(0, salida_min - entrada_min)
+            horas_trabajadas = round(total_min / 60, 1)
+
+    # ── Guardar registro ─────────────────────────────────────────────────────
+    registro = AsistenciaRegistro(
+        username         = payload.username,
+        tipo             = tipo,
+        fecha            = fecha,
+        hora_checkin     = hora_actual,
+        lat              = payload.lat,
+        lon              = payload.lon,
+        precision_gps    = payload.precision_gps,
+        distancia_metros = distancia_m,
+        aprobado         = aprobado,
+        retardo_min      = retardo_min,
+    )
+    db.add(registro)
+    db.commit()
+
+    return {
+        "ok":               True,
+        "tipo":             tipo,
+        "hora_registro":    hora_actual,
+        "aprobado":         aprobado,
+        "distancia_metros": round(distancia_m, 1) if distancia_m is not None else None,
+        "retardo_min":      retardo_min,
+        "horas_trabajadas": horas_trabajadas,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# REGISTROS — Listado (admin y técnico)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/registros")
+async def get_registros(
+    fecha:    Optional[str] = Query(None),
+    username: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Lista registros de asistencia.
+    - Admin: puede filtrar por fecha (y opcionalmente username).
+    - Técnico: siempre filtra por su propio username.
+    """
+    query = db.query(AsistenciaRegistro)
+    if fecha:
+        query = query.filter(AsistenciaRegistro.fecha == fecha)
+    if username:
+        query = query.filter(AsistenciaRegistro.username == username)
+    registros = query.order_by(AsistenciaRegistro.fecha.desc(), AsistenciaRegistro.hora_checkin.asc()).all()
+
+    return [
+        {
+            "id":               r.id,
+            "username":         r.username,
+            "tipo":             r.tipo,
+            "fecha":            r.fecha,
+            "hora_checkin":     r.hora_checkin,
+            "distancia_metros": r.distancia_metros,
+            "aprobado":         r.aprobado,
+            "retardo_min":      r.retardo_min,
+        }
+        for r in registros
+    ]

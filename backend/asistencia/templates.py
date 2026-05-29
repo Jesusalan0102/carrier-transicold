@@ -1,225 +1,479 @@
-# backend/asistencia/templates.py
+"""
+templates.py — Módulo de plantillas de asistencia
+Contiene el HTML del checkin para técnicos con soporte de ENTRADA y SALIDA
+basado en el horario importado semanalmente.
+"""
+
 ASISTENCIA_STYLES = """
 <style>
-    .asistencia-container { max-width: 600px; margin: 0 auto; }
-    .gps-status { 
-        position: fixed; 
-        top: 10px; 
-        right: 10px; 
-        background: #f0fdf4; 
-        padding: 8px 16px; 
-        border-radius: 50px; 
-        font-size: 0.75rem; 
-        font-weight: 600; 
-        z-index: 1000;
-        border: 1px solid #86efac;
-        color: #166534;
-    }
-    .gps-status.warning { 
-        background: #fef3c7; 
-        color: #92400e; 
-        border-color: #fde68a;
-    }
-    .gps-status.error { 
-        background: #fee2e2; 
-        color: #991b1b; 
-        border-color: #fca5a5;
-    }
-    .selfie-preview { 
-        width: 120px; 
-        height: 120px; 
-        border-radius: 60px; 
-        object-fit: cover; 
-        margin: 10px auto; 
-        border: 3px solid #0057A8; 
-        cursor: pointer; 
-    }
-    .camera-modal { 
-        position: fixed; 
-        top: 0; 
-        left: 0; 
-        width: 100%; 
-        height: 100%; 
-        background: rgba(0,0,0,0.9); 
-        z-index: 2000; 
-        display: none; 
-        flex-direction: column; 
-        justify-content: center; 
-        align-items: center; 
-    }
-    .camera-modal video { 
-        max-width: 90%; 
-        max-height: 80vh; 
-        border-radius: 12px; 
-    }
+.asistencia-container { max-width: 520px; margin: 0 auto; }
+.checkin-card {
+    background: white;
+    border-radius: 20px;
+    padding: 28px 24px;
+    box-shadow: 0 8px 32px rgba(0,43,91,0.12);
+    margin-bottom: 20px;
+    border: 1px solid #e2e8f0;
+}
+.checkin-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--color-bg, #f0f6ff);
+    border-radius: 12px;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    border-left: 5px solid var(--color-accent, #0057A8);
+}
+.status-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #6b7280; flex-shrink: 0;
+    box-shadow: 0 0 0 3px rgba(107,114,128,0.2);
+}
+.status-dot.green  { background: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.2); }
+.status-dot.orange { background: #d97706; box-shadow: 0 0 0 3px rgba(217,119,6,0.2); }
+.status-dot.red    { background: #dc2626; box-shadow: 0 0 0 3px rgba(220,38,38,0.2); }
+.schedule-info {
+    background: #f8fafc;
+    border-radius: 12px;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid #e2e8f0;
+}
+.schedule-time {
+    text-align: center;
+    flex: 1;
+}
+.schedule-time .label { font-size: 0.7rem; color: #6b7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+.schedule-time .time  { font-size: 1.4rem; font-weight: 800; color: #002B5B; line-height: 1.2; }
+.schedule-divider { width: 1px; height: 40px; background: #e2e8f0; margin: 0 16px; }
+.btn-checkin {
+    width: 100%; padding: 18px; border: none; border-radius: 14px;
+    font-size: 1.05rem; font-weight: 700; cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    letter-spacing: 0.3px;
+}
+.btn-checkin:active { transform: scale(0.97); }
+.btn-entrada {
+    background: linear-gradient(135deg, #002B5B 0%, #0057A8 100%);
+    color: white;
+    box-shadow: 0 4px 16px rgba(0,87,168,0.35);
+}
+.btn-salida {
+    background: linear-gradient(135deg, #064e3b 0%, #16a34a 100%);
+    color: white;
+    box-shadow: 0 4px 16px rgba(22,163,74,0.35);
+}
+.btn-disabled {
+    background: #e5e7eb; color: #9ca3af;
+    cursor: not-allowed; box-shadow: none;
+}
+.btn-checkin:not(.btn-disabled):hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+.registro-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 0; border-bottom: 1px solid #f1f5f9;
+}
+.registro-item:last-child { border-bottom: none; }
+.gps-bar {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 0.8rem; color: #6b7280; margin-bottom: 16px;
+    background: #fafafa; border-radius: 8px; padding: 8px 12px;
+    border: 1px solid #f0f0f0;
+}
+.gps-dot { width: 8px; height: 8px; border-radius: 50%; background: #d97706; flex-shrink: 0; }
+.gps-dot.ok { background: #16a34a; }
+.alert-box {
+    border-radius: 12px; padding: 14px 18px; margin-bottom: 16px;
+    font-size: 0.875rem; font-weight: 500; display: flex; align-items: flex-start; gap: 10px;
+}
+.alert-warning { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; border-left: 4px solid #f59e0b; }
+.alert-success { background: #f0fdf4; border: 1px solid #86efac; color: #166534; border-left: 4px solid #16a34a; }
+.alert-error   { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; border-left: 4px solid #dc2626; }
+.alert-info    { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; border-left: 4px solid #3b82f6; }
+.progress-track {
+    height: 6px; background: #e5e7eb; border-radius: 99px; margin: 12px 0; overflow: hidden;
+}
+.progress-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, #0057A8, #16a34a); transition: width 0.6s ease; }
 </style>
 """
 
+
 def get_checkin_template() -> str:
     return """
-    <script>if (window.role !== 'tecnico') { window.location.href = '/app/dashboard'; }</script>
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-    <div class="asistencia-container">
-        <div id="gpsStatus" class="gps-status">📍 Obteniendo ubicación...</div>
-        <div id="estadoInicial">
-            <div class="evidencia-info" style="margin-bottom:20px; text-align:center;">
-                <div style="font-size:3rem;">📍</div>
-                <b>Registro de Asistencia</b><br>
-                <span>Escanea el código QR de la oficina para registrar tu entrada.</span>
-            </div>
-            <div style="background:white; border-radius:16px; padding:20px;">
-                <div class="section-title">📷 Escanear QR</div>
-                <video id="qrVideo" style="width:100%; border-radius:10px; max-height:280px; background:#000;" autoplay playsinline></video>
-                <canvas id="qrCanvasHidden" style="display:none;"></canvas>
-                <p id="scanStatus">Iniciando cámara...</p>
-                <button class="btn-primary" onclick="iniciarCamara()">🔄 Activar Cámara</button>
-            </div>
-        </div>
-        <div id="estadoSelfie" style="display:none; text-align:center; background:white; border-radius:16px; padding:20px; margin-top:16px;">
-            <div style="font-size:2.5rem;">📸</div>
-            <h3>Toma una Selfie</h3>
-            <p>Necesitamos una foto tuya para validar tu identidad.</p>
-            <div id="selfiePreview"><img id="selfieImg" class="selfie-preview" style="display:none;"><div id="noSelfieMsg"><button class="btn-primary" onclick="abrirCamaraSelfie()">📸 Tomar Selfie</button></div></div>
-            <button id="btnContinuar" class="btn-success" style="display:none;" onclick="procesarCheckinCompleto()">✅ Confirmar y Registrar Asistencia</button>
-        </div>
-        <div id="estadoProcesando" style="display:none; text-align:center; padding:40px;"><div style="font-size:3rem;">⏳</div><p>Registrando tu asistencia...</p><p id="progressMsg"></p></div>
-        <div id="estadoResultado" style="display:none; text-align:center;"></div>
-    </div>
-    <div id="cameraModal" class="camera-modal">
-        <video id="selfieVideo" autoplay playsinline></video>
-        <div style="margin-top:20px;"><button class="btn-primary" onclick="tomarSelfie()">📸 Tomar Foto</button><button class="btn-danger" onclick="cerrarCamaraSelfie()">Cancelar</button></div>
-    </div>
-    <script>
-        let streamQR = null, streamSelfie = null, scanLoop = null, qrData = null, ubicacionActual = null, gpsPrecision = null, selfieBase64 = null;
-        const fetchAuth = window.fetchAuth;
-        
-        function obtenerUbicacion() {
-            const status = document.getElementById('gpsStatus');
-            if (!navigator.geolocation) { status.textContent = '❌ GPS no soportado'; status.className = 'gps-status error'; return; }
-            navigator.geolocation.getCurrentPosition(
-                pos => {
-                    ubicacionActual = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-                    gpsPrecision = pos.coords.accuracy;
-                    if (gpsPrecision <= 50) status.innerHTML = `📍 GPS preciso (${gpsPrecision.toFixed(1)}m)`;
-                    else { status.innerHTML = `⚠️ GPS poco preciso (${gpsPrecision.toFixed(1)}m) - Acércate a una ventana`; status.className = 'gps-status warning'; }
-                },
-                err => { status.innerHTML = '❌ No se pudo obtener ubicación'; status.className = 'gps-status error'; },
-                { enableHighAccuracy: true, timeout: 10000 }
-            );
-        }
-        
-        function iniciarCamara() {
-            if (streamQR) streamQR.getTracks().forEach(t => t.stop());
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-                .then(stream => {
-                    streamQR = stream;
-                    const video = document.getElementById('qrVideo');
-                    video.srcObject = stream;
-                    video.play();
-                    if (scanLoop) clearInterval(scanLoop);
-                    scanLoop = setInterval(() => {
-                        const video = document.getElementById('qrVideo');
-                        const canvas = document.getElementById('qrCanvasHidden');
-                        if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
-                        canvas.width = video.videoWidth;
-                        canvas.height = video.videoHeight;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                        const code = jsQR(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height);
-                        if (code) {
-                            clearInterval(scanLoop);
-                            if (streamQR) streamQR.getTracks().forEach(t => t.stop());
-                            try {
-                                const url = new URL(code.data);
-                                const token = url.searchParams.get('t') || url.searchParams.get('token');
-                                if (!token) throw new Error('QR sin token');
-                                qrData = { token };
-                                document.getElementById('scanStatus').textContent = '✅ QR válido';
-                                document.getElementById('estadoInicial').style.display = 'none';
-                                document.getElementById('estadoSelfie').style.display = 'block';
-                            } catch(e) { document.getElementById('scanStatus').textContent = '❌ QR inválido'; iniciarCamara(); }
-                        }
-                    }, 400);
-                })
-                .catch(() => document.getElementById('scanStatus').textContent = '⚠️ No se pudo acceder a la cámara');
-        }
-        
-        function abrirCamaraSelfie() {
-            const modal = document.getElementById('cameraModal');
-            const video = document.getElementById('selfieVideo');
-            modal.style.display = 'flex';
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
-                .then(stream => { streamSelfie = stream; video.srcObject = stream; video.play(); });
-        }
-        
-        function cerrarCamaraSelfie() {
-            document.getElementById('cameraModal').style.display = 'none';
-            if (streamSelfie) streamSelfie.getTracks().forEach(t => t.stop());
-        }
-        
-        function tomarSelfie() {
-            const video = document.getElementById('selfieVideo');
-            const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            canvas.getContext('2d').drawImage(video, 0, 0);
-            selfieBase64 = canvas.toDataURL('image/jpeg', 0.8);
-            document.getElementById('selfieImg').src = selfieBase64;
-            document.getElementById('selfieImg').style.display = 'block';
-            document.getElementById('noSelfieMsg').style.display = 'none';
-            document.getElementById('btnContinuar').style.display = 'block';
-            cerrarCamaraSelfie();
-        }
-        
-        async function procesarCheckinCompleto() {
-            if (!ubicacionActual) return alert('Esperando ubicación GPS...');
-            if (!selfieBase64) return alert('Debes tomarte una selfie');
-            if (!qrData) return alert('QR inválido. Escanea nuevamente.');
-            
-            document.getElementById('estadoSelfie').style.display = 'none';
-            document.getElementById('estadoProcesando').style.display = 'block';
-            document.getElementById('progressMsg').textContent = 'Verificando ubicación y guardando selfie...';
-            
-            try {
-                const res = await fetchAuth('/api/asistencia/registrar', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        token: qrData.token,
-                        lat_tecnico: ubicacionActual.lat,
-                        lon_tecnico: ubicacionActual.lon,
-                        selfie_base64: selfieBase64,
-                        gps_accuracy: gpsPrecision
-                    })
-                });
-                const data = await res.json();
-                mostrarResultado(res.ok, data.mensaje || data.detail || 'Error al procesar la solicitud');
-            } catch(err) { mostrarResultado(false, err.message || 'Error de conexión con el servidor'); }
-        }
-        
-        function mostrarResultado(exito, mensaje) {
-            document.getElementById('estadoProcesando').style.display = 'none';
-            const el = document.getElementById('estadoResultado');
-            el.style.display = 'block';
-            el.innerHTML = `<div style="background:${exito ? '#dcfce7' : '#fee2e2'}; border-radius:20px; padding:32px;"><div style="font-size:4rem;">${exito ? '✅' : '❌'}</div><h2>${exito ? '¡Asistencia Registrada!' : 'Error'}</h2><p>${mensaje}</p><button class="btn-primary" onclick="window.location.href='/app/mis-tareas'">Ir a Mis Tareas</button></div>`;
-        }
-        
-        obtenerUbicacion();
-        setInterval(obtenerUbicacion, 10000);
+<div class="asistencia-container">
 
-        // Si el técnico ya viene con token en la URL (escaneó QR con cámara nativa del teléfono)
-        // saltar directo a la selfie sin necesidad de escanear de nuevo con el navegador
-        (function() {
-            const params = new URLSearchParams(window.location.search);
-            const tokenUrl = params.get('t') || params.get('token');
-            if (tokenUrl) {
-                qrData = { token: tokenUrl };
-                document.getElementById('scanStatus').textContent = '✅ QR detectado desde URL';
-                document.getElementById('estadoInicial').style.display = 'none';
-                document.getElementById('estadoSelfie').style.display = 'block';
-            } else {
-                iniciarCamara();
+    <!-- GPS Status -->
+    <div class="gps-bar" id="gpsBar">
+        <span class="gps-dot" id="gpsDot"></span>
+        <span id="gpsText">Obteniendo ubicación GPS...</span>
+    </div>
+
+    <!-- Horario del día -->
+    <div class="checkin-card" id="cardHorario" style="display:none;">
+        <div style="font-size:0.7rem; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:10px;">Tu horario de hoy</div>
+        <div class="schedule-info" id="scheduleInfo">
+            <div class="schedule-time">
+                <div class="label">Entrada</div>
+                <div class="time" id="schedEntrada">--:--</div>
+            </div>
+            <div class="schedule-divider"></div>
+            <div class="schedule-time">
+                <div class="label">Salida</div>
+                <div class="time" id="schedSalida">--:--</div>
+            </div>
+        </div>
+        <div id="alertHorario"></div>
+    </div>
+
+    <!-- Estado actual -->
+    <div class="checkin-card">
+        <div class="checkin-status-bar" id="statusBar">
+            <span class="status-dot" id="statusDot"></span>
+            <div>
+                <div style="font-weight:700; font-size:0.9rem; color:#002B5B;" id="statusTitle">Cargando...</div>
+                <div style="font-size:0.78rem; color:#6b7280;" id="statusSub"></div>
+            </div>
+        </div>
+
+        <!-- Barra de progreso jornada -->
+        <div id="progressSection" style="display:none; margin-bottom:16px;">
+            <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:#6b7280; margin-bottom:4px;">
+                <span>Jornada laboral</span>
+                <span id="progressLabel">0%</span>
+            </div>
+            <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+        </div>
+
+        <!-- Botón principal -->
+        <div id="alertMsg"></div>
+        <button class="btn-checkin btn-disabled" id="btnAccion" onclick="ejecutarAccion()" disabled>
+            <span id="btnIcon">⏳</span>
+            <span id="btnLabel">Cargando...</span>
+        </button>
+    </div>
+
+    <!-- Registros de hoy -->
+    <div class="checkin-card" id="cardRegistros" style="display:none;">
+        <div style="font-size:0.7rem; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:14px;">Registros de hoy</div>
+        <div id="listaRegistros"></div>
+    </div>
+
+</div>
+
+<script>
+const fetchAuth = window.fetchAuth;
+const username  = window.username;
+
+// ── Estado local ───────────────────────────────────────────
+let gpsCoords  = null;
+let horarioHoy = null;   // { hora_entrada, hora_salida }
+let estadoHoy  = null;   // { tiene_entrada, hora_entrada_real, tiene_salida, hora_salida_real }
+let accionActual = null; // 'entrada' | 'salida' | 'completo' | 'sin_horario' | 'fuera_rango'
+
+// ── Helpers ────────────────────────────────────────────────
+function horaActualTJ() {
+    return new Date().toLocaleTimeString('es-MX', { timeZone:'America/Tijuana', hour12:false, hour:'2-digit', minute:'2-digit' });
+}
+function fechaHoyTJ() {
+    return new Date().toLocaleDateString('sv-SE', { timeZone:'America/Tijuana' });
+}
+function minutosDesdeMedianoche(hhmm) {
+    if (!hhmm) return null;
+    const [h, m] = hhmm.split(':').map(Number);
+    return h * 60 + m;
+}
+function diffMinutos(horaA, horaB) {
+    // horaA - horaB en minutos (positivo = tarde, negativo = adelantado)
+    return minutosDesdeMedianoche(horaA) - minutosDesdeMedianoche(horaB);
+}
+function formatHora(hhmm) {
+    if (!hhmm) return '—';
+    return hhmm.slice(0,5);
+}
+
+// ── 1. GPS ─────────────────────────────────────────────────
+function obtenerGPS() {
+    if (!navigator.geolocation) {
+        setGPSStatus(false, 'GPS no soportado en este dispositivo');
+        inicializarPagina();
+        return;
+    }
+    navigator.geolocation.getCurrentPosition(
+        pos => {
+            gpsCoords = { lat: pos.coords.latitude, lon: pos.coords.longitude, precision: pos.coords.accuracy };
+            const prec = pos.coords.accuracy.toFixed(0);
+            const ok = pos.coords.accuracy <= 200;
+            setGPSStatus(ok, ok ? `GPS preciso (±${prec}m)` : `GPS poco preciso (±${prec}m) — Acércate a una ventana`);
+            inicializarPagina();
+        },
+        err => {
+            setGPSStatus(false, 'GPS denegado — Activa el permiso de ubicación');
+            inicializarPagina();
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+}
+
+function setGPSStatus(ok, msg) {
+    document.getElementById('gpsDot').className = 'gps-dot' + (ok ? ' ok' : '');
+    document.getElementById('gpsText').textContent = (ok ? '✓ ' : '⚠ ') + msg;
+}
+
+// ── 2. Cargar horario y estado ─────────────────────────────
+async function inicializarPagina() {
+    await Promise.all([cargarHorarioHoy(), cargarEstadoHoy()]);
+    determinarAccion();
+    renderUI();
+}
+
+async function cargarHorarioHoy() {
+    try {
+        const fecha = fechaHoyTJ();
+        const res = await fetchAuth(`/api/horarios/hoy?username=${username}&fecha=${fecha}`);
+        if (res.ok) {
+            const data = await res.json();
+            horarioHoy = data.horario || null;
+        }
+    } catch(e) { horarioHoy = null; }
+}
+
+async function cargarEstadoHoy() {
+    try {
+        const fecha = fechaHoyTJ();
+        const res = await fetchAuth(`/api/asistencia/estado-hoy?username=${username}&fecha=${fecha}`);
+        if (res.ok) {
+            estadoHoy = await res.json();
+        }
+    } catch(e) { estadoHoy = null; }
+}
+
+// ── 3. Determinar qué acción está disponible ───────────────
+function determinarAccion() {
+    if (!horarioHoy || (!horarioHoy.hora_entrada && !horarioHoy.hora_salida)) {
+        accionActual = 'sin_horario';
+        return;
+    }
+    const tieneEntrada = estadoHoy?.tiene_entrada;
+    const tieneSalida  = estadoHoy?.tiene_salida;
+
+    if (tieneEntrada && tieneSalida) {
+        accionActual = 'completo';
+    } else if (tieneEntrada && !tieneSalida) {
+        accionActual = 'salida';
+    } else {
+        accionActual = 'entrada';
+    }
+}
+
+// ── 4. Renderizar UI según el estado ──────────────────────
+function renderUI() {
+    // Horario
+    if (horarioHoy) {
+        document.getElementById('cardHorario').style.display = 'block';
+        document.getElementById('schedEntrada').textContent = formatHora(horarioHoy.hora_entrada) || 'Libre';
+        document.getElementById('schedSalida').textContent  = formatHora(horarioHoy.hora_salida)  || 'Libre';
+
+        // Alerta de retardo (solo si aún no registró entrada)
+        if (accionActual === 'entrada' && horarioHoy.hora_entrada) {
+            const ahoraMin = minutosDesdeMedianoche(horaActualTJ());
+            const entradaMin = minutosDesdeMedianoche(horarioHoy.hora_entrada);
+            const TOLERANCIA = 15;
+            if (ahoraMin > entradaMin + TOLERANCIA) {
+                const retardo = ahoraMin - entradaMin;
+                document.getElementById('alertHorario').innerHTML =
+                    `<div class="alert-box alert-warning">⏱ Llegas con <b>${retardo} min de retardo</b> sobre tu horario de entrada.</div>`;
             }
-        })();
-    </script>
-    """
+        }
+
+        // Barra de progreso si ya tiene entrada y hay horario completo
+        if (accionActual === 'salida' && horarioHoy.hora_entrada && horarioHoy.hora_salida) {
+            const ahoraMin     = minutosDesdeMedianoche(horaActualTJ());
+            const entradaMin   = minutosDesdeMedianoche(horarioHoy.hora_entrada);
+            const salidaMin    = minutosDesdeMedianoche(horarioHoy.hora_salida);
+            const jornada      = salidaMin - entradaMin;
+            const transcurrido = Math.max(0, ahoraMin - entradaMin);
+            const pct          = Math.min(100, Math.round((transcurrido / jornada) * 100));
+            document.getElementById('progressSection').style.display = 'block';
+            document.getElementById('progressFill').style.width = pct + '%';
+            document.getElementById('progressLabel').textContent = pct + '% de la jornada';
+        }
+    }
+
+    // StatusBar
+    const statusBar  = document.getElementById('statusBar');
+    const statusDot  = document.getElementById('statusDot');
+    const statusTitle= document.getElementById('statusTitle');
+    const statusSub  = document.getElementById('statusSub');
+    const btn        = document.getElementById('btnAccion');
+    const btnIcon    = document.getElementById('btnIcon');
+    const btnLabel   = document.getElementById('btnLabel');
+    const alertMsg   = document.getElementById('alertMsg');
+
+    btn.onclick = ejecutarAccion;
+
+    switch (accionActual) {
+
+        case 'sin_horario':
+            statusDot.className = 'status-dot orange';
+            statusTitle.textContent = 'Sin horario asignado hoy';
+            statusSub.textContent   = 'Comunícate con el administrador';
+            alertMsg.innerHTML = '<div class="alert-box alert-warning">No tienes horario registrado para hoy. No puedes registrar asistencia.</div>';
+            btn.className = 'btn-checkin btn-disabled';
+            btn.disabled  = true;
+            btnIcon.textContent  = '🚫';
+            btnLabel.textContent = 'Sin horario para hoy';
+            break;
+
+        case 'entrada':
+            statusDot.className = 'status-dot orange';
+            statusTitle.textContent = 'Pendiente de entrada';
+            statusSub.textContent   = `Hora actual: ${horaActualTJ()}`;
+            btn.className = 'btn-checkin btn-entrada';
+            btn.disabled  = false;
+            btnIcon.textContent  = '🟢';
+            btnLabel.textContent = 'Registrar Entrada';
+            break;
+
+        case 'salida':
+            statusDot.className = 'status-dot green';
+            statusTitle.textContent = `Entrada registrada a las ${formatHora(estadoHoy.hora_entrada_real)}`;
+            statusSub.textContent   = `Hora actual: ${horaActualTJ()}`;
+
+            // Validar si puede registrar salida (al menos 50% de la jornada transcurrida, o sin horario de salida)
+            let puedeRegistrarSalida = true;
+            let msgSalida = '';
+            if (horarioHoy?.hora_entrada && horarioHoy?.hora_salida) {
+                const ahoraMin   = minutosDesdeMedianoche(horaActualTJ());
+                const entradaMin = minutosDesdeMedianoche(horarioHoy.hora_entrada);
+                const salidaMin  = minutosDesdeMedianoche(horarioHoy.hora_salida);
+                const mitadJornada = entradaMin + Math.floor((salidaMin - entradaMin) * 0.5);
+                if (ahoraMin < mitadJornada) {
+                    puedeRegistrarSalida = false;
+                    const faltanMin = mitadJornada - ahoraMin;
+                    msgSalida = `Podrás registrar tu salida en <b>${faltanMin} minutos</b> (al 50% de tu jornada).`;
+                }
+            }
+
+            if (!puedeRegistrarSalida) {
+                alertMsg.innerHTML = `<div class="alert-box alert-info">⏰ ${msgSalida}</div>`;
+                btn.className = 'btn-checkin btn-disabled';
+                btn.disabled  = true;
+                btnIcon.textContent  = '🔒';
+                btnLabel.textContent = 'Salida no disponible aún';
+            } else {
+                btn.className = 'btn-checkin btn-salida';
+                btn.disabled  = false;
+                btnIcon.textContent  = '🔴';
+                btnLabel.textContent = 'Registrar Salida';
+            }
+            break;
+
+        case 'completo':
+            statusDot.className = 'status-dot green';
+            statusTitle.textContent = '✅ Jornada completada';
+            statusSub.textContent   = `Entrada: ${formatHora(estadoHoy.hora_entrada_real)} · Salida: ${formatHora(estadoHoy.hora_salida_real)}`;
+            alertMsg.innerHTML = '<div class="alert-box alert-success">🎉 Has completado tu registro del día. ¡Hasta mañana!</div>';
+            btn.className = 'btn-checkin btn-disabled';
+            btn.disabled  = true;
+            btnIcon.textContent  = '✅';
+            btnLabel.textContent = 'Jornada completada';
+            break;
+    }
+
+    // Registros
+    cargarRegistrosUI();
+}
+
+// ── 5. Registros de hoy ────────────────────────────────────
+async function cargarRegistrosUI() {
+    try {
+        const fecha = fechaHoyTJ();
+        const res = await fetchAuth(`/api/asistencia/registros?fecha=${fecha}&username=${username}`);
+        if (!res.ok) return;
+        const registros = await res.json();
+        if (!registros.length) return;
+
+        let html = '';
+        registros.forEach(r => {
+            const tipo   = r.tipo === 'entrada' ? '🟢 Entrada' : '🔴 Salida';
+            const estado = r.aprobado ? '<span style="color:#16a34a;font-size:0.78rem;">✓ Aprobado</span>' : '<span style="color:#dc2626;font-size:0.78rem;">✗ Rechazado</span>';
+            const dist   = r.distancia_metros != null ? `${Math.round(r.distancia_metros)}m` : 'Sin GPS';
+            html += `<div class="registro-item">
+                <div>
+                    <div style="font-weight:600;font-size:0.88rem;">${tipo}</div>
+                    <div style="font-size:0.75rem;color:#6b7280;">📍 ${dist}</div>
+                </div>
+                <div style="text-align:right;">
+                    <div style="font-weight:700;font-size:0.95rem;color:#002B5B;">${formatHora(r.hora_checkin)}</div>
+                    <div>${estado}</div>
+                </div>
+            </div>`;
+        });
+
+        document.getElementById('listaRegistros').innerHTML = html;
+        document.getElementById('cardRegistros').style.display = 'block';
+    } catch(e) {}
+}
+
+// ── 6. Ejecutar acción (entrada o salida) ─────────────────
+async function ejecutarAccion() {
+    if (accionActual !== 'entrada' && accionActual !== 'salida') return;
+
+    const btn = document.getElementById('btnAccion');
+    btn.disabled = true;
+    btn.innerHTML = '<span>⏳</span><span>Registrando...</span>';
+
+    try {
+        const payload = {
+            username: username,
+            tipo: accionActual,
+            fecha: fechaHoyTJ(),
+            lat: gpsCoords?.lat  ?? null,
+            lon: gpsCoords?.lon  ?? null,
+            precision_gps: gpsCoords?.precision ?? null
+        };
+
+        const res = await fetchAuth('/api/asistencia/checkin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+            // Éxito
+            const msgEl = document.getElementById('alertMsg');
+            if (accionActual === 'entrada') {
+                const retardo = data.retardo_min > 0 ? ` (retardo: ${data.retardo_min} min)` : '';
+                msgEl.innerHTML = `<div class="alert-box alert-success">✅ Entrada registrada a las <b>${formatHora(data.hora_registro)}</b>${retardo}</div>`;
+            } else {
+                const horasTrabajadas = data.horas_trabajadas ? ` · ${data.horas_trabajadas}h trabajadas` : '';
+                msgEl.innerHTML = `<div class="alert-box alert-success">✅ Salida registrada a las <b>${formatHora(data.hora_registro)}</b>${horasTrabajadas}</div>`;
+            }
+            // Recargar estado
+            await cargarEstadoHoy();
+            determinarAccion();
+            renderUI();
+        } else {
+            document.getElementById('alertMsg').innerHTML =
+                `<div class="alert-box alert-error">❌ ${data.detail || 'Error al registrar'}</div>`;
+            btn.disabled = false;
+            document.getElementById('btnIcon').textContent  = accionActual === 'entrada' ? '🟢' : '🔴';
+            document.getElementById('btnLabel').textContent = accionActual === 'entrada' ? 'Registrar Entrada' : 'Registrar Salida';
+        }
+    } catch(e) {
+        document.getElementById('alertMsg').innerHTML =
+            '<div class="alert-box alert-error">❌ Error de conexión. Intenta de nuevo.</div>';
+        btn.disabled = false;
+    }
+}
+
+// ── Inicio ─────────────────────────────────────────────────
+obtenerGPS();
+</script>
+"""
