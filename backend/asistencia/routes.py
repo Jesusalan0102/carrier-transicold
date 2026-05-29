@@ -186,12 +186,12 @@ async def registrar_asistencia(registro: RegistroAsistencia, request: Request):
     try:
         execute_write("""
             INSERT INTO asistencia
-              (username, fecha, hora_checkin, lat_fija, lon_fija, radio_metros,
-               lat_tecnico, lon_tecnico, distancia_metros, gps_accuracy, selfie_path, aprobado)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,1)
-        """, (username, hoy, hora, lat_fija, lon_fija, radio,
-              registro.lat_tecnico, registro.lon_tecnico, round(dist,1),
-              registro.gps_accuracy, ruta))
+              (username, fecha, hora, lat_fija, lon_fija, radio,
+               lat_tecnico, lon_tecnico, distancia_m, dentro_radio)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (username, hoy, hora[:5], lat_fija, lon_fija, radio,
+              registro.lat_tecnico, registro.lon_tecnico, int(round(dist)),
+              1 if dist <= radio else 0))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error DB: {e}")
 
@@ -200,10 +200,15 @@ async def registrar_asistencia(registro: RegistroAsistencia, request: Request):
 @router.get("/api/asistencia/registros")
 async def obtener_registros(fecha: Optional[str] = None, current_user=Depends(verify_token)):
     from db import execute_read
-    if fecha:
-        rows = execute_read(
-            "SELECT * FROM asistencia WHERE fecha=%s ORDER BY hora_checkin DESC", (fecha,))
-    else:
-        rows = execute_read(
-            "SELECT * FROM asistencia WHERE fecha=CURDATE() ORDER BY hora_checkin DESC")
+    query = """
+        SELECT id, username, fecha, hora AS hora_checkin,
+               lat_fija, lon_fija, radio AS radio_metros,
+               lat_tecnico, lon_tecnico, distancia_m AS distancia_metros,
+               dentro_radio AS aprobado, created_at
+        FROM asistencia
+        WHERE fecha=%s
+        ORDER BY hora DESC
+    """
+    hoy2 = fecha if fecha else datetime.now().strftime("%Y-%m-%d")
+    rows = execute_read(query, (hoy2,))
     return rows or []
