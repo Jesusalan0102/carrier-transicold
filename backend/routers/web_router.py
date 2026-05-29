@@ -1253,7 +1253,7 @@ async def horarios_admin():
             html+='</thead><tbody>';
             const usuariosRes = await fetchAuth('/api/usuarios/'); const usuarios = await usuariosRes.json();
             tecnicosData = usuarios.filter(u=>u.role==='tecnico');
-            const guardados = localStorage.getItem('nombresCompletos'); if(guardados) nombresMap=JSON.parse(guardados);
+            // nombresMap se mantiene en memoria de la sesión
             tecnicosData.forEach(t=>{ if(!nombresMap[t.username]) nombresMap[t.username]=t.username; });
             tecnicosData.forEach(tec=>{
                 html+=`<tr><td style="background:#f8fafc;"><b>${getNombre(tec.username)}</b><br><span style="font-size:0.72rem;">${tec.username}</span></td>`;
@@ -1328,7 +1328,7 @@ async def horarios_admin():
         }
         function guardarNombres() {
             tecnicosData.forEach(tec=>{ const val = document.getElementById('nombre_'+tec.username)?.value.trim(); if(val) nombresMap[tec.username]=val; });
-            localStorage.setItem('nombresCompletos', JSON.stringify(nombresMap));
+            cargarHorarios();
             document.getElementById('modalNombres').style.display='none';
             cargarHorarios();
         }
