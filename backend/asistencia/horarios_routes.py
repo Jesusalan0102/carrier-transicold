@@ -1,111 +1,139 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from db import execute_read, execute_write
+from auth import verify_token
 from datetime import datetime, timedelta
-from backend.db import get_db
-from backend.models import Horario, Asistencia, Usuario
-from backend.auth import get_current_user
 
 router = APIRouter(prefix="/api/horarios", tags=["horarios"])
 
+
 @router.get("/")
-async def get_horarios(
+def get_horarios(
     semana: str = Query(...),
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(verify_token)
 ):
-    semana_date = datetime.strptime(semana, "%Y-%m-%d").date()
+    try:
+        semana_date = datetime.strptime(semana, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Formato de fecha inválido, usa YYYY-MM-DD")
+
     fin_semana = semana_date + timedelta(days=5)
-    
-    horarios = db.query(Horario).filter(
-        Horario.fecha >= semana_date,
-        Horario.fecha <= fin_semana
-    ).all()
-    
-    return [{"id": h.id, "username": h.username, "fecha": h.fecha.isoformat(), 
-             "hora_entrada": h.hora_entrada, "hora_salida": h.hora_salida, "semana": h.semana} 
-            for h in horarios]
+
+    horarios = execute_read(
+        "SELECT id, username, fecha, hora_entrada, hora_salida, semana "
+        "FROM horarios WHERE fecha >= %s AND fecha <= %s ORDER BY fecha, username",
+        (semana_date, fin_semana)
+    )
+
+    return [
+        {
+            "id": h["id"],
+            "username": h["username"],
+            "fecha": h["fecha"].isoformat() if hasattr(h["fecha"], "isoformat") else h["fecha"],
+            "hora_entrada": h["hora_entrada"],
+            "hora_salida": h["hora_salida"],
+            "semana": h["semana"],
+        }
+        for h in horarios
+    ]
+
 
 @router.post("/")
-async def guardar_horarios(
+def guardar_horarios(
     data: dict,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(verify_token)
 ):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores pueden guardar horarios")
+
     registros = data.get("registros", [])
-    
+    if not registros:
+        raise HTTPException(status_code=400, detail="No se enviaron registros")
+
     for reg in registros:
-        existing = db.query(Horario).filter(
-            Horario.username == reg["username"],
-            Horario.fecha == reg["fecha"]
-        ).first()
-        
+        existing = execute_read(
+            "SELECT id FROM horarios WHERE username=%s AND fecha=%s",
+            (reg["username"], reg["fecha"])
+        )
         if existing:
-            existing.hora_entrada = reg.get("hora_entrada", "")
-            existing.hora_salida = reg.get("hora_salida", "")
-        else:
-            nuevo = Horario(
-                username=reg["username"],
-                fecha=reg["fecha"],
-                hora_entrada=reg.get("hora_entrada", ""),
-                hora_salida=reg.get("hora_salida", ""),
-                semana=reg.get("semana", "")
+            execute_write(
+                "UPDATE horarios SET hora_entrada=%s, hora_salida=%s WHERE username=%s AND fecha=%s",
+                (reg.get("hora_entrada", ""), reg.get("hora_salida", ""), reg["username"], reg["fecha"])
             )
-            db.add(nuevo)
-    
-    db.commit()
+        else:
+            execute_write(
+                "INSERT INTO horarios (username, fecha, hora_entrada, hora_salida, semana) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (reg["username"], reg["fecha"], reg.get("hora_entrada", ""), reg.get("hora_salida", ""), reg.get("semana", ""))
+            )
+
     return {"mensaje": f"{len(registros)} horarios guardados"}
 
+
 @router.get("/resumen")
-async def resumen_asistencia(
+def resumen_asistencia(
     semana: str = Query(...),
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(verify_token)
 ):
-    semana_date = datetime.strptime(semana, "%Y-%m-%d").date()
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+
+    try:
+        semana_date = datetime.strptime(semana, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Formato de fecha inválido, usa YYYY-MM-DD")
+
     fin_semana = semana_date + timedelta(days=5)
-    
-    tecnicos = db.query(Usuario).filter(Usuario.role == "tecnico").all()
-    tecnicos_usernames = [t.username for t in tecnicos]
-    
-    horarios = db.query(Horario).filter(
-        Horario.fecha >= semana_date,
-        Horario.fecha <= fin_semana,
-        Horario.username.in_(tecnicos_usernames)
-    ).all()
-    
-    horario_dict = {f"{h.username}_{h.fecha.isoformat()}": h for h in horarios}
-    
-    asistencias = db.query(Asistencia).filter(
-        Asistencia.fecha >= semana_date,
-        Asistencia.fecha <= fin_semana,
-        Asistencia.username.in_(tecnicos_usernames),
-        Asistencia.aprobado == True
-    ).all()
-    
+
+    tecnicos = execute_read("SELECT username FROM usuarios WHERE role='tecnico'")
+    if not tecnicos:
+        return []
+
+    tecnicos_usernames = [t["username"] for t in tecnicos]
+    placeholders = ",".join(["%s"] * len(tecnicos_usernames))
+
+    horarios = execute_read(
+        f"SELECT username, fecha, hora_entrada, hora_salida FROM horarios "
+        f"WHERE fecha >= %s AND fecha <= %s AND username IN ({placeholders})",
+        (semana_date, fin_semana, *tecnicos_usernames)
+    )
+
+    horario_dict = {}
+    for h in horarios:
+        fecha_str = h["fecha"].isoformat() if hasattr(h["fecha"], "isoformat") else h["fecha"]
+        horario_dict[f"{h['username']}_{fecha_str}"] = h
+
+    asistencias = execute_read(
+        f"SELECT username, fecha, hora AS hora_checkin, distancia_m AS distancia_metros, dentro_radio AS aprobado "
+        f"FROM asistencia "
+        f"WHERE fecha >= %s AND fecha <= %s AND username IN ({placeholders}) AND dentro_radio = 1",
+        (semana_date, fin_semana, *tecnicos_usernames)
+    )
+
     resultado = []
-    for asistencia in asistencias:
-        key = f"{asistencia.username}_{asistencia.fecha.isoformat()}"
+    for a in asistencias:
+        fecha_str = a["fecha"].isoformat() if hasattr(a["fecha"], "isoformat") else a["fecha"]
+        key = f"{a['username']}_{fecha_str}"
         horario = horario_dict.get(key)
-        
+
         retardo_min = 0
-        if horario and horario.hora_entrada:
+        if horario and horario.get("hora_entrada"):
             try:
-                hora_programada = datetime.strptime(horario.hora_entrada, "%H:%M")
-                hora_real = datetime.strptime(asistencia.hora_checkin, "%H:%M:%S")
+                hora_programada = datetime.strptime(horario["hora_entrada"], "%H:%M")
+                hora_real = datetime.strptime(a["hora_checkin"], "%H:%M")
                 diff = (hora_real - hora_programada).total_seconds() / 60
                 if diff > 0:
                     retardo_min = int(diff)
-            except:
+            except Exception:
                 pass
-        
+
         resultado.append({
-            "username": asistencia.username,
-            "fecha": asistencia.fecha.isoformat(),
-            "hora_checkin": asistencia.hora_checkin,
-            "hora_programada": horario.hora_entrada if horario else None,
+            "username": a["username"],
+            "fecha": fecha_str,
+            "hora_checkin": a["hora_checkin"],
+            "hora_programada": horario["hora_entrada"] if horario else None,
             "retardo_min": retardo_min,
-            "distancia_metros": asistencia.distancia_metros,
-            "aprobado": asistencia.aprobado
+            "distancia_metros": a["distancia_metros"],
+            "aprobado": bool(a["aprobado"]),
         })
-    
+
     return resultado
