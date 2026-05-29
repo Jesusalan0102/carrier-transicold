@@ -46,35 +46,45 @@ if os.path.exists(CONFIG_PATH):
         pass
 
 
-# ==================== TOKEN CORTO ====================
-# El token solo contiene: expiracion + firma(lat,lon,radio,exp)
-# La config real se lee del servidor → URL mucho más corta
+# ==================== TOKEN FIJO (sin expiración) ====================
+# El token es permanente y se regenera solo cuando cambia la configuración.
+# Firma basada en lat, lon y radio — sin timestamp de expiración.
 
-SECRET = "carrier_qr_2024"  # clave interna para firmar QR
+SECRET = "carrier_qr_2024"
 
-def _firma(lat: float, lon: float, radio: int, exp: int) -> str:
-    data = f"{lat}:{lon}:{radio}:{exp}:{SECRET}"
-    return hashlib.sha256(data.encode()).hexdigest()[:12]
+def _firma_fija(lat: float, lon: float, radio: int) -> str:
+    data = f"{lat}:{lon}:{radio}:{SECRET}"
+    return hashlib.sha256(data.encode()).hexdigest()[:16]
 
-def generar_token_corto() -> str:
-    exp = int(time.time()) + _config["tiempo_expiracion"]
-    sig = _firma(_config["lat_fija"], _config["lon_fija"], _config["radio_metros"], exp)
-    payload = f"{exp}:{sig}"
+def generar_token_fijo() -> str:
+    sig = _firma_fija(_config["lat_fija"], _config["lon_fija"], _config["radio_metros"])
+    payload = f"FIJO:{sig}"
     return base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
 
-def validar_token_corto(token: str):
+def validar_token(token: str):
     try:
-        # Agregar padding si falta
         padding = 4 - len(token) % 4
         if padding != 4:
             token += "=" * padding
         decoded = base64.urlsafe_b64decode(token).decode()
+
+        # Token fijo nuevo
+        if decoded.startswith("FIJO:"):
+            sig_recibida = decoded[5:]
+            sig_esperada = _firma_fija(_config["lat_fija"], _config["lon_fija"], _config["radio_metros"])
+            if sig_recibida != sig_esperada:
+                return False, "QR inválido"
+            return True, "OK"
+
+        # Token corto legacy (con expiración) — compatibilidad hacia atrás
         exp_str, sig_recibida = decoded.rsplit(":", 1)
         exp = int(exp_str)
         if exp < int(time.time()):
-            return False, "QR expirado"
-        sig_esperada = _firma(_config["lat_fija"], _config["lon_fija"], _config["radio_metros"], exp)
-        if sig_recibida != sig_esperada:
+            return False, "QR expirado. Pide al administrador que regenere el QR fijo."
+        sig_esperada_legacy = hashlib.sha256(
+            f"{_config['lat_fija']}:{_config['lon_fija']}:{_config['radio_metros']}:{exp}:{SECRET}".encode()
+        ).hexdigest()[:12]
+        if sig_recibida != sig_esperada_legacy:
             return False, "QR inválido"
         return True, "OK"
     except Exception:
@@ -123,8 +133,7 @@ async def set_configuracion(config: ConfiguracionAsistencia, current_user=Depend
 
 @router.get("/api/asistencia/generar-qr")
 async def generar_qr(request: Request, current_user=Depends(verify_token)):
-    token = generar_token_corto()
-    # Detectar HTTPS real (detrás de proxy en cleverapps/render)
+    token = generar_token_fijo()
     proto = request.headers.get("x-forwarded-proto", "")
     base = str(request.base_url).rstrip("/")
     if proto == "https":
@@ -133,8 +142,8 @@ async def generar_qr(request: Request, current_user=Depends(verify_token)):
     return {
         "qr_url": qr_url,
         "config": _config,
-        "expiracion_segundos": _config["tiempo_expiracion"],
-        "url_length": len(qr_url)   # para debug
+        "es_fijo": True,
+        "url_length": len(qr_url)
     }
 
 @router.post("/api/asistencia/registrar")
@@ -156,8 +165,8 @@ async def registrar_asistencia(registro: RegistroAsistencia, request: Request):
     if not username:
         raise HTTPException(status_code=401, detail="Token JWT inválido")
 
-    # ── Validar QR (soporta token largo legacy Y token corto nuevo) ──────
-    valido, msg = validar_token_corto(registro.token)
+    # ── Validar QR ────────────────────────────────────────────────────────
+    valido, msg = validar_token(registro.token)
     if not valido:
         raise HTTPException(status_code=400, detail=msg)
 
@@ -183,7 +192,7 @@ async def registrar_asistencia(registro: RegistroAsistencia, request: Request):
         raise HTTPException(status_code=400, detail="Ya registraste asistencia hoy")
 
     # ── Selfie ────────────────────────────────────────────────────────────
-    ruta = guardar_selfie(registro.selfie_base64, username, datetime.now().strftime("%Y%m%d"))
+    guardar_selfie(registro.selfie_base64, username, ahora_tj.strftime("%Y%m%d"))
 
     # ── DB ────────────────────────────────────────────────────────────────
     hora = ahora_tj.strftime("%H:%M")
@@ -199,7 +208,7 @@ async def registrar_asistencia(registro: RegistroAsistencia, request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error DB: {e}")
 
-    return {"exito": True, "mensaje": f"✅ Asistencia registrada. Distancia: {dist:.0f}m", "hora": hora}
+    return {"exito": True, "mensaje": f"✅ Asistencia registrada a las {hora} (Tijuana). Distancia: {dist:.0f}m", "hora": hora}
 
 @router.get("/api/asistencia/registros")
 async def obtener_registros(fecha: Optional[str] = None, current_user=Depends(verify_token)):
@@ -213,6 +222,8 @@ async def obtener_registros(fecha: Optional[str] = None, current_user=Depends(ve
         WHERE fecha=%s
         ORDER BY hora DESC
     """
-    hoy2 = fecha if fecha else datetime.now().strftime("%Y-%m-%d")
+    # Usar hora Tijuana para determinar "hoy" por defecto
+    hoy_tj = datetime.now(TIJUANA_TZ).strftime("%Y-%m-%d")
+    hoy2 = fecha if fecha else hoy_tj
     rows = execute_read(query, (hoy2,))
     return rows or []
