@@ -108,7 +108,7 @@ def resumen_asistencia(
 
     # Obtener asistencias aprobadas de la semana
     asistencias = execute_read(
-        f"SELECT username, fecha, hora_checkin, distancia_metros, aprobado FROM asistencia "
+        f"SELECT username, fecha, hora AS hora_checkin, distancia_m AS distancia_metros, dentro_radio AS aprobado FROM asistencia "
         f"WHERE fecha >= %s AND fecha <= %s AND username IN ({placeholders}) AND aprobado = 1",
         (semana_date, fin_semana, *tecnicos_usernames)
     )
