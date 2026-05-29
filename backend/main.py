@@ -17,7 +17,7 @@ from db import init_db
 
 # Módulos de asistencia
 from asistencia.routes import router as asistencia_api_router
-from asistencia.horarios_routes import router as horarios_api_router
+
 
 app = FastAPI(
     title="Carrier Transicold API",
