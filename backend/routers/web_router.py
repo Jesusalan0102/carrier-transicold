@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
 # Importar módulos de asistencia
-from asistencia import router as asistencia_router
+from asistencia.routes import router as asistencia_router
 from asistencia.horarios_routes import router as horarios_router
 from asistencia.templates import get_checkin_template, ASISTENCIA_STYLES
 
