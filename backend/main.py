@@ -12,11 +12,11 @@ from routers.toma_valores_router import router as toma_valores_router
 from routers.comentarios_router import router as comentarios_router
 from routers.ws import router as ws_router
 from routers.cluster_router import router as cluster_router
-from db import init_db
 from routers.web_router import router as web_router
+from db import init_db
 
-# IMPORTAR NUEVOS MÓDULOS DE ASISTENCIA
-from asistencia import router as asistencia_api_router
+# Módulos de asistencia
+from asistencia.routes import router as asistencia_api_router
 from asistencia.horarios_routes import router as horarios_api_router
 
 app = FastAPI(
@@ -50,8 +50,6 @@ app.include_router(comentarios_router)
 app.include_router(ws_router)
 app.include_router(cluster_router)
 app.include_router(web_router)
-
-# INCLUIR LOS NUEVOS ROUTERS DE ASISTENCIA
 app.include_router(asistencia_api_router)
 app.include_router(horarios_api_router)
 
