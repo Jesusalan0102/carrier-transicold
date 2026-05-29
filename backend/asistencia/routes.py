@@ -2,8 +2,11 @@
 from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import json, os, uuid, hashlib, base64, math, time
+
+# Tijuana = UTC-7 (no observa horario de verano desde 2022 en Baja California)
+TIJUANA_TZ = timezone(timedelta(hours=-7))
 
 from auth import verify_token
 
@@ -174,7 +177,8 @@ async def registrar_asistencia(registro: RegistroAsistencia, request: Request):
             detail=f"Señal GPS débil ({registro.gps_accuracy:.0f}m). Espera al aire libre.")
 
     # ── Doble registro ────────────────────────────────────────────────────
-    hoy = datetime.now().strftime("%Y-%m-%d")
+    ahora_tj = datetime.now(TIJUANA_TZ)
+    hoy = ahora_tj.strftime("%Y-%m-%d")
     if execute_read("SELECT id FROM asistencia WHERE username=%s AND fecha=%s", (username, hoy)):
         raise HTTPException(status_code=400, detail="Ya registraste asistencia hoy")
 
@@ -182,14 +186,14 @@ async def registrar_asistencia(registro: RegistroAsistencia, request: Request):
     ruta = guardar_selfie(registro.selfie_base64, username, datetime.now().strftime("%Y%m%d"))
 
     # ── DB ────────────────────────────────────────────────────────────────
-    hora = datetime.now().strftime("%H:%M:%S")
+    hora = ahora_tj.strftime("%H:%M")
     try:
         execute_write("""
             INSERT INTO asistencia
               (username, fecha, hora, lat_fija, lon_fija, radio,
                lat_tecnico, lon_tecnico, distancia_m, dentro_radio)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        """, (username, hoy, hora[:5], lat_fija, lon_fija, radio,
+        """, (username, hoy, hora, lat_fija, lon_fija, radio,
               registro.lat_tecnico, registro.lon_tecnico, int(round(dist)),
               1 if dist <= radio else 0))
     except Exception as e:
