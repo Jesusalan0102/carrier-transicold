@@ -165,34 +165,34 @@ def get_checkin_template() -> str:
 </div>
 
 <script>
+// FIX: usar window.fetchAuth que ya fue corregido en web_router.py (Object.assign + catch de red)
 const fetchAuth = window.fetchAuth;
 const username  = window.username;
 
 // ── Estado local ───────────────────────────────────────────
-let gpsCoords  = null;
-let horarioHoy = null;   // { hora_entrada, hora_salida }
-let estadoHoy  = null;   // { tiene_entrada, hora_entrada_real, tiene_salida, hora_salida_real }
-let accionActual = null; // 'entrada' | 'salida' | 'completo' | 'sin_horario' | 'fuera_rango'
+let gpsCoords    = null;
+let horarioHoy   = null;
+let estadoHoy    = null;
+let accionActual = null;
+let _ejecutando  = false;  // FIX: flag para evitar doble submit
 
 // ── Helpers ────────────────────────────────────────────────
 function horaActualTJ() {
-    return new Date().toLocaleTimeString('es-MX', { timeZone:'America/Tijuana', hour12:false, hour:'2-digit', minute:'2-digit' });
+    return new Date().toLocaleTimeString('es-MX', {
+        timeZone: 'America/Tijuana', hour12: false, hour: '2-digit', minute: '2-digit'
+    });
 }
 function fechaHoyTJ() {
-    return new Date().toLocaleDateString('sv-SE', { timeZone:'America/Tijuana' });
+    return new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Tijuana' });
 }
 function minutosDesdeMedianoche(hhmm) {
     if (!hhmm) return null;
     const [h, m] = hhmm.split(':').map(Number);
     return h * 60 + m;
 }
-function diffMinutos(horaA, horaB) {
-    // horaA - horaB en minutos (positivo = tarde, negativo = adelantado)
-    return minutosDesdeMedianoche(horaA) - minutosDesdeMedianoche(horaB);
-}
 function formatHora(hhmm) {
     if (!hhmm) return '—';
-    return hhmm.slice(0,5);
+    return hhmm.slice(0, 5);
 }
 
 // ── 1. GPS ─────────────────────────────────────────────────
@@ -204,10 +204,17 @@ function obtenerGPS() {
     }
     navigator.geolocation.getCurrentPosition(
         pos => {
-            gpsCoords = { lat: pos.coords.latitude, lon: pos.coords.longitude, precision: pos.coords.accuracy };
+            gpsCoords = {
+                lat: pos.coords.latitude,
+                lon: pos.coords.longitude,
+                precision: pos.coords.accuracy
+            };
             const prec = pos.coords.accuracy.toFixed(0);
-            const ok = pos.coords.accuracy <= 200;
-            setGPSStatus(ok, ok ? `GPS preciso (±${prec}m)` : `GPS poco preciso (±${prec}m) — Acércate a una ventana`);
+            const ok   = pos.coords.accuracy <= 200;
+            setGPSStatus(ok, ok
+                ? `GPS preciso (±${prec}m)`
+                : `GPS poco preciso (±${prec}m) — Acércate a una ventana`
+            );
             inicializarPagina();
         },
         err => {
@@ -234,24 +241,30 @@ async function cargarHorarioHoy() {
     try {
         const fecha = fechaHoyTJ();
         const res = await fetchAuth(`/api/horarios/hoy?username=${username}&fecha=${fecha}`);
-        if (res.ok) {
+        // FIX: verificar que res no sea null (fetchAuth devuelve null en 401)
+        if (res && res.ok) {
             const data = await res.json();
             horarioHoy = data.horario || null;
         }
-    } catch(e) { horarioHoy = null; }
+    } catch(e) {
+        horarioHoy = null;
+    }
 }
 
 async function cargarEstadoHoy() {
     try {
         const fecha = fechaHoyTJ();
         const res = await fetchAuth(`/api/asistencia/estado-hoy?username=${username}&fecha=${fecha}`);
-        if (res.ok) {
+        // FIX: verificar que res no sea null
+        if (res && res.ok) {
             estadoHoy = await res.json();
         }
-    } catch(e) { estadoHoy = null; }
+    } catch(e) {
+        estadoHoy = null;
+    }
 }
 
-// ── 3. Determinar qué acción está disponible ───────────────
+// ── 3. Determinar acción disponible ───────────────────────
 function determinarAccion() {
     if (!horarioHoy || (!horarioHoy.hora_entrada && !horarioHoy.hora_salida)) {
         accionActual = 'sin_horario';
@@ -269,17 +282,15 @@ function determinarAccion() {
     }
 }
 
-// ── 4. Renderizar UI según el estado ──────────────────────
+// ── 4. Render UI ───────────────────────────────────────────
 function renderUI() {
-    // Horario
     if (horarioHoy) {
         document.getElementById('cardHorario').style.display = 'block';
         document.getElementById('schedEntrada').textContent = formatHora(horarioHoy.hora_entrada) || 'Libre';
         document.getElementById('schedSalida').textContent  = formatHora(horarioHoy.hora_salida)  || 'Libre';
 
-        // Alerta de retardo (solo si aún no registró entrada)
         if (accionActual === 'entrada' && horarioHoy.hora_entrada) {
-            const ahoraMin = minutosDesdeMedianoche(horaActualTJ());
+            const ahoraMin   = minutosDesdeMedianoche(horaActualTJ());
             const entradaMin = minutosDesdeMedianoche(horarioHoy.hora_entrada);
             const TOLERANCIA = 15;
             if (ahoraMin > entradaMin + TOLERANCIA) {
@@ -289,38 +300,33 @@ function renderUI() {
             }
         }
 
-        // Barra de progreso si ya tiene entrada y hay horario completo
         if (accionActual === 'salida' && horarioHoy.hora_entrada && horarioHoy.hora_salida) {
-            const ahoraMin     = minutosDesdeMedianoche(horaActualTJ());
-            const entradaMin   = minutosDesdeMedianoche(horarioHoy.hora_entrada);
-            const salidaMin    = minutosDesdeMedianoche(horarioHoy.hora_salida);
-            const jornada      = salidaMin - entradaMin;
-            const transcurrido = Math.max(0, ahoraMin - entradaMin);
-            const pct          = Math.min(100, Math.round((transcurrido / jornada) * 100));
-            document.getElementById('progressSection').style.display = 'block';
-            document.getElementById('progressFill').style.width = pct + '%';
-            document.getElementById('progressLabel').textContent = pct + '% de la jornada';
+            const ahoraMin   = minutosDesdeMedianoche(horaActualTJ());
+            const entradaMin = minutosDesdeMedianoche(horarioHoy.hora_entrada);
+            const salidaMin  = minutosDesdeMedianoche(horarioHoy.hora_salida);
+            const jornada    = salidaMin - entradaMin;
+            if (jornada > 0) {
+                const transcurrido = Math.max(0, ahoraMin - entradaMin);
+                const pct = Math.min(100, Math.round((transcurrido / jornada) * 100));
+                document.getElementById('progressSection').style.display = 'block';
+                document.getElementById('progressFill').style.width = pct + '%';
+                document.getElementById('progressLabel').textContent = pct + '% de la jornada';
+            }
         }
     }
 
-    // StatusBar
-    const statusBar  = document.getElementById('statusBar');
-    const statusDot  = document.getElementById('statusDot');
-    const statusTitle= document.getElementById('statusTitle');
-    const statusSub  = document.getElementById('statusSub');
-    const btn        = document.getElementById('btnAccion');
-    const btnIcon    = document.getElementById('btnIcon');
-    const btnLabel   = document.getElementById('btnLabel');
-    const alertMsg   = document.getElementById('alertMsg');
-
+    const btn      = document.getElementById('btnAccion');
+    const btnIcon  = document.getElementById('btnIcon');
+    const btnLabel = document.getElementById('btnLabel');
+    const alertMsg = document.getElementById('alertMsg');
     btn.onclick = ejecutarAccion;
 
     switch (accionActual) {
 
         case 'sin_horario':
-            statusDot.className = 'status-dot orange';
-            statusTitle.textContent = 'Sin horario asignado hoy';
-            statusSub.textContent   = 'Comunícate con el administrador';
+            document.getElementById('statusDot').className   = 'status-dot orange';
+            document.getElementById('statusTitle').textContent = 'Sin horario asignado hoy';
+            document.getElementById('statusSub').textContent   = 'Comunícate con el administrador';
             alertMsg.innerHTML = '<div class="alert-box alert-warning">No tienes horario registrado para hoy. No puedes registrar asistencia.</div>';
             btn.className = 'btn-checkin btn-disabled';
             btn.disabled  = true;
@@ -329,27 +335,26 @@ function renderUI() {
             break;
 
         case 'entrada':
-            statusDot.className = 'status-dot orange';
-            statusTitle.textContent = 'Pendiente de entrada';
-            statusSub.textContent   = `Hora actual: ${horaActualTJ()}`;
+            document.getElementById('statusDot').className    = 'status-dot orange';
+            document.getElementById('statusTitle').textContent = 'Pendiente de entrada';
+            document.getElementById('statusSub').textContent   = `Hora actual: ${horaActualTJ()}`;
             btn.className = 'btn-checkin btn-entrada';
             btn.disabled  = false;
             btnIcon.textContent  = '🟢';
             btnLabel.textContent = 'Registrar Entrada';
             break;
 
-        case 'salida':
-            statusDot.className = 'status-dot green';
-            statusTitle.textContent = `Entrada registrada a las ${formatHora(estadoHoy.hora_entrada_real)}`;
-            statusSub.textContent   = `Hora actual: ${horaActualTJ()}`;
+        case 'salida': {
+            document.getElementById('statusDot').className    = 'status-dot green';
+            document.getElementById('statusTitle').textContent = `Entrada registrada a las ${formatHora(estadoHoy.hora_entrada_real)}`;
+            document.getElementById('statusSub').textContent   = `Hora actual: ${horaActualTJ()}`;
 
-            // Validar si puede registrar salida (al menos 50% de la jornada transcurrida, o sin horario de salida)
             let puedeRegistrarSalida = true;
             let msgSalida = '';
             if (horarioHoy?.hora_entrada && horarioHoy?.hora_salida) {
-                const ahoraMin   = minutosDesdeMedianoche(horaActualTJ());
-                const entradaMin = minutosDesdeMedianoche(horarioHoy.hora_entrada);
-                const salidaMin  = minutosDesdeMedianoche(horarioHoy.hora_salida);
+                const ahoraMin     = minutosDesdeMedianoche(horaActualTJ());
+                const entradaMin   = minutosDesdeMedianoche(horarioHoy.hora_entrada);
+                const salidaMin    = minutosDesdeMedianoche(horarioHoy.hora_salida);
                 const mitadJornada = entradaMin + Math.floor((salidaMin - entradaMin) * 0.5);
                 if (ahoraMin < mitadJornada) {
                     puedeRegistrarSalida = false;
@@ -371,11 +376,12 @@ function renderUI() {
                 btnLabel.textContent = 'Registrar Salida';
             }
             break;
+        }
 
         case 'completo':
-            statusDot.className = 'status-dot green';
-            statusTitle.textContent = '✅ Jornada completada';
-            statusSub.textContent   = `Entrada: ${formatHora(estadoHoy.hora_entrada_real)} · Salida: ${formatHora(estadoHoy.hora_salida_real)}`;
+            document.getElementById('statusDot').className    = 'status-dot green';
+            document.getElementById('statusTitle').textContent = '✅ Jornada completada';
+            document.getElementById('statusSub').textContent   = `Entrada: ${formatHora(estadoHoy.hora_entrada_real)} · Salida: ${formatHora(estadoHoy.hora_salida_real)}`;
             alertMsg.innerHTML = '<div class="alert-box alert-success">🎉 Has completado tu registro del día. ¡Hasta mañana!</div>';
             btn.className = 'btn-checkin btn-disabled';
             btn.disabled  = true;
@@ -384,7 +390,6 @@ function renderUI() {
             break;
     }
 
-    // Registros
     cargarRegistrosUI();
 }
 
@@ -393,15 +398,17 @@ async function cargarRegistrosUI() {
     try {
         const fecha = fechaHoyTJ();
         const res = await fetchAuth(`/api/asistencia/registros?fecha=${fecha}&username=${username}`);
-        if (!res.ok) return;
+        if (!res || !res.ok) return;
         const registros = await res.json();
-        if (!registros.length) return;
+        if (!Array.isArray(registros) || !registros.length) return;
 
         let html = '';
         registros.forEach(r => {
             const tipo   = r.tipo === 'entrada' ? '🟢 Entrada' : '🔴 Salida';
-            const estado = r.aprobado ? '<span style="color:#16a34a;font-size:0.78rem;">✓ Aprobado</span>' : '<span style="color:#dc2626;font-size:0.78rem;">✗ Rechazado</span>';
-            const dist   = r.distancia_metros != null ? `${Math.round(r.distancia_metros)}m` : 'Sin GPS';
+            const estado = r.aprobado
+                ? '<span style="color:#16a34a;font-size:0.78rem;">✓ Aprobado</span>'
+                : '<span style="color:#dc2626;font-size:0.78rem;">✗ Rechazado</span>';
+            const dist = r.distancia_metros != null ? `${Math.round(r.distancia_metros)}m` : 'Sin GPS';
             html += `<div class="registro-item">
                 <div>
                     <div style="font-weight:600;font-size:0.88rem;">${tipo}</div>
@@ -416,60 +423,105 @@ async function cargarRegistrosUI() {
 
         document.getElementById('listaRegistros').innerHTML = html;
         document.getElementById('cardRegistros').style.display = 'block';
-    } catch(e) {}
+    } catch(e) { /* silencioso — los registros son opcionales */ }
 }
 
-// ── 6. Ejecutar acción (entrada o salida) ─────────────────
+// ── 6. Ejecutar acción — VERSIÓN CORREGIDA ─────────────────
 async function ejecutarAccion() {
     if (accionActual !== 'entrada' && accionActual !== 'salida') return;
 
-    const btn = document.getElementById('btnAccion');
-    btn.disabled = true;
-    btn.innerHTML = '<span>⏳</span><span>Registrando...</span>';
+    // FIX: evitar doble submit si el técnico toca el botón dos veces rápido
+    if (_ejecutando) return;
+    _ejecutando = true;
+
+    const btn      = document.getElementById('btnAccion');
+    const btnIcon  = document.getElementById('btnIcon');
+    const btnLabel = document.getElementById('btnLabel');
+    const alertMsg = document.getElementById('alertMsg');
+
+    // Guardar labels originales para restaurar en caso de error
+    const labelOriginal = accionActual === 'entrada' ? 'Registrar Entrada' : 'Registrar Salida';
+    const iconOriginal  = accionActual === 'entrada' ? '🟢' : '🔴';
+    const claseOriginal = accionActual === 'entrada' ? 'btn-checkin btn-entrada' : 'btn-checkin btn-salida';
+
+    // Estado "cargando"
+    btn.disabled  = true;
+    btn.className = 'btn-checkin btn-disabled';
+    btnIcon.textContent  = '⏳';
+    btnLabel.textContent = 'Registrando...';
+    alertMsg.innerHTML   = '';
 
     try {
         const payload = {
-            username: username,
-            tipo: accionActual,
-            fecha: fechaHoyTJ(),
-            lat: gpsCoords?.lat  ?? null,
-            lon: gpsCoords?.lon  ?? null,
-            precision_gps: gpsCoords?.precision ?? null
+            username:      username,
+            tipo:          accionActual,
+            fecha:         fechaHoyTJ(),
+            lat:           gpsCoords?.lat       ?? null,
+            lon:           gpsCoords?.lon       ?? null,
+            precision_gps: gpsCoords?.precision ?? null,
         };
 
+        // FIX: fetchAuth ya hace Object.assign, así que Content-Type llega correctamente
         const res = await fetchAuth('/api/asistencia/checkin', {
-            method: 'POST',
+            method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body:    JSON.stringify(payload),
         });
 
-        const data = await res.json();
+        // FIX: manejar el caso en que fetchAuth devuelve null (redirección 401)
+        if (!res) {
+            _ejecutando = false;
+            return;
+        }
+
+        // FIX: leer el JSON siempre, tanto en éxito como en error
+        let data = {};
+        try {
+            data = await res.json();
+        } catch(_) {
+            data = { detail: 'Respuesta inválida del servidor.' };
+        }
 
         if (res.ok) {
-            // Éxito
-            const msgEl = document.getElementById('alertMsg');
+            // ── ÉXITO ──
             if (accionActual === 'entrada') {
                 const retardo = data.retardo_min > 0 ? ` (retardo: ${data.retardo_min} min)` : '';
-                msgEl.innerHTML = `<div class="alert-box alert-success">✅ Entrada registrada a las <b>${formatHora(data.hora_registro)}</b>${retardo}</div>`;
+                alertMsg.innerHTML = `<div class="alert-box alert-success">✅ Entrada registrada a las <b>${formatHora(data.hora_registro)}</b>${retardo}</div>`;
             } else {
-                const horasTrabajadas = data.horas_trabajadas ? ` · ${data.horas_trabajadas}h trabajadas` : '';
-                msgEl.innerHTML = `<div class="alert-box alert-success">✅ Salida registrada a las <b>${formatHora(data.hora_registro)}</b>${horasTrabajadas}</div>`;
+                const hrs = data.horas_trabajadas ? ` · ${data.horas_trabajadas}h trabajadas` : '';
+                alertMsg.innerHTML = `<div class="alert-box alert-success">✅ Salida registrada a las <b>${formatHora(data.hora_registro)}</b>${hrs}</div>`;
             }
-            // Recargar estado
+
+            // Recargar estado completo y redibujar
             await cargarEstadoHoy();
             determinarAccion();
             renderUI();
+
         } else {
-            document.getElementById('alertMsg').innerHTML =
-                `<div class="alert-box alert-error">❌ ${data.detail || 'Error al registrar'}</div>`;
-            btn.disabled = false;
-            document.getElementById('btnIcon').textContent  = accionActual === 'entrada' ? '🟢' : '🔴';
-            document.getElementById('btnLabel').textContent = accionActual === 'entrada' ? 'Registrar Entrada' : 'Registrar Salida';
+            // ── ERROR DEL SERVIDOR (400, 500, etc.) ──
+            // FIX: mostrar el mensaje real del servidor en lugar de "Error de conexión"
+            const msg = data.detail || `Error ${res.status} al registrar. Intenta de nuevo.`;
+            alertMsg.innerHTML = `<div class="alert-box alert-error">❌ ${msg}</div>`;
+
+            // FIX: restaurar el botón al estado anterior para que pueda reintentar
+            btn.disabled  = false;
+            btn.className = claseOriginal;
+            btnIcon.textContent  = iconOriginal;
+            btnLabel.textContent = labelOriginal;
         }
-    } catch(e) {
-        document.getElementById('alertMsg').innerHTML =
-            '<div class="alert-box alert-error">❌ Error de conexión. Intenta de nuevo.</div>';
-        btn.disabled = false;
+
+    } catch(networkError) {
+        // ── ERROR DE RED ──
+        // FIX: mensaje claro + botón restaurado para reintentar
+        alertMsg.innerHTML = '<div class="alert-box alert-error">❌ Sin conexión. Revisa tu internet e intenta de nuevo.</div>';
+        btn.disabled  = false;
+        btn.className = claseOriginal;
+        btnIcon.textContent  = iconOriginal;
+        btnLabel.textContent = labelOriginal;
+
+    } finally {
+        // FIX: siempre liberar el flag de ejecución
+        _ejecutando = false;
     }
 }
 
