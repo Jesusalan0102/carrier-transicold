@@ -31,7 +31,6 @@ def get_usuarios_activos(
 @router.post("/")
 def create_usuario(
     username: str,
-    email: str,
     password: str,
     rol: str = "tecnico",
     db: Session = Depends(get_db),
@@ -46,7 +45,6 @@ def create_usuario(
     
     new_user = User(
         username=username,
-        email=email,
         hashed_password=get_password_hash(password),
         rol=rol
     )
