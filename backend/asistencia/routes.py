@@ -62,15 +62,17 @@ def get_configuracion(current_user=Depends(verify_token)):
 def save_configuracion(payload: ConfigPayload, current_user=Depends(verify_token)):
     existing = execute_read("SELECT id FROM asistencia_config LIMIT 1")
     if existing:
-        execute_write(
+        ok = execute_write(
             "UPDATE asistencia_config SET lat_fija=%s, lon_fija=%s, radio_metros=%s WHERE id=%s",
             (payload.lat_fija, payload.lon_fija, payload.radio_metros, existing[0]["id"])
         )
     else:
-        execute_write(
+        ok = execute_write(
             "INSERT INTO asistencia_config (lat_fija, lon_fija, radio_metros) VALUES (%s,%s,%s)",
             (payload.lat_fija, payload.lon_fija, payload.radio_metros)
         )
+    if not ok:
+        raise HTTPException(500, "Error al guardar configuración en base de datos.")
     return {"ok": True}
 
 # ── Generar QR ─────────────────────────────────────────────────────────────────
@@ -105,6 +107,7 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
 
     fecha = payload.fecha
 
+    # ── Verificar duplicado ──
     existente = execute_read(
         "SELECT id FROM asistencia_registros WHERE username=%s AND fecha=%s AND tipo=%s",
         (payload.username, fecha, tipo)
@@ -112,6 +115,7 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
     if existente:
         raise HTTPException(400, f"Ya registraste tu {tipo} hoy.")
 
+    # ── Salida requiere entrada previa ──
     if tipo == "salida":
         entrada = execute_read(
             "SELECT id FROM asistencia_registros WHERE username=%s AND fecha=%s AND tipo='entrada'",
@@ -120,6 +124,7 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
         if not entrada:
             raise HTTPException(400, "Debes registrar tu entrada antes de la salida.")
 
+    # ── Validar ubicación GPS ──
     cfg = _get_config()
     distancia_m = None
     aprobado = True
@@ -127,36 +132,72 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
     if payload.lat is not None and payload.lon is not None:
         distancia_m = _distancia_metros(payload.lat, payload.lon, cfg["lat_fija"], cfg["lon_fija"])
         aprobado = distancia_m <= cfg["radio_metros"]
+    # FIX: si no hay GPS se permite el registro pero queda sin coordenadas
+    # (antes podía fallar silenciosamente según la implementación de db.py)
 
-    hora_actual  = _hora_tj()
-    retardo_min  = 0
+    hora_actual      = _hora_tj()
+    retardo_min      = 0
     horas_trabajadas = None
 
+    # ── Calcular horas trabajadas al salir ──
     if tipo == "salida":
         ent_reg = execute_read(
             "SELECT hora_checkin FROM asistencia_registros WHERE username=%s AND fecha=%s AND tipo='entrada'",
             (payload.username, fecha)
         )
         if ent_reg:
-            entrada_min = _hhmm_to_min(ent_reg[0]["hora_checkin"][:5])
-            salida_min  = _hhmm_to_min(hora_actual)
+            entrada_min      = _hhmm_to_min(ent_reg[0]["hora_checkin"][:5])
+            salida_min       = _hhmm_to_min(hora_actual)
             horas_trabajadas = round(max(0, salida_min - entrada_min) / 60, 1)
 
-    execute_write(
+    # ── Calcular retardo si hay horario asignado ──
+    if tipo == "entrada":
+        try:
+            from datetime import date as _date
+            dia_semana = _date.fromisoformat(fecha).weekday()  # 0=lunes
+            dias_map   = ["lunes","martes","miercoles","jueves","viernes","sabado","domingo"]
+            dia_nombre = dias_map[dia_semana]
+            horario = execute_read(
+                "SELECT hora_entrada FROM horarios WHERE username=%s AND fecha=%s LIMIT 1",
+                (payload.username, fecha)
+            )
+            if horario and horario[0].get("hora_entrada"):
+                hora_prog_min = _hhmm_to_min(horario[0]["hora_entrada"][:5])
+                hora_real_min = _hhmm_to_min(hora_actual)
+                retardo_min   = max(0, hora_real_min - hora_prog_min)
+        except Exception:
+            retardo_min = 0  # no interrumpir el registro si falla el cálculo de retardo
+
+    # ── INSERT en BD — FIX: verificar que se guardó correctamente ──
+    ok = execute_write(
         """INSERT INTO asistencia_registros
-           (username, tipo, fecha, hora_checkin, lat, lon, precision_gps, distancia_metros, aprobado, retardo_min)
+           (username, tipo, fecha, hora_checkin, lat, lon, precision_gps,
+            distancia_metros, aprobado, retardo_min)
            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-        (payload.username, tipo, fecha, hora_actual,
-         payload.lat, payload.lon, payload.precision_gps,
-         round(distancia_m, 1) if distancia_m else None,
-         1 if aprobado else 0, retardo_min)
+        (
+            payload.username, tipo, fecha, hora_actual,
+            payload.lat, payload.lon, payload.precision_gps,
+            round(distancia_m, 1) if distancia_m is not None else None,
+            1 if aprobado else 0,
+            retardo_min,
+        )
     )
 
+    # FIX: lanzar error claro si la escritura falló
+    if not ok:
+        raise HTTPException(
+            status_code=500,
+            detail="No se pudo guardar el registro. Verifica tu conexión e intenta de nuevo."
+        )
+
     return {
-        "ok": True, "tipo": tipo, "hora_registro": hora_actual,
-        "aprobado": aprobado,
-        "distancia_metros": round(distancia_m, 1) if distancia_m else None,
-        "retardo_min": retardo_min, "horas_trabajadas": horas_trabajadas,
+        "ok":               True,
+        "tipo":             tipo,
+        "hora_registro":    hora_actual,
+        "aprobado":         aprobado,
+        "distancia_metros": round(distancia_m, 1) if distancia_m is not None else None,
+        "retardo_min":      retardo_min,
+        "horas_trabajadas": horas_trabajadas,
     }
 
 # ── Registros ──────────────────────────────────────────────────────────────────
