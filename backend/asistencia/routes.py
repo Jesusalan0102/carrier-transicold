@@ -33,6 +33,7 @@ class ConfigPayload(BaseModel):
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 def _distancia_metros(lat1, lon1, lat2, lon2) -> float:
+    lat1, lon1, lat2, lon2 = float(lat1), float(lon1), float(lat2), float(lon2)  # ✅ FIX
     R = 6_371_000
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
@@ -62,18 +63,16 @@ def get_configuracion(current_user=Depends(verify_token)):
 def save_configuracion(payload: ConfigPayload, current_user=Depends(verify_token)):
     existing = execute_read("SELECT id FROM asistencia_config LIMIT 1")
     if existing:
-        ok = execute_write(
+        execute_write(
             "UPDATE asistencia_config SET lat_fija=%s, lon_fija=%s, radio_metros=%s WHERE id=%s",
             (payload.lat_fija, payload.lon_fija, payload.radio_metros, existing[0]["id"])
         )
     else:
-        ok = execute_write(
+        execute_write(
             "INSERT INTO asistencia_config (lat_fija, lon_fija, radio_metros) VALUES (%s,%s,%s)",
             (payload.lat_fija, payload.lon_fija, payload.radio_metros)
         )
-    if not ok:
-        raise HTTPException(500, "Error al guardar configuración en base de datos.")
-    return {"ok": True}
+    return {"ok": True}  # ✅ FIX: no depender del retorno de execute_write
 
 # ── Generar QR ─────────────────────────────────────────────────────────────────
 @router.get("/generar-qr")
@@ -131,9 +130,7 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
 
     if payload.lat is not None and payload.lon is not None:
         distancia_m = _distancia_metros(payload.lat, payload.lon, cfg["lat_fija"], cfg["lon_fija"])
-        aprobado = distancia_m <= cfg["radio_metros"]
-    # FIX: si no hay GPS se permite el registro pero queda sin coordenadas
-    # (antes podía fallar silenciosamente según la implementación de db.py)
+        aprobado = distancia_m <= float(cfg["radio_metros"])  # ✅ FIX: cast también aquí por si acaso
 
     hora_actual      = _hora_tj()
     retardo_min      = 0
@@ -154,7 +151,7 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
     if tipo == "entrada":
         try:
             from datetime import date as _date
-            dia_semana = _date.fromisoformat(fecha).weekday()  # 0=lunes
+            dia_semana = _date.fromisoformat(fecha).weekday()
             dias_map   = ["lunes","martes","miercoles","jueves","viernes","sabado","domingo"]
             dia_nombre = dias_map[dia_semana]
             horario = execute_read(
@@ -166,10 +163,10 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
                 hora_real_min = _hhmm_to_min(hora_actual)
                 retardo_min   = max(0, hora_real_min - hora_prog_min)
         except Exception:
-            retardo_min = 0  # no interrumpir el registro si falla el cálculo de retardo
+            retardo_min = 0
 
-    # ── INSERT en BD — FIX: verificar que se guardó correctamente ──
-    ok = execute_write(
+    # ── INSERT en BD ──
+    execute_write(
         """INSERT INTO asistencia_registros
            (username, tipo, fecha, hora_checkin, lat, lon, precision_gps,
             distancia_metros, aprobado, retardo_min)
@@ -182,13 +179,6 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
             retardo_min,
         )
     )
-
-    # FIX: lanzar error claro si la escritura falló
-    if not ok:
-        raise HTTPException(
-            status_code=500,
-            detail="No se pudo guardar el registro. Verifica tu conexión e intenta de nuevo."
-        )
 
     return {
         "ok":               True,
