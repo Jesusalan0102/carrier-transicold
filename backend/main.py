@@ -43,7 +43,10 @@ if os.path.isdir(static_dir):
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
+    from fastapi.responses import Response
     path = os.path.join(os.path.dirname(__file__), "static", "favicon.ico")
+    if not os.path.exists(path):
+        return Response(status_code=204)   # No Content — sin error 500
     return FileResponse(path)
 
 @app.on_event("startup")
