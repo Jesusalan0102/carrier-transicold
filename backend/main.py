@@ -20,6 +20,7 @@ from routers.web_router import router as web_router
 from db import init_db
 # Módulos de asistencia
 from asistencia.routes import router as asistencia_api_router
+from asistencia.horarios_routes import router as horarios_router
 
 app = FastAPI(
     title="Carrier Transicold API",
@@ -63,6 +64,7 @@ app.include_router(ws_router)
 app.include_router(cluster_router)
 app.include_router(web_router)
 app.include_router(asistencia_api_router)
+app.include_router(horarios_router)
 
 @app.get("/")
 def root():
