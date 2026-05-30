@@ -1,13 +1,16 @@
 """
-routes.py — Rutas de asistencia (reescrito con db.py / pymysql directo)
+routes.py — Rutas de asistencia
 """
 import math
 import os
+import uuid
+import base64
 from datetime import datetime
 from typing import Optional
 
 import pytz
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from db import execute_read, execute_write, execute_write_with_id
@@ -25,6 +28,7 @@ class CheckinPayload(BaseModel):
     lat:           Optional[float] = None
     lon:           Optional[float] = None
     precision_gps: Optional[float] = None
+    selfie_url:    Optional[str]   = None
 
 class ConfigPayload(BaseModel):
     lat_fija:     float
@@ -33,7 +37,7 @@ class ConfigPayload(BaseModel):
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 def _distancia_metros(lat1, lon1, lat2, lon2) -> float:
-    lat1, lon1, lat2, lon2 = float(lat1), float(lon1), float(lat2), float(lon2)  # ✅ FIX
+    lat1, lon1, lat2, lon2 = float(lat1), float(lon1), float(lat2), float(lon2)
     R = 6_371_000
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
@@ -54,6 +58,41 @@ def _get_config():
         return rows[0]
     return {"lat_fija": 32.5027, "lon_fija": -117.0037, "radio_metros": 200}
 
+# ── Directorio de selfies ──────────────────────────────────────────────────────
+SELFIE_DIR = os.path.join(os.path.dirname(__file__), "selfies")
+os.makedirs(SELFIE_DIR, exist_ok=True)
+
+# ── Subir selfie ───────────────────────────────────────────────────────────────
+@router.post("/selfie")
+async def subir_selfie(
+    file:     UploadFile = File(...),
+    username: str        = Form(...),
+    tipo:     str        = Form(...),
+    fecha:    str        = Form(...),
+    current_user=Depends(verify_token)
+):
+    """Guarda la selfie del técnico y devuelve la URL relativa."""
+    try:
+        contenido = await file.read()
+        nombre    = f"{username}_{fecha}_{tipo}_{uuid.uuid4().hex[:8]}.jpg"
+        ruta      = os.path.join(SELFIE_DIR, nombre)
+        with open(ruta, "wb") as f:
+            f.write(contenido)
+        url = f"/api/asistencia/selfie/{nombre}"
+        return {"ok": True, "url": url}
+    except Exception as e:
+        # Si falla el guardado no bloqueamos el checkin — devolvemos url vacía
+        return {"ok": False, "url": None, "error": str(e)}
+
+# ── Servir selfie ──────────────────────────────────────────────────────────────
+@router.get("/selfie/{nombre}")
+async def ver_selfie(nombre: str, current_user=Depends(verify_token)):
+    from fastapi.responses import FileResponse
+    ruta = os.path.join(SELFIE_DIR, nombre)
+    if not os.path.exists(ruta):
+        raise HTTPException(404, "Selfie no encontrada")
+    return FileResponse(ruta, media_type="image/jpeg")
+
 # ── Configuración ──────────────────────────────────────────────────────────────
 @router.get("/configuracion")
 def get_configuracion(current_user=Depends(verify_token)):
@@ -72,7 +111,7 @@ def save_configuracion(payload: ConfigPayload, current_user=Depends(verify_token
             "INSERT INTO asistencia_config (lat_fija, lon_fija, radio_metros) VALUES (%s,%s,%s)",
             (payload.lat_fija, payload.lon_fija, payload.radio_metros)
         )
-    return {"ok": True}  # ✅ FIX: no depender del retorno de execute_write
+    return {"ok": True}
 
 # ── Generar QR ─────────────────────────────────────────────────────────────────
 @router.get("/generar-qr")
@@ -106,7 +145,6 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
 
     fecha = payload.fecha
 
-    # ── Verificar duplicado ──
     existente = execute_read(
         "SELECT id FROM asistencia_registros WHERE username=%s AND fecha=%s AND tipo=%s",
         (payload.username, fecha, tipo)
@@ -114,7 +152,6 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
     if existente:
         raise HTTPException(400, f"Ya registraste tu {tipo} hoy.")
 
-    # ── Salida requiere entrada previa ──
     if tipo == "salida":
         entrada = execute_read(
             "SELECT id FROM asistencia_registros WHERE username=%s AND fecha=%s AND tipo='entrada'",
@@ -123,20 +160,19 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
         if not entrada:
             raise HTTPException(400, "Debes registrar tu entrada antes de la salida.")
 
-    # ── Validar ubicación GPS ──
+    # ── Validar GPS ──
     cfg = _get_config()
     distancia_m = None
     aprobado = True
 
     if payload.lat is not None and payload.lon is not None:
         distancia_m = _distancia_metros(payload.lat, payload.lon, cfg["lat_fija"], cfg["lon_fija"])
-        aprobado = distancia_m <= float(cfg["radio_metros"])  # ✅ FIX: cast también aquí por si acaso
+        aprobado = distancia_m <= float(cfg["radio_metros"])
 
     hora_actual      = _hora_tj()
     retardo_min      = 0
     horas_trabajadas = None
 
-    # ── Calcular horas trabajadas al salir ──
     if tipo == "salida":
         ent_reg = execute_read(
             "SELECT hora_checkin FROM asistencia_registros WHERE username=%s AND fecha=%s AND tipo='entrada'",
@@ -147,13 +183,9 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
             salida_min       = _hhmm_to_min(hora_actual)
             horas_trabajadas = round(max(0, salida_min - entrada_min) / 60, 1)
 
-    # ── Calcular retardo si hay horario asignado ──
     if tipo == "entrada":
         try:
             from datetime import date as _date
-            dia_semana = _date.fromisoformat(fecha).weekday()
-            dias_map   = ["lunes","martes","miercoles","jueves","viernes","sabado","domingo"]
-            dia_nombre = dias_map[dia_semana]
             horario = execute_read(
                 "SELECT hora_entrada FROM horarios WHERE username=%s AND fecha=%s LIMIT 1",
                 (payload.username, fecha)
@@ -165,20 +197,38 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
         except Exception:
             retardo_min = 0
 
-    # ── INSERT en BD ──
-    execute_write(
-        """INSERT INTO asistencia_registros
-           (username, tipo, fecha, hora_checkin, lat, lon, precision_gps,
-            distancia_metros, aprobado, retardo_min)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-        (
-            payload.username, tipo, fecha, hora_actual,
-            payload.lat, payload.lon, payload.precision_gps,
-            round(distancia_m, 1) if distancia_m is not None else None,
-            1 if aprobado else 0,
-            retardo_min,
+    # ── INSERT ──
+    # Intentar incluir selfie_url si la columna existe
+    try:
+        execute_write(
+            """INSERT INTO asistencia_registros
+               (username, tipo, fecha, hora_checkin, lat, lon, precision_gps,
+                distancia_metros, aprobado, retardo_min, selfie_url)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (
+                payload.username, tipo, fecha, hora_actual,
+                payload.lat, payload.lon, payload.precision_gps,
+                round(distancia_m, 1) if distancia_m is not None else None,
+                1 if aprobado else 0,
+                retardo_min,
+                payload.selfie_url,
+            )
         )
-    )
+    except Exception:
+        # Fallback sin selfie_url (columna puede no existir todavía)
+        execute_write(
+            """INSERT INTO asistencia_registros
+               (username, tipo, fecha, hora_checkin, lat, lon, precision_gps,
+                distancia_metros, aprobado, retardo_min)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (
+                payload.username, tipo, fecha, hora_actual,
+                payload.lat, payload.lon, payload.precision_gps,
+                round(distancia_m, 1) if distancia_m is not None else None,
+                1 if aprobado else 0,
+                retardo_min,
+            )
+        )
 
     return {
         "ok":               True,
