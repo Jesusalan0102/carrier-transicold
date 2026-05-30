@@ -1,15 +1,70 @@
-fastapi
-uvicorn[standard]
-pymysql
-python-jose[cryptography]
-passlib[bcrypt]
-python-multipart
-pydantic
-openpyxl
+# ============================================================
+# requirements.txt — versiones fijas (generado 2026-05-30)
+# Basado en el deploy exitoso del commit 242fe05
+# ============================================================
+
+# --- Core web framework ---
+fastapi==0.136.3
+uvicorn[standard]==0.48.0
+starlette==1.2.0
+
+# --- Base de datos ---
+pymysql==1.2.0
+sqlalchemy==2.0.50
+DBUtils==3.1.2
+
+# --- Autenticación y seguridad ---
+python-jose[cryptography]==3.5.0
+passlib[bcrypt]==1.7.4
+bcrypt==5.0.0
+PyJWT==2.13.0
+cryptography==45.0.7
+
+# --- Microsoft / Azure ---
 msal==1.31.1
+
+# --- HTTP ---
 requests==2.32.3
-DBUtils>=3.0
-aiofiles
-sqlalchemy
-cryptography
-pytz
+
+# --- Validación de datos ---
+pydantic==2.13.4
+pydantic-core==2.46.4
+python-multipart==0.0.29
+
+# --- Archivos ---
+openpyxl==3.1.5
+aiofiles==25.1.0
+
+# --- Timezone ---
+pytz==2026.2
+
+# --- Utilidades ---
+python-dotenv==1.2.2
+
+# ============================================================
+# Dependencias transitivas (fijadas para reproducibilidad)
+# ============================================================
+annotated-types==0.7.0
+annotated-doc==0.0.4
+anyio==4.13.0
+cffi==2.0.0
+charset-normalizer==3.4.7
+click==8.4.1
+certifi==2026.5.20
+ecdsa==0.19.2
+et-xmlfile==2.0.0
+greenlet==3.5.1
+h11==0.16.0
+httptools==0.8.0
+idna==3.17
+pyasn1==0.6.3
+pycparser==3.0
+pyyaml==6.0.3
+rsa==4.9.1
+six==1.17.0
+typing-extensions==4.15.0
+typing-inspection==0.4.2
+urllib3==2.7.0
+uvloop==0.22.1
+watchfiles==1.2.0
+websockets==16.0
