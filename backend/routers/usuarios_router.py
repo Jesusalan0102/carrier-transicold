@@ -1,54 +1,49 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from database import get_db
-from models import User, UserResponse
-from auth import get_current_user, get_password_hash
+from db import execute_read, execute_write, execute_write_with_id
+from auth import verify_token, get_password_hash
+from pydantic import BaseModel
+from typing import Optional
 
 router = APIRouter(prefix="/api/usuarios", tags=["usuarios"])
 
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    is_active: bool
+    rol: str
+
 @router.get("/")
-def get_usuarios(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Retorna lista de usuarios (SIEMPRE retorna un array)"""
+def get_usuarios(current_user=Depends(verify_token)):
     try:
-        usuarios = db.query(User).all()
-        # ✅ Aseguramos que siempre retornamos una lista
-        return [UserResponse.model_validate(u) for u in usuarios] if usuarios else []
+        rows = execute_read("SELECT id, username, is_active, role as rol FROM users")
+        return rows if rows else []
     except Exception as e:
         print(f"Error en get_usuarios: {e}")
-        return []  # Siempre retornar array aunque haya error
+        return []
 
 @router.get("/activos")
-def get_usuarios_activos(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    usuarios = db.query(User).filter(User.is_active == True).all()
-    return [UserResponse.model_validate(u) for u in usuarios] if usuarios else []
+def get_usuarios_activos(current_user=Depends(verify_token)):
+    try:
+        rows = execute_read("SELECT id, username, is_active, role as rol FROM users WHERE is_active=1")
+        return rows if rows else []
+    except Exception as e:
+        return []
 
 @router.post("/")
 def create_usuario(
     username: str,
     password: str,
     rol: str = "tecnico",
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user=Depends(verify_token)
 ):
-    if current_user.rol != "admin":
+    if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="No autorizado")
-    
-    existing = db.query(User).filter(User.username == username).first()
+    existing = execute_read("SELECT id FROM users WHERE username=%s", (username,))
     if existing:
         raise HTTPException(status_code=400, detail="Usuario ya existe")
-    
-    new_user = User(
-        username=username,
-        hashed_password=get_password_hash(password),
-        rol=rol
+    hashed = get_password_hash(password)
+    new_id = execute_write_with_id(
+        "INSERT INTO users (username, password, role, is_active) VALUES (%s,%s,%s,1)",
+        (username, hashed, rol)
     )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return UserResponse.model_validate(new_user)
+    return {"id": new_id, "username": username, "rol": rol, "is_active": True}
