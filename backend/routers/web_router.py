@@ -495,28 +495,29 @@ async def asignaciones():
         <div id="msgAsignacion" style="grid-column: span 3; font-size:0.85rem;"></div>
     </form>
     <script>
-        const fetchAuth = window.fetchAuth;
-        const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series'];
-        document.getElementById('unidad').addEventListener('change', () => document.getElementById('msgAsignacion').innerHTML = '');
-        document.getElementById('tecnico').addEventListener('change', () => document.getElementById('msgAsignacion').innerHTML = '');
-        document.getElementById('actividad').addEventListener('change', () => document.getElementById('msgAsignacion').innerHTML = '');
-        async function cargarSolicitudes() {
-            const lista = document.getElementById('listaSolicitudes');
-            lista.innerHTML = '<p style="color:var(--carrier-warn);">Cargando solicitudes...</p>';
-            try {
-                const res = await fetchAuth('/api/asignaciones/?estado=solicitado');
-                if (!res.ok) throw new Error('Error ' + res.status);
-                const solicitudes = await res.json();
-                let html = '';
-                if (!Array.isArray(solicitudes) || solicitudes.length === 0) {
-                    html = '<p>✅ Sin solicitudes pendientes.</p>';
-                } else {
-                    solicitudes.forEach(s => {
-                        html += `<div style="background:white; border-radius:12px; padding:16px; margin-bottom:12px; box-shadow:0 2px 8px rgba(0,0,0,0.05); display:flex; justify-content:space-between; align-items:center;">
-                            <div><b>${s.tecnico}</b> solicita <b>${s.actividad_id}</b> — Unidad: <b>${s.unidad}</b></div>
-                            <div><button class="btn-success" onclick="aprobar(${s.id})">✅ Aprobar</button><button class="btn-danger" onclick="rechazar(${s.id})">❌ Rechazar</button></div>
-                        </div>`;
-                    });
+        const fetchAuth =  window.fetchAuth = async (url, options) => {{
+                options = options || {{}};
+                // FIX: Object.assign preserva Content-Type y otros headers del caller
+                const headers = Object.assign({{}}, options.headers || {{}});
+                headers['Authorization'] = 'Bearer ' + window.token;
+                try {{
+                    const res = await fetch(url, {{ ...options, headers }});
+                    if (res.status === 401) {{
+                        localStorage.clear();
+                        window.location.href = '/app';
+                        return null;
+                    }}
+                    return res;
+                }} catch (networkErr) {{
+                    // FIX: capturar errores de red reales y devolver objeto compatible
+                    console.error('[fetchAuth] Error de red:', networkErr);
+                    return {{
+                        ok:     false,
+                        status: 503,
+                        json:   async () => ({{ detail: 'Sin conexión al servidor. Intenta de nuevo.' }}),
+                    }};
+                }}
+            }};
                 }
                 lista.innerHTML = html;
             } catch (err) { lista.innerHTML = '<p style="color:var(--carrier-danger);">Error al cargar solicitudes.</p>'; }
