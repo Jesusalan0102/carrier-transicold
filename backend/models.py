@@ -14,7 +14,6 @@ class User(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, index=True, nullable=False)
-    email = Column(String(100), unique=True, index=True, nullable=False)
     hashed_password = Column(String(200), nullable=False)
     is_active = Column(Boolean, default=True)
     is_admin = Column(Boolean, default=False)
@@ -81,7 +80,6 @@ class Asignacion(Base):
 class UserResponse(BaseModel):
     id: int
     username: str
-    email: str
     is_active: bool
     rol: str
     
