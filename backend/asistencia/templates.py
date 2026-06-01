@@ -1,10 +1,13 @@
-
+"""
+backend/asistencia/templates.py
+Plantilla moderna y profesional para Registro de Asistencia
+Adaptada a las imágenes que me compartiste
+"""
 
 ASISTENCIA_STYLES = """
 <style>
-    body { font-family: system-ui, -apple-system, sans-serif; }
-    .card { border-radius: 20px; box-shadow: 0 10px 30px rgba(0, 43, 91, 0.1); }
-    .tab { background: white; color: black; padding: 8px 14px; border-radius: 9999px; font-size: 13px; font-weight: 600; }
+    .card { border-radius: 20px; box-shadow: 0 10px 30px rgba(0,43,91,0.1); }
+    .tab { background: white; color: black; padding: 10px 16px; border-radius: 9999px; font-size: 13px; font-weight: 600; }
 </style>
 """
 
@@ -14,7 +17,7 @@ ASISTENCIA_HTML = """
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Registrar Asistencia - Carrier Transicold</title>
+  <title>Registrar Asistencia</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
@@ -22,11 +25,11 @@ ASISTENCIA_HTML = """
 
 <div class="max-w-md mx-auto p-4">
 
-  <!-- Tabs como en tu imagen -->
-  <div class="flex gap-2 mb-6 overflow-x-auto pb-2">
-    <div class="tab whitespace-nowrap">Vista: Pendiente entrada</div>
-    <div class="tab whitespace-nowrap">Vista: Rechazado</div>
-    <div class="tab whitespace-nowrap">Vista: Modal QR</div>
+  <!-- Tabs (como en tu imagen) -->
+  <div class="flex gap-2 mb-6">
+    <div class="tab">Vista: Pendiente entrada</div>
+    <div class="tab">Vista: Rechazado</div>
+    <div class="tab">Vista: Modal QR</div>
   </div>
 
   <!-- Header -->
@@ -38,11 +41,11 @@ ASISTENCIA_HTML = """
     </div>
   </div>
 
-  <!-- GPS -->
+  <!-- GPS Status -->
   <div class="flex gap-3 mb-6">
     <div class="flex-1 bg-zinc-900 border border-zinc-700 rounded-3xl p-4 flex items-center gap-3">
       <input type="checkbox" checked class="w-5 h-5 accent-emerald-500">
-      <div class="text-sm">Tijuana <span id="hora-gps" class="font-mono"></span></div>
+      <div>Tijuana <span id="hora-gps" class="font-mono text-emerald-400"></span></div>
     </div>
     <div class="bg-emerald-900/30 border border-emerald-500 text-emerald-400 rounded-3xl px-5 py-4 flex items-center text-sm font-medium">
       GPS ±90m
@@ -52,19 +55,19 @@ ASISTENCIA_HTML = """
   <!-- Horario Card -->
   <div class="card bg-white text-black p-6 mb-6">
     <h3 class="uppercase text-xs tracking-widest text-zinc-500 font-semibold mb-4">TU HORARIO DE HOY</h3>
-    <div class="grid grid-cols-2 gap-6">
-      <div class="text-center">
+    <div class="grid grid-cols-2 gap-6 text-center">
+      <div>
         <div class="text-xs text-zinc-500">ENTRADA</div>
         <div class="text-5xl font-bold text-blue-900">07:00</div>
       </div>
-      <div class="text-center">
+      <div>
         <div class="text-xs text-zinc-500">SALIDA</div>
         <div class="text-5xl font-bold text-blue-900">09:00</div>
       </div>
     </div>
 
     <div class="mt-6 bg-amber-100 border border-amber-300 text-amber-700 rounded-3xl p-4 text-center font-medium">
-      Llegas con <span id="retardo-min" class="font-bold">107</span> min de retardo
+      Llegas con <span id="retardo">107</span> min de retardo
     </div>
 
     <div class="mt-4 bg-emerald-50 border border-emerald-200 rounded-3xl p-4 flex items-center gap-3">
@@ -77,7 +80,7 @@ ASISTENCIA_HTML = """
 
     <button onclick="registrarAsistencia()" 
             id="btn-registrar"
-            class="mt-8 w-full py-6 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold text-lg rounded-3xl flex items-center justify-center gap-3 active:scale-95 transition-all">
+            class="mt-8 w-full py-6 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold text-lg rounded-3xl flex items-center justify-center gap-3 active:scale-95">
       <i class="fas fa-qrcode"></i>
       Escanear QR y registrar entrada
     </button>
@@ -86,9 +89,7 @@ ASISTENCIA_HTML = """
   <!-- Registros de Hoy -->
   <div class="card bg-white text-black p-6">
     <h3 class="uppercase text-xs tracking-widest text-zinc-500 font-semibold mb-4">REGISTROS DE HOY</h3>
-    <div id="lista-registros" class="space-y-3">
-      <!-- JS llenará aquí -->
-    </div>
+    <div id="registros" class="space-y-4 text-sm"></div>
   </div>
 
 </div>
@@ -100,42 +101,40 @@ async function registrarAsistencia() {
   btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Procesando...`;
 
   try {
-    const position = await new Promise((resolve, reject) => 
-      navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true })
-    );
+    const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, {enableHighAccuracy: true}));
 
     const payload = {
       username: "{{ username }}",
       tipo: "entrada",
-      fecha: new Date().toISOString().split("T")[0],
-      lat: position.coords.latitude,
-      lon: position.coords.longitude,
-      precision_gps: position.coords.accuracy
+      fecha: new Date().toISOString().split('T')[0],
+      lat: pos.coords.latitude,
+      lon: pos.coords.longitude,
+      precision_gps: pos.coords.accuracy
     };
 
-    const res = await fetch('/api/asistencia/checkin', {
+    const response = await fetch('/api/asistencia/checkin', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload)
     });
 
-    const data = await res.json();
+    const data = await response.json();
 
     if (data.aprobado) {
-      alert(`✅ Entrada registrada a las ${data.hora_registro}`);
+      alert(`✅ Entrada registrada correctamente a las ${data.hora_registro}`);
     } else {
       alert(`❌ Rechazado: ${data.motivo_rechazo || 'Error desconocido'}`);
     }
     location.reload();
-  } catch (err) {
-    alert("Error al obtener GPS. Verifica permisos de ubicación.");
+  } catch (e) {
+    alert("Error de GPS o conexión. Inténtalo nuevamente.");
   } finally {
     btn.disabled = false;
     btn.innerHTML = `<i class="fas fa-qrcode"></i> Escanear QR y registrar entrada`;
   }
 }
 
-// Inicializar
+// Inicializar horas
 document.getElementById('hora-actual').textContent = new Date().toLocaleTimeString('es-MX', {hour:'2-digit', minute:'2-digit'});
 document.getElementById('hora-gps').textContent = new Date().toLocaleTimeString('es-MX', {hour:'2-digit', minute:'2-digit'});
 </script>
@@ -143,8 +142,8 @@ document.getElementById('hora-gps').textContent = new Date().toLocaleTimeString(
 </html>
 """
 
-def get_checkin_template(username="demo", fecha_hoy="lunes 1 jun 2026"):
-    """Función requerida por web_router.py"""
+def get_checkin_template(username="usuario", fecha_hoy="lunes 1 jun 2026"):
+    """Esta función es requerida por web_router.py"""
     html = ASISTENCIA_HTML.replace("{{ username }}", username)
     html = html.replace("{{ fecha_hoy }}", fecha_hoy)
     return ASISTENCIA_STYLES + html
