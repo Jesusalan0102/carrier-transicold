@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 import io
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from db import execute_read  # Importación basada en tu traza de error backend/db.py
+from db import execute_read  # Importación correcta desde db.py
 from datetime import datetime
 
 router = APIRouter(
@@ -33,32 +33,28 @@ def obtener_stats_tecnicos():
 def reporte_excel():
     """
     Genera y descarga el Reporte Maestro en formato Excel (.xlsx)
-    CORREGIDO: Se eliminó la columna 'reporte' inexistente en la base de datos.
+    CORREGIDO: Sin columnas inexistentes en DB.
     """
     try:
-        # Consulta corregida sin el campo 'reporte'
+        # Consulta limpia de campos inválidos
         tickets = execute_read(
             "SELECT ticket_num, unit_number, vin_number, descripcion, creado_por, "
             "tecnico, atendido, reporte_enviado, fecha_creacion, "
             "fecha_atencion, fecha_reporte FROM tickets ORDER BY ticket_num DESC"
         ) or []
         
-        # Crear libro de Excel en memoria
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Reporte Maestro"
         
-        # Habilitar líneas de cuadrícula
         ws.views.sheetView[0].showGridLines = True
         
-        # Definir encabezados de las columnas
         headers = [
             "Núm. Ticket", "Número de Unidad", "Número VIN", "Descripción", 
             "Creado Por", "Técnico Asignado", "Atendido (Sí/No)", 
             "Reporte Enviado", "Fecha Creación", "Fecha Atención", "Fecha Reporte"
         ]
         
-        # Estilos para el encabezado
         header_font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
         header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
         center_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -69,7 +65,6 @@ def reporte_excel():
             bottom=Side(style='thin', color='D9D9D9')
         )
         
-        # Escribir encabezados
         ws.append(headers)
         for col_num in range(1, len(headers) + 1):
             cell = ws.cell(row=1, column=col_num)
@@ -78,7 +73,6 @@ def reporte_excel():
             cell.alignment = center_alignment
             cell.border = thin_border
             
-        # Escribir filas de datos
         for t in tickets:
             row_data = [
                 t.get("ticket_num"),
@@ -95,7 +89,6 @@ def reporte_excel():
             ]
             ws.append(row_data)
             
-        # Estilar las celdas de datos y autoajustar columnas
         for row in ws.iter_rows(min_row=2, max_row=len(tickets) + 1, min_col=1, max_col=len(headers)):
             for cell in row:
                 cell.font = Font(name="Arial", size=10)
@@ -108,7 +101,6 @@ def reporte_excel():
             col_letter = openpyxl.utils.get_column_letter(col[0].column)
             ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
             
-        # Guardar en buffer de salida
         file_stream = io.BytesIO()
         wb.save(file_stream)
         file_stream.seek(0)
