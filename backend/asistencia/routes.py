@@ -88,10 +88,11 @@ def guardar_configuracion(config: GeofenceConfig):
         connection.close()
 
 class RegistroCheckin(BaseModel):
-    tipo: str          # 'entrada' | 'salida'
-    lat:  float
-    lon:  float
-    accuracy: Optional[float] = None
+    tipo:       str            # 'entrada' | 'salida'
+    lat:        float
+    lon:        float
+    accuracy:   Optional[float] = None
+    foto_base64: Optional[str] = None   # jpeg base64 de la foto de validación
 
 def _haversine(lat1, lon1, lat2, lon2):
     R = 6371000
@@ -118,12 +119,21 @@ def registrar_checkin(payload: RegistroCheckin, current_user=Depends(verify_toke
         ahora     = datetime.now()
         hora_str  = ahora.strftime("%H:%M:%S")
 
+        foto_bytes = None
+        if payload.foto_base64:
+            import base64
+            try:
+                header, _, data = payload.foto_base64.partition(',')
+                foto_bytes = base64.b64decode(data if data else header)
+            except Exception:
+                foto_bytes = None
+
         with connection.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO registros_asistencia "
-                "(username, fecha, tipo, hora_checkin, distancia_metros, aprobado) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                (current_user["username"], ahora, payload.tipo, hora_str, round(distancia, 1), aprobado)
+                "(username, fecha, tipo, hora_checkin, distancia_metros, aprobado, foto) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (current_user["username"], ahora, payload.tipo, hora_str, round(distancia, 1), aprobado, foto_bytes)
             )
         connection.commit()
 
