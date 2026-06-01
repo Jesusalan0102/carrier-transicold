@@ -15,7 +15,7 @@ def get_checkin_template() -> str:
     Retorna el diseño HTML adaptado para la interfaz profesional e 
     institucional de Carrier Transicold.
     """
-    return """<!DOCTYPE html>
+    html_content = """<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -154,7 +154,7 @@ def get_checkin_template() -> str:
             <div class="w-full aspect-square bg-stone-900 rounded-xl relative flex flex-col items-center justify-center overflow-hidden border border-stone-800">
                 <div class="absolute inset-x-0 h-0.5 bg-cyan-500 shadow-[0_0_10px_#06b6d4] top-1/2 animate-bounce w-full"></div>
                 <span class="text-4xl">🔲</span>
-                <p class="text-xs text-stone-400 mt-2 font-medium">Apunta al QR del Administrador</p>
+                <p class="text-xs text-stone-400 mt-2 font-medium">Apunta al QR del Administrator</p>
             </div>
             <p class="text-xs text-center text-stone-500">Mantén el dispositivo firme dentro del perímetro establecido de la sucursal.</p>
         </div>
@@ -215,3 +215,4 @@ def get_checkin_template() -> str:
     </script>
 </body>
 </html>"""
+    return html_content
