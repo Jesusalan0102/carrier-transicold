@@ -6,23 +6,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 
-from routers.auth_router import router as auth_router           # prefijo propio: /api/auth
-from routers.dashboard_router import router as dashboard_router # prefijo propio: /dashboard  → necesita /api
-from routers.asignaciones_router import router as asignaciones_router  # /api/asignaciones
-from routers.tickets_router import router as tickets_router     # /api/tickets
-from routers.inventario_router import router as inventario_router  # /api/inventario
-from routers.unidades_router import router as unidades_router   # /api/unidades
-from routers.usuarios_router import router as usuarios_router   # /api/usuarios
-from routers.evidencias_router import router as evidencias_router  # /api/evidencias
-from routers.toma_valores_router import router as toma_valores_router  # /api/toma-valores
-from routers.comentarios_router import router as comentarios_router  # /api/comentarios
-from routers.ws import router as ws_router                      # /ws (sin prefijo)
-from routers.cluster_router import router as cluster_router     # /api/cluster
-from routers.web_router import router as web_router             # páginas HTML /app/...
+from routers.auth_router import router as auth_router
+from routers.dashboard_router import router as dashboard_router
+from routers.asignaciones_router import router as asignaciones_router
+from routers.tickets_router import router as tickets_router
+from routers.inventario_router import router as inventario_router
+from routers.unidades_router import router as unidades_router
+from routers.usuarios_router import router as usuarios_router
+from routers.evidencias_router import router as evidencias_router
+from routers.toma_valores_router import router as toma_valores_router
+from routers.comentarios_router import router as comentarios_router
+from routers.ws import router as ws_router
+from routers.cluster_router import router as cluster_router
+from routers.web_router import router as web_router
 from db import init_db
 
-from asistencia.routes import router as asistencia_api_router   # prefijo propio: /asistencia → necesita /api
-from asistencia.horarios_routes import router as horarios_router # /api/horarios
+from asistencia.routes import router as asistencia_api_router
+from asistencia.horarios_routes import router as horarios_router
 
 
 @asynccontextmanager
@@ -120,23 +120,23 @@ def onedrive_callback(code: str = None, error: str = None):
     return {"error": data}
 
 
-# ── Routers que YA tienen /api/ en su propio prefijo — se registran SIN prefix extra
-app.include_router(auth_router)           # → /api/auth/...
-app.include_router(asignaciones_router)   # → /api/asignaciones/...
-app.include_router(tickets_router)        # → /api/tickets/...
-app.include_router(inventario_router)     # → /api/inventario/...
-app.include_router(unidades_router)       # → /api/unidades/...
-app.include_router(usuarios_router)       # → /api/usuarios/...
-app.include_router(evidencias_router)     # → /api/evidencias/...
-app.include_router(toma_valores_router)   # → /api/toma-valores/...
-app.include_router(comentarios_router)    # → /api/comentarios/...
-app.include_router(cluster_router)        # → /api/cluster/...
-app.include_router(horarios_router)       # → /api/horarios/...
-app.include_router(ws_router)             # → /ws
+# Routers con /api/ ya en su prefijo propio
+app.include_router(auth_router)
+app.include_router(asignaciones_router)
+app.include_router(tickets_router)
+app.include_router(inventario_router)
+app.include_router(unidades_router)
+app.include_router(usuarios_router)
+app.include_router(evidencias_router)
+app.include_router(toma_valores_router)
+app.include_router(comentarios_router)
+app.include_router(cluster_router)
+app.include_router(horarios_router)
+app.include_router(ws_router)
 
-# ── Routers que NO tienen /api/ en su propio prefijo — se les agrega aquí
-app.include_router(dashboard_router,      prefix="/api")   # → /api/dashboard/...
-app.include_router(asistencia_api_router, prefix="/api")   # → /api/asistencia/...
+# Routers sin /api/ — se les agrega aquí
+app.include_router(dashboard_router,      prefix="/api")
+app.include_router(asistencia_api_router, prefix="/api")
 
-# ── Web router al final (sirve el HTML de /app/...)
+# Web router al final
 app.include_router(web_router)
