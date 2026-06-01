@@ -453,13 +453,12 @@ def get_checkin_template() -> str:
       </button>
     </div>
     <div class="ct-qr-area" role="img" aria-label="Área de escaneo QR">
+      <video id="ct-qr-video" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" playsinline muted></video>
       <div class="ct-scan-line"></div>
       <div class="ct-corner-tl"></div>
       <div class="ct-corner-tr"></div>
       <div class="ct-corner-bl"></div>
       <div class="ct-corner-br"></div>
-      <i class="ti ti-qrcode ct-qr-icon"></i>
-      <p class="ct-qr-tip">Apunta al QR del administrador</p>
     </div>
     <div class="ct-modal-footer">
       <p class="ct-modal-hint">Mantén el dispositivo firme dentro del perímetro autorizado de la sucursal.</p>
@@ -649,10 +648,8 @@ def get_checkin_template() -> str:
   };
 
   // ── Init ───────────────────────────────────────────────────────────────────
-  if (typeof window.fetchAuth === 'function') {
-    cargarHorario();
-    cargarRegistros();
-  }
+  // La carga se dispara desde el init_script via DOMContentLoaded
+  // para garantizar que window.__ct_username esté disponible primero.
 
 })();
 </script>
