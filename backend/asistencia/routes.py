@@ -1,6 +1,7 @@
 """
 backend/asistencia/routes.py
 Rutas de Asistencia - Versión Mejorada (Junio 2026)
+Adaptado para inyectar dinámicamente los motivos y distancias estructuradas de geofencing
 """
 
 import math
@@ -32,7 +33,7 @@ class CheckinPayload(BaseModel):
 class ConfigPayload(BaseModel):
     lat_fija: float
     lon_fija: float
-    radio_metros: int = 300  # Radio aumentado
+    radio_metros: int = 300
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 def _distancia_metros(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -58,10 +59,25 @@ def _get_config():
     rows = execute_read("SELECT lat_fija, lon_fija, radio_metros FROM asistencia_config LIMIT 1")
     if rows:
         return rows[0]
-    # Default actualizado
     return {"lat_fija": 32.5027, "lon_fija": -117.0037, "radio_metros": 300}
 
-# ── Endpoint Principal ───────────────────────────────────────────────────────
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+
+@router.get("/registros/{username}/{fecha}")
+def obtener_registros_dia(username: str, fecha: str, current_user=Depends(verify_token)):
+    """
+    Retorna los registros del empleado para pintarlos dinámicamente en la interfaz limpia.
+    """
+    query = """
+        SELECT tipo, hora_checkin, distancia_metros, aprobado, motivo_rechazo 
+        FROM asistencia_registros 
+        WHERE username = %s AND fecha = %s 
+        ORDER BY hora_checkin DESC
+    """
+    rows = execute_read(query, (username, fecha))
+    return {"ok": True, "registros": rows or []}
+
+
 @router.post("/checkin")
 def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
     tipo = payload.tipo.lower().strip()
@@ -70,24 +86,24 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
 
     fecha = payload.fecha
 
-    # Validar duplicados
+    # Validar duplicados de intentos Exitosos (permite reintentar si el previo fue rechazado)
     existente = execute_read(
-        "SELECT id FROM asistencia_registros WHERE username=%s AND fecha=%s AND tipo=%s",
+        "SELECT id FROM asistencia_registros WHERE username=%s AND fecha=%s AND tipo=%s AND aprobado = 1",
         (payload.username, fecha, tipo)
     )
     if existente:
-        raise HTTPException(status_code=400, detail=f"Ya registraste tu {tipo} hoy.")
+        raise HTTPException(status_code=400, detail=f"Ya cuentas con una {tipo} válida registrada hoy.")
 
     # Validar flujo entrada → salida
     if tipo == "salida":
         entrada = execute_read(
-            "SELECT id FROM asistencia_registros WHERE username=%s AND fecha=%s AND tipo='entrada'",
+            "SELECT id FROM asistencia_registros WHERE username=%s AND fecha=%s AND tipo='entrada' AND aprobado = 1",
             (payload.username, fecha)
         )
         if not entrada:
-            raise HTTPException(status_code=400, detail="Debes registrar tu entrada primero.")
+            raise HTTPException(status_code=400, detail="Debes registrar tu entrada aprobada primero.")
 
-    # ── Validación GPS ─────────────────────────────────────────────────────
+    # ── Validación de Geofencing (Perímetro) ──────────────────────────────────
     cfg = _get_config()
     distancia_m = None
     aprobado = True
@@ -97,15 +113,21 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
         distancia_m = _distancia_metros(payload.lat, payload.lon, cfg["lat_fija"], cfg["lon_fija"])
         aprobado = distancia_m <= float(cfg["radio_metros"])
         if not aprobado:
-            motivo_rechazo = f"Fuera de rango. Distancia: {round(distancia_m, 1)}m (Radio permitido: {cfg['radio_metros']}m)"
+            # Formateo amigable de la distancia para pasarlo directamente a la interfaz UI
+            distancia_km = round(distancia_m / 1000, 1)
+            if distancia_m >= 1000:
+                motivo_rechazo = f"{distancia_km:,} km del punto fijo"
+            else:
+                motivo_rechazo = f"{round(distancia_m)} m del punto fijo"
     else:
+        aprobado = False
         motivo_rechazo = "Coordenadas GPS no recibidas"
 
     hora_actual = _hora_tj()
     retardo_min = 0
     horas_trabajadas = None
 
-    # Calcular retardo (entrada)
+    # Calcular retraso (entrada)
     if tipo == "entrada":
         try:
             horario = execute_read(
@@ -119,10 +141,10 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
         except Exception:
             retardo_min = 0
 
-    # Calcular horas trabajadas (salida)
-    if tipo == "salida":
+    # Calcular horas de jornada (salida)
+    if tipo == "salida" and aprobado:
         ent_reg = execute_read(
-            "SELECT hora_checkin FROM asistencia_registros WHERE username=%s AND fecha=%s AND tipo='entrada'",
+            "SELECT hora_checkin FROM asistencia_registros WHERE username=%s AND fecha=%s AND tipo='entrada' AND aprobado = 1",
             (payload.username, fecha)
         )
         if ent_reg and ent_reg[0].get("hora_checkin"):
@@ -130,7 +152,7 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
             salida_min = _hhmm_to_min(hora_actual)
             horas_trabajadas = round(max(0, (salida_min - entrada_min) / 60), 1)
 
-    # ── Guardar registro ───────────────────────────────────────────────────
+    # ── Almacenamiento Seguro en DB ───────────────────────────────────────────
     try:
         execute_write(
             """INSERT INTO asistencia_registros 
@@ -148,7 +170,7 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
             )
         )
     except Exception:
-        # Fallback sin motivo_rechazo (por si la columna aún no existe)
+        # Fallback de compatibilidad por si tu tabla omitió la columna de texto de rechazos
         execute_write(
             """INSERT INTO asistencia_registros 
                (username, tipo, fecha, hora_checkin, lat, lon, precision_gps, 
