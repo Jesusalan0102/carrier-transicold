@@ -1,12 +1,12 @@
 import os
-import gc  # <--- IMPORTANTE: Recolector de basura nativo
+import gc
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 
-# Importación de Routers Existentes
+# Importación de Routers
 from routers.auth_router import router as auth_router
 from routers.dashboard_router import router as dashboard_router
 from routers.asignaciones_router import router as asignaciones_router
@@ -28,27 +28,18 @@ from asistencia.horarios_routes import router as horarios_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Maneja el arranque y la optimización extrema de memoria RAM de la app.
-    """
     print("⏳ [STARTUP] Inicializando conexiones de infraestructura...")
     try:
         init_db()
         print("✅ [STARTUP] Base de datos TiDB conectada con éxito.")
     except Exception as db_err:
         print(f"❌ [CRITICAL] Falló la inicialización de la base de datos: {db_err}")
-
-    # Forzar recolección de basura inmediatamente después de importar y mapear rutas
-    # Esto reduce el consumo fantasma de RAM en casi un 30% en producción.
     gc.collect()
     print("🧹 [RAM] Memoria residual de compilación liberada correctamente.")
-    
     yield
     print("🛑 [SHUTDOWN] Cerrando recursos...")
 
 
-
-# ── Inicialización de la Aplicación ───────────────────────────────────────────
 app = FastAPI(
     title="Carrier Transicold API",
     version="2.0",
@@ -56,7 +47,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Middleware CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -65,24 +55,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Archivos estáticos (favicon, imágenes, etc.)
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-# ── Endpoints Globales ────────────────────────────────────────────────────────
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     path = os.path.join(os.path.dirname(__file__), "static", "favicon.ico")
     if not os.path.exists(path):
-        return Response(status_code=204)   # No Content — sin error 500
+        return Response(status_code=204)
     return FileResponse(path)
-
 
 @app.get("/")
 def root():
     return {"mensaje": "API Carrier Transicold operativa", "docs": "/docs"}
-
 
 @app.get("/test-onedrive")
 def test_onedrive():
@@ -107,19 +93,18 @@ def test_onedrive():
             "detalle": str(e)
         }
 
-
 @app.get("/auth/onedrive/callback")
 def onedrive_callback(code: str = None, error: str = None):
     if error:
         return {"error": error}
     if not code:
         return {"error": "No se recibió código"}
-    
+
     import requests
     client_id     = "dc1c0d4f-0f48-44db-9fde-a63178fb8ab0"
     client_secret = os.getenv("MS_CLIENT_SECRET_PERSONAL", "")
     redirect_uri  = "https://carrier-transicold.onrender.com/auth/onedrive/callback"
-    
+
     resp = requests.post(
         "https://login.microsoftonline.com/common/oauth2/v2.0/token",
         data={
@@ -141,19 +126,23 @@ def onedrive_callback(code: str = None, error: str = None):
     return {"error": data}
 
 
-# ── Inclusión de Routers de la Aplicación ─────────────────────────────────────
+# ── Inclusión de Routers ───────────────────────────────────────────────────────
 app.include_router(auth_router)
-app.include_router(dashboard_router)
-app.include_router(asignaciones_router)
-app.include_router(tickets_router)
-app.include_router(inventario_router)
-app.include_router(unidades_router)
-app.include_router(usuarios_router)
-app.include_router(evidencias_router)
-app.include_router(toma_valores_router)
-app.include_router(comentarios_router)
-app.include_router(ws_router)
-app.include_router(cluster_router)
+
+# Routers API — todos bajo el prefijo /api
+app.include_router(dashboard_router,      prefix="/api")
+app.include_router(asignaciones_router,   prefix="/api")
+app.include_router(tickets_router,        prefix="/api")
+app.include_router(inventario_router,     prefix="/api")
+app.include_router(unidades_router,       prefix="/api")
+app.include_router(usuarios_router,       prefix="/api")
+app.include_router(evidencias_router,     prefix="/api")
+app.include_router(toma_valores_router,   prefix="/api")
+app.include_router(comentarios_router,    prefix="/api")
+app.include_router(ws_router,             prefix="/api")
+app.include_router(cluster_router,        prefix="/api")
+app.include_router(asistencia_api_router, prefix="/api")
+app.include_router(horarios_router,       prefix="/api")
+
+# Web router al final (sirve el HTML de las páginas /app/...)
 app.include_router(web_router)
-app.include_router(asistencia_api_router)
-app.include_router(horarios_router)
