@@ -1,12 +1,5 @@
 """
 horarios_routes.py — Rutas de horarios semanales
-Migrado de SQLAlchemy a db.py (pymysql directo) para consistencia con el resto de la app.
-
-Endpoints:
-  GET  /api/horarios/        → Horarios de la semana
-  POST /api/horarios/        → Guarda horarios (batch upsert)
-  GET  /api/horarios/hoy     → Horario de un técnico en una fecha concreta
-  GET  /api/horarios/resumen → Resumen semanal cruzado con registros de asistencia
 """
 
 from datetime import date, timedelta
@@ -21,20 +14,16 @@ from db import execute_read, execute_write
 router = APIRouter(prefix="/api/horarios", tags=["horarios"])
 
 
-# ── Schemas ────────────────────────────────────────────────────────────────────
-
 class HorarioItem(BaseModel):
     username:     str
-    fecha:        str           # "YYYY-MM-DD"
-    semana:       str           # "YYYY-MM-DD" (lunes de esa semana)
-    hora_entrada: Optional[str] = None   # "HH:MM" | ""
-    hora_salida:  Optional[str] = None   # "HH:MM" | ""
+    fecha:        str
+    semana:       str
+    hora_entrada: Optional[str] = None
+    hora_salida:  Optional[str] = None
 
 class HorariosBatch(BaseModel):
     registros: List[HorarioItem]
 
-
-# ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _hhmm_to_min(hhmm: Optional[str]) -> Optional[int]:
     if not hhmm:
@@ -46,14 +35,11 @@ def _hhmm_to_min(hhmm: Optional[str]) -> Optional[int]:
         return None
 
 
-# ── GET /api/horarios/ ─────────────────────────────────────────────────────────
-
 @router.get("/")
 def get_horarios(
     semana: Optional[str] = Query(None),
     current_user=Depends(verify_token)
 ):
-    """Devuelve todos los horarios de una semana dada (lunes YYYY-MM-DD)."""
     if semana:
         rows = execute_read(
             "SELECT id, username, fecha, semana, hora_entrada, hora_salida "
@@ -78,11 +64,8 @@ def get_horarios(
     ]
 
 
-# ── POST /api/horarios/ ────────────────────────────────────────────────────────
-
 @router.post("/")
 def save_horarios(payload: HorariosBatch, current_user=Depends(verify_token)):
-    """Guarda o actualiza (upsert) los horarios de una semana."""
     if current_user["role"] not in ("admin",):
         from fastapi import HTTPException
         raise HTTPException(status_code=403, detail="Solo administradores")
@@ -100,7 +83,6 @@ def save_horarios(payload: HorariosBatch, current_user=Depends(verify_token)):
         )
 
         if not entrada and not salida:
-            # Día libre — borrar si existía
             if existente:
                 execute_write(
                     "DELETE FROM horarios WHERE username=%s AND fecha=%s",
@@ -112,22 +94,18 @@ def save_horarios(payload: HorariosBatch, current_user=Depends(verify_token)):
                 execute_write(
                     "UPDATE horarios SET hora_entrada=%s, hora_salida=%s, semana=%s "
                     "WHERE username=%s AND fecha=%s",
-                    (entrada or None, salida or None, item.semana,
-                     item.username, item.fecha)
+                    (entrada or None, salida or None, item.semana, item.username, item.fecha)
                 )
             else:
                 execute_write(
                     "INSERT INTO horarios (username, fecha, semana, hora_entrada, hora_salida) "
                     "VALUES (%s,%s,%s,%s,%s)",
-                    (item.username, item.fecha, item.semana,
-                     entrada or None, salida or None)
+                    (item.username, item.fecha, item.semana, entrada or None, salida or None)
                 )
             guardados += 1
 
     return {"ok": True, "guardados": guardados, "eliminados": eliminados}
 
-
-# ── GET /api/horarios/hoy ──────────────────────────────────────────────────────
 
 @router.get("/hoy")
 def get_horario_hoy(
@@ -135,7 +113,6 @@ def get_horario_hoy(
     fecha:    str = Query(...),
     current_user=Depends(verify_token)
 ):
-    """Devuelve el horario de un técnico para una fecha específica."""
     rows = execute_read(
         "SELECT hora_entrada, hora_salida FROM horarios "
         "WHERE username=%s AND fecha=%s LIMIT 1",
@@ -152,18 +129,11 @@ def get_horario_hoy(
     }
 
 
-# ── GET /api/horarios/resumen ──────────────────────────────────────────────────
-
 @router.get("/resumen")
 def get_resumen(
     semana: str = Query(...),
     current_user=Depends(verify_token)
 ):
-    """
-    Cruza los horarios de la semana con los registros de asistencia reales.
-    Devuelve por técnico y fecha: horas programadas, horas reales, retardos,
-    salidas anticipadas, horas trabajadas y estado.
-    """
     if current_user["role"] not in ("admin", "visor"):
         from fastapi import HTTPException
         raise HTTPException(status_code=403, detail="Solo administradores o visores")
@@ -176,10 +146,9 @@ def get_resumen(
     fechas = [(lunes + timedelta(days=i)).isoformat() for i in range(6)]
     placeholders = ",".join(["%s"] * len(fechas))
 
-    # Horarios programados de la semana
+    # Horarios programados
     horarios_raw = execute_read(
-        "SELECT username, fecha, hora_entrada, hora_salida "
-        "FROM horarios WHERE semana=%s",
+        "SELECT username, fecha, hora_entrada, hora_salida FROM horarios WHERE semana=%s",
         (semana,)
     ) or []
     horarios_map = {}
@@ -187,19 +156,18 @@ def get_resumen(
         fecha_str = h["fecha"].isoformat() if hasattr(h["fecha"], "isoformat") else h["fecha"]
         horarios_map[(h["username"], fecha_str)] = h
 
-    # Registros reales de la semana (entrada y salida)
+    # Registros reales — tabla correcta: registros_asistencia
     registros_raw = execute_read(
-        f"SELECT username, fecha, tipo, hora_checkin, distancia_metros, aprobado, retardo_min "
-        f"FROM asistencia_registros WHERE fecha IN ({placeholders}) ORDER BY hora_checkin",
+        f"SELECT username, fecha, tipo, hora_checkin, distancia_metros, aprobado "
+        f"FROM registros_asistencia WHERE DATE(fecha) IN ({placeholders}) ORDER BY hora_checkin",
         tuple(fechas)
     ) or []
     reg_map = {}
     for r in registros_raw:
-        fecha_str = r["fecha"].isoformat() if hasattr(r["fecha"], "isoformat") else r["fecha"]
+        fecha_str = r["fecha"].isoformat() if hasattr(r["fecha"], "isoformat") else str(r["fecha"])[:10]
         key = (r["username"], fecha_str, r["tipo"])
         reg_map[key] = r
 
-    # Técnicos que aparecen en horarios O en registros
     tecnicos = (
         {h["username"] for h in horarios_raw}
         | {r["username"] for r in registros_raw}
@@ -212,7 +180,6 @@ def get_resumen(
             entrada = reg_map.get((username, fecha, "entrada"))
             salida  = reg_map.get((username, fecha, "salida"))
 
-            # Sin horario y sin registro → omitir
             if not horario and not entrada and not salida:
                 continue
 
@@ -221,22 +188,18 @@ def get_resumen(
             e_real = _hhmm_to_min(entrada["hora_checkin"] if entrada else None)
             s_real = _hhmm_to_min(salida["hora_checkin"]  if salida  else None)
 
-            # Retardo de entrada (tolerancia 15 min)
             retardo_min = 0
             if e_prog is not None and e_real is not None:
                 retardo_min = max(0, e_real - e_prog - 15)
 
-            # Salida anticipada
             salida_anticipada_min = 0
             if s_prog is not None and s_real is not None:
                 salida_anticipada_min = max(0, s_prog - s_real)
 
-            # Horas trabajadas
             horas_trabajadas = None
             if e_real is not None and s_real is not None:
                 horas_trabajadas = round(max(0, s_real - e_real) / 60, 2)
 
-            # Estado
             if not horario or (not horario.get("hora_entrada") and not horario.get("hora_salida")):
                 estado = "libre"
             elif not entrada and not salida:
@@ -253,14 +216,13 @@ def get_resumen(
                 "fecha":                 fecha,
                 "hora_entrada":          horario["hora_entrada"] if horario else None,
                 "hora_salida":           horario["hora_salida"]  if horario else None,
-                "hora_entrada_real":     entrada["hora_checkin"][:5] if entrada else None,
-                "hora_salida_real":      salida["hora_checkin"][:5]  if salida  else None,
+                "hora_entrada_real":     entrada["hora_checkin"][:5] if entrada and entrada.get("hora_checkin") else None,
+                "hora_salida_real":      salida["hora_checkin"][:5]  if salida  and salida.get("hora_checkin")  else None,
                 "retardo_min":           retardo_min,
                 "salida_anticipada_min": salida_anticipada_min,
                 "horas_trabajadas":      horas_trabajadas,
                 "estado":                estado,
-                # Retrocompatibilidad con la vista de horarios del frontend
-                "hora_checkin":          entrada["hora_checkin"][:5] if entrada else None,
+                "hora_checkin":          entrada["hora_checkin"][:5] if entrada and entrada.get("hora_checkin") else None,
             })
 
     return resultado
