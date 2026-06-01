@@ -1,6 +1,6 @@
 """
 backend/asistencia/routes.py
-Rutas de Asistencia - Versión Mejorada (Junio 2026)
+Rutas de Asistencia - Versión Mejorada y Corregida (Junio 2026)
 Adaptado para inyectar dinámicamente los motivos y distancias estructuradas de geofencing
 """
 
@@ -37,12 +37,13 @@ class ConfigPayload(BaseModel):
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 def _distancia_metros(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calcula la distancia de círculo gran círculo usando la fórmula de Haversine"""
     R = 6371000  # Radio de la Tierra en metros
     phi1 = math.radians(lat1)
     phi2 = math.radians(lat2)
-    dphi = math.radians(lat2 - Math.radians(lat1)) # Asegurando compatibilidad limpia
     dphi = math.radians(lat2 - lat1)
     dlam = math.radians(lon2 - lon1)
+    
     a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam/2)**2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
@@ -53,13 +54,18 @@ def _hora_tj() -> str:
 def _hhmm_to_min(hhmm: str) -> int:
     if not hhmm:
         return 0
-    h, m = map(int, hhmm.split(":")[:2])
-    return h * 60 + m
+    try:
+        h, m = map(int, hhmm.split(":")[:2])
+        return h * 60 + m
+    except ValueError:
+        return 0
 
 def _get_config():
     rows = execute_read("SELECT lat_fija, lon_fija, radio_metros FROM asistencia_config LIMIT 1")
-    if rows:
+    if rows and isinstance(rows[0], dict):
         return rows[0]
+    elif rows and isinstance(rows[0], (tuple, list)):
+        return {"lat_fija": rows[0][0], "lon_fija": rows[0][1], "radio_metros": rows[0][2]}
     return {"lat_fija": 32.5027, "lon_fija": -117.0037, "radio_metros": 300}
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -111,7 +117,7 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
     motivo_rechazo = None
 
     if payload.lat is not None and payload.lon is not None:
-        distancia_m = _distancia_metros(payload.lat, payload.lon, cfg["lat_fija"], cfg["lon_fija"])
+        distancia_m = _distancia_metros(payload.lat, payload.lon, float(cfg["lat_fija"]), float(cfg["lon_fija"]))
         aprobado = distancia_m <= float(cfg["radio_metros"])
         if not aprobado:
             distancia_km = round(distancia_m / 1000, 1)
@@ -134,25 +140,35 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
                 "SELECT hora_entrada FROM horarios WHERE username=%s AND fecha=%s LIMIT 1",
                 (payload.username, fecha)
             )
-            if horario and horario[0].get("hora_entrada"):
-                hora_prog = _hhmm_to_min(horario[0]["hora_entrada"])
-                hora_real = _hhmm_to_min(hora_actual)
-                retardo_min = max(0, hora_real - hora_prog)
+            if horario:
+                # Compatibilidad segura si la fila es un diccionario o una tupla
+                hora_entrada_raw = horario[0].get("hora_entrada") if isinstance(horario[0], dict) else horario[0][0]
+                if hora_entrada_raw:
+                    hora_prog = _hhmm_to_min(str(hora_entrada_raw))
+                    hora_real = _hhmm_to_min(hora_actual)
+                    retardo_min = max(0, hora_real - hora_prog)
         except Exception:
             retardo_min = 0
 
     # Calcular horas de jornada (salida)
     if tipo == "salida" and aprobado:
-        ent_reg = execute_read(
-            "SELECT hora_checkin FROM asistencia_registros WHERE username=%s AND fecha=%s AND tipo='entrada' AND aprobado = 1",
-            (payload.username, fecha)
-        )
-        if ent_reg and ent_reg[0].get("hora_checkin"):
-            entrada_min = _hhmm_to_min(ent_reg[0]["hora_checkin"])
-            salida_min = _hhmm_to_min(hora_actual)
-            horas_trabajadas = round(max(0, (salida_min - entrada_min) / 60), 1)
+        try:
+            ent_reg = execute_read(
+                "SELECT hora_checkin FROM asistencia_registros WHERE username=%s AND fecha=%s AND tipo='entrada' AND aprobado = 1",
+                (payload.username, fecha)
+            )
+            if ent_reg:
+                hora_checkin_raw = ent_reg[0].get("hora_checkin") if isinstance(ent_reg[0], dict) else ent_reg[0][0]
+                if hora_checkin_raw:
+                    entrada_min = _hhmm_to_min(str(hora_checkin_raw))
+                    salida_min = _hhmm_to_min(hora_actual)
+                    horas_trabajadas = round(max(0, (salida_min - entrada_min) / 60), 1)
+        except Exception:
+            horas_trabajadas = None
 
     # ── Almacenamiento Seguro en DB ───────────────────────────────────────────
+    distancia_final = round(distancia_m, 1) if distancia_m is not None else None
+    
     try:
         execute_write(
             """INSERT INTO asistencia_registros 
@@ -162,15 +178,12 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
             (
                 payload.username, tipo, fecha, hora_actual,
                 payload.lat, payload.lon, payload.precision_gps,
-                round(distancia_m, 1) if distancia_m is not None else None,
-                1 if aprobado else 0,
-                retardo_min,
-                payload.selfie_url,
-                motivo_rechazo
+                distancia_final, 1 if aprobado else 0, retardo_min,
+                payload.selfie_url, motivo_rechazo
             )
         )
     except Exception:
-        # Fallback por si la estructura SQL inicial no incluye la columna string de rechazo
+        # Fallback por si el esquema SQL de producción no tiene la columna motivo_rechazo de forma temporal
         execute_write(
             """INSERT INTO asistencia_registros 
                (username, tipo, fecha, hora_checkin, lat, lon, precision_gps, 
@@ -179,9 +192,7 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
             (
                 payload.username, tipo, fecha, hora_actual,
                 payload.lat, payload.lon, payload.precision_gps,
-                round(distancia_m, 1) if distancia_m is not None else None,
-                1 if aprobado else 0,
-                retardo_min,
+                distancia_final, 1 if aprobado else 0, retardo_min,
                 payload.selfie_url
             )
         )
@@ -191,7 +202,7 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
         "tipo": tipo,
         "hora_registro": hora_actual,
         "aprobado": aprobado,
-        "distancia_metros": round(distancia_m, 1) if distancia_m is not None else None,
+        "distancia_metros": distancia_final,
         "motivo_rechazo": motivo_rechazo,
         "retardo_min": retardo_min,
         "horas_trabajadas": horas_trabajadas
