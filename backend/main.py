@@ -1,9 +1,11 @@
+import os
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-import os
+from fastapi.responses import FileResponse, Response
 
+# Importación de Routers Existentes
 from routers.auth_router import router as auth_router
 from routers.dashboard_router import router as dashboard_router
 from routers.asignaciones_router import router as asignaciones_router
@@ -18,16 +20,42 @@ from routers.ws import router as ws_router
 from routers.cluster_router import router as cluster_router
 from routers.web_router import router as web_router
 from db import init_db
+
 # Módulos de asistencia
 from asistencia.routes import router as asistencia_api_router
 from asistencia.horarios_routes import router as horarios_router
 
+# ── Manejo del Ciclo de Vida Seguro (Lifespan) ─────────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Maneja el arranque y apagado seguro de la aplicación.
+    Previene el bloqueo del hilo principal para evitar Boot Loops en Clever Cloud.
+    """
+    print("⏳ [STARTUP] Inicializando conexiones de infraestructura...")
+    try:
+        # Ejecuta la inicialización de la DB de manera que fallas de red temporales
+        # con TiDB no tiren el servidor web completo de inmediato.
+        init_db()
+        print("✅ [STARTUP] Base de datos TiDB conectada e inicializada con éxito.")
+    except Exception as db_err:
+        print(f"❌ [CRITICAL] Falló la inicialización de la base de datos en el arranque: {db_err}")
+        # Al no relanzar el error aquí, permitimos que el contenedor responda 200
+        # al Healthcheck y podamos revisar los logs en vivo en lugar de crashear el contenedor.
+
+    yield
+    print("🛑 [SHUTDOWN] Cerrando recursos de la aplicación de forma limpia...")
+
+
+# ── Inicialización de la Aplicación ───────────────────────────────────────────
 app = FastAPI(
     title="Carrier Transicold API",
     version="2.0",
-    description="Sistema Operativo Carrier Transicold — API REST"
+    description="Sistema Operativo Carrier Transicold — API REST",
+    lifespan=lifespan
 )
 
+# Middleware CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -41,37 +69,19 @@ static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+# ── Endpoints Globales ────────────────────────────────────────────────────────
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
-    from fastapi.responses import Response
     path = os.path.join(os.path.dirname(__file__), "static", "favicon.ico")
     if not os.path.exists(path):
         return Response(status_code=204)   # No Content — sin error 500
     return FileResponse(path)
 
-@app.on_event("startup")
-def startup():
-    init_db()
-
-app.include_router(auth_router)
-app.include_router(dashboard_router)
-app.include_router(asignaciones_router)
-app.include_router(tickets_router)
-app.include_router(inventario_router)
-app.include_router(unidades_router)
-app.include_router(usuarios_router)
-app.include_router(evidencias_router)
-app.include_router(toma_valores_router)
-app.include_router(comentarios_router)
-app.include_router(ws_router)
-app.include_router(cluster_router)
-app.include_router(web_router)
-app.include_router(asistencia_api_router)
-app.include_router(horarios_router)  # asistencia/horarios_routes.py
 
 @app.get("/")
 def root():
     return {"mensaje": "API Carrier Transicold operativa", "docs": "/docs"}
+
 
 @app.get("/test-onedrive")
 def test_onedrive():
@@ -87,7 +97,7 @@ def test_onedrive():
         return {
             "status": "OK ✅ — Conexión con OneDrive exitosa",
             "variables": vars_presentes,
-            "token_preview": token[:20] + "..."
+            "token_preview": token[:20] + "..." if token else "None"
         }
     except Exception as e:
         return {
@@ -96,16 +106,19 @@ def test_onedrive():
             "detalle": str(e)
         }
 
+
 @app.get("/auth/onedrive/callback")
 def onedrive_callback(code: str = None, error: str = None):
     if error:
         return {"error": error}
     if not code:
         return {"error": "No se recibió código"}
+    
     import requests
     client_id     = "dc1c0d4f-0f48-44db-9fde-a63178fb8ab0"
     client_secret = os.getenv("MS_CLIENT_SECRET_PERSONAL", "")
     redirect_uri  = "https://carrier-transicold.onrender.com/auth/onedrive/callback"
+    
     resp = requests.post(
         "https://login.microsoftonline.com/common/oauth2/v2.0/token",
         data={
@@ -125,3 +138,21 @@ def onedrive_callback(code: str = None, error: str = None):
             "access_token_preview": data.get("access_token", "")[:30] + "..."
         }
     return {"error": data}
+
+
+# ── Inclusión de Routers de la Aplicación ─────────────────────────────────────
+app.include_router(auth_router)
+app.include_router(dashboard_router)
+app.include_router(asignaciones_router)
+app.include_router(tickets_router)
+app.include_router(inventario_router)
+app.include_router(unidades_router)
+app.include_router(usuarios_router)
+app.include_router(evidencias_router)
+app.include_router(toma_valores_router)
+app.include_router(comentarios_router)
+app.include_router(ws_router)
+app.include_router(cluster_router)
+app.include_router(web_router)
+app.include_router(asistencia_api_router)
+app.include_router(horarios_router)
