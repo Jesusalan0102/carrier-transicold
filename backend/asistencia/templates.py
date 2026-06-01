@@ -1,216 +1,205 @@
-"""
-backend/asistencia/templates.py
-Plantilla moderna, limpia y profesional para Registro de Asistencia
-Adaptada 100% a la paleta de colores corporativa y datos reales de Carrier Transicold
-"""
-
-ASISTENCIA_STYLES = """
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght=300;400;500;600;700&display=swap');
-    body {
-        font-family: 'Inter', sans-serif;
-    }
-</style>
-"""
-
-ASISTENCIA_HTML = """
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Registrar Asistencia - Carrier Transicold</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Carrier Transicold - Registro de Asistencia</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .brand-blue { background-color: #004B87; }
+        .brand-dark { background-color: #0A2540; }
+        .text-brand { color: #004B87; }
+        .bg-gray-custom { background-color: #F4F4F2; }
+    </style>
 </head>
-<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col justify-start py-6 px-4">
+<body class="bg-gray-100 font-sans antialiased text-gray-800 min-h-screen flex flex-col items-center py-6 px-4">
 
-<div class="w-full max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
-
-  <div class="bg-slate-50 p-3 grid grid-cols-3 gap-2 border-b border-slate-200 text-center text-[11px] text-slate-500 font-medium">
-    <div class="bg-white px-1 py-2 rounded-lg border border-slate-300 shadow-sm cursor-pointer hover:bg-slate-100 transition-colors">Vista: Pendiente entrada</div>
-    <div class="bg-rose-50 px-1 py-2 rounded-lg border border-rose-200 text-rose-700 font-semibold shadow-sm cursor-pointer">Vista: Rechazado</div>
-    <div class="bg-white px-1 py-2 rounded-lg border border-slate-300 shadow-sm cursor-pointer hover:bg-slate-100 transition-colors">Vista: Modal QR</div>
-  </div>
-
-  <div class="bg-blue-800 px-6 py-5 text-white flex items-center justify-between">
-    <div class="flex items-center gap-3">
-      <div class="w-11 h-11 bg-blue-700/60 rounded-full flex items-center justify-center text-xl border border-blue-600 shadow-inner">
-        <i class="fa-solid fa-clock-rotate-left"></i>
-      </div>
-      <div>
-        <h1 class="text-lg font-bold tracking-wide">Registrar asistencia</h1>
-        <p class="text-xs text-blue-200 font-medium">Carrier Transicold • {{ fecha_hoy }}</p>
-      </div>
-    </div>
-    <span class="relative flex h-2.5 w-2.5">
-      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-      <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-    </span>
-  </div>
-
-  <div class="grid grid-cols-2 gap-3 px-6 py-4 bg-slate-50 border-b border-slate-200 text-xs font-semibold">
-    <div class="flex items-center gap-2 bg-white px-3 py-2.5 rounded-xl border border-slate-200 text-slate-700 shadow-sm">
-      <span class="text-slate-400"><i class="fa-solid fa-location-dot"></i></span>
-      <span>Tijuana <span id="hora-gps" class="text-slate-500 font-normal">08:48</span></span>
-    </div>
-    <div class="flex items-center justify-center gap-1.5 bg-emerald-50 px-3 py-2.5 rounded-xl border border-emerald-200 text-emerald-700 shadow-sm">
-      <span class="text-[10px] animate-pulse">🟢</span>
-      <span>GPS &plusmn;90m</span>
-    </div>
-  </div>
-
-  <div class="p-6 space-y-5">
-    <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm space-y-4">
-      <h3 class="uppercase text-[11px] tracking-widest text-slate-400 font-bold">TU HORARIO DE HOY</h3>
-      
-      <div class="grid grid-cols-2 gap-4 text-center">
-        <div class="bg-slate-50/80 py-3 rounded-xl border border-slate-100">
-          <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">ENTRADA</div>
-          <div class="text-2xl font-black text-slate-800 mt-0.5">07:00</div>
-        </div>
-        <div class="bg-slate-50/80 py-3 rounded-xl border border-slate-100">
-          <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">SALIDA</div>
-          <div class="text-2xl font-black text-slate-800 mt-0.5">09:00</div>
-        </div>
-      </div>
-
-      <div class="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3 text-xs font-medium flex items-center gap-2">
-        <span>⚠️</span>
-        <span>Llegas con <span id="retardo" class="font-bold">107 min</span> de retardo</span>
-      </div>
-
-      <div class="bg-slate-50/80 border border-dashed border-slate-300 rounded-xl p-3.5 flex items-center gap-3">
-        <div class="w-2.5 h-2.5 bg-amber-500 rounded-full animate-pulse"></div>
-        <div class="text-xs">
-          <p class="font-bold text-slate-700">Entrada pendiente</p>
-          <p class="text-slate-500 mt-0.5">Hora actual: <span id="hora-actual" class="font-semibold text-slate-600">08:48</span></p>
-        </div>
-      </div>
+    <div class="w-full max-w-md bg-stone-100 border border-stone-200 rounded-xl p-2 mb-6 flex justify-between space-x-2 text-xs font-medium shadow-sm">
+        <button onclick="cambiarVista('pendiente')" id="btn-v-pendiente" class="flex-1 py-2.5 px-2 text-center rounded-lg border border-stone-300 bg-white shadow-sm transition">
+            Vista:<br>Pendiente entrada
+        </button>
+        <button onclick="cambiarVista('rechazado')" id="btn-v-rechazado" class="flex-1 py-2.5 px-2 text-center rounded-lg border border-stone-200 text-stone-600 hover:bg-white transition">
+            Vista:<br>Rechazado
+        </button>
+        <button onclick="cambiarVista('modal')" id="btn-v-modal" class="flex-1 py-2.5 px-2 text-center rounded-lg border border-stone-200 text-stone-600 hover:bg-white transition">
+            Vista:<br>Modal QR
+        </button>
     </div>
 
-    <button onclick="registrarAsistencia()" 
-            id="btn-registrar"
-            class="w-full py-4 bg-blue-700 hover:bg-blue-800 active:scale-[0.98] transition-all text-white font-bold text-sm rounded-xl shadow-lg shadow-blue-700/20 flex items-center justify-center gap-2 tracking-wide">
-      <i class="fas fa-qrcode text-base"></i>
-      Escanear QR y registrar entrada
-    </button>
-  </div>
-
-  <div class="bg-slate-50 px-6 pt-3 pb-6 border-t border-slate-200">
-    <h3 class="uppercase text-[11px] tracking-widest text-slate-400 font-bold mb-3">REGISTROS DE HOY</h3>
-    
-    <div id="registros" class="space-y-3">
-      </div>
-  </div>
-
-</div>
-
-<script>
-const CONFIG = {
-  username: "{{ username }}",
-  fecha: new Date().toISOString().split('T')[0]
-};
-
-async function cargarHistorial() {
-  const contenedor = document.getElementById('registros');
-  try {
-    const response = await fetch(`/api/asistencia/registros/${CONFIG.username}/${CONFIG.fecha}`);
-    const data = await response.json();
-    
-    if (!data.registros || data.registros.length === 0) {
-      contenedor.innerHTML = `<p class="text-xs text-slate-400 text-center py-4 font-medium">No hay registros guardados el día de hoy.</p>`;
-      return;
-    }
-    
-    contenedor.innerHTML = data.registros.map(reg => {
-      const esAprobado = reg.aprobado === 1 || reg.aprobado === true;
-      return `
-        <div class="flex items-center justify-between p-3.5 ${esAprobado ? 'bg-emerald-50/60 border-emerald-200' : 'bg-rose-50 border-rose-200'} rounded-xl border shadow-sm transition-all">
-          <div class="flex items-center gap-3">
-            <div class="w-9 h-9 rounded-xl ${esAprobado ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'} flex items-center justify-center text-xs font-bold">
-              <i class="${esAprobado ? 'fa-solid fa-check' : 'fa-solid fa-xmark'} text-sm"></i>
+    <div class="w-full max-w-md space-y-4">
+        
+        <div class="flex items-center justify-between border-b border-gray-200 pb-4">
+            <div class="flex items-center space-x-3">
+                <div class="brand-blue text-white w-12 h-12 rounded-full flex items-center justify-center shadow-sm">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+                <div>
+                    <h1 class="text-xl font-semibold text-gray-900 tracking-tight">Registrar asistencia</h1>
+                    <p class="text-xs text-gray-500">Carrier Transicold • <span id="fecha-actual">lunes 1 jun 2026</span></p>
+                </div>
             </div>
-            <div>
-              <p class="text-xs font-bold text-slate-800 capitalize">${reg.tipo}</p>
-              <p class="text-[11px] ${esAprobado ? 'text-emerald-600' : 'text-rose-600'} font-medium mt-0.5 flex items-center gap-1">
-                <span>📍</span> ${esAprobado ? 'Dentro de zona de trabajo' : (reg.motivo_rechazo || 'Fuera de rango')}
-              </p>
+            <div class="flex items-center space-x-1.5 text-xs font-medium text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+                <span>Online</span>
             </div>
-          </div>
-          <div class="text-right">
-            <p class="text-xs font-bold text-slate-700">${reg.hora_checkin}</p>
-            <span class="inline-block text-[10px] ${esAprobado ? 'bg-emerald-200 text-emerald-800 border-emerald-300' : 'bg-rose-200 text-rose-800 border-rose-300'} font-bold px-2 py-0.5 rounded-md mt-1 border">
-              ${esAprobado ? 'Aprobado' : 'Rechazado'}
-            </span>
-          </div>
         </div>
-      `;
-    }).join('');
-  } catch (error) {
-    contenedor.innerHTML = `<p class="text-xs text-rose-500 text-center py-2">Error al sincronizar el historial.</p>`;
-  }
-}
 
-async function registrarAsistencia() {
-  const btn = document.getElementById('btn-registrar');
-  btn.disabled = true;
-  btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Procesando ubicación...`;
+        <div class="flex items-center space-x-3 text-xs font-medium">
+            <div class="bg-stone-100 border border-stone-200 text-stone-700 px-3 py-1.5 rounded-lg shadow-sm flex items-center space-x-1">
+                <span>📍</span>
+                <span>Tijuana 08:48</span>
+            </div>
+            <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-1.5 rounded-lg shadow-sm flex items-center space-x-1">
+                <span>🟢</span>
+                <span>GPS ±90m</span>
+            </div>
+        </div>
 
-  try {
-    const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, {
-      enableHighAccuracy: true,
-      timeout: 10000
-    }));
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200 space-y-4">
+            <h2 class="text-xs font-bold text-gray-400 tracking-wider uppercase">Tu horario de hoy</h2>
+            
+            <div class="grid grid-cols-2 gap-4 bg-stone-50 border border-stone-100 rounded-xl p-4 text-center">
+                <div class="border-r border-stone-200">
+                    <p class="text-xs font-semibold text-stone-400 uppercase tracking-tight">Entrada</p>
+                    <p class="text-2xl font-bold text-stone-800 mt-1">07:00</p>
+                </div>
+                <div>
+                    <p class="text-xs font-semibold text-stone-400 uppercase tracking-tight">Salida</p>
+                    <p class="text-2xl font-bold text-stone-800 mt-1">09:00</p>
+                </div>
+            </div>
 
-    const payload = {
-      username: CONFIG.username,
-      tipo: "entrada",
-      fecha: CONFIG.fecha,
-      lat: pos.coords.latitude,
-      lon: pos.coords.longitude,
-      precision_gps: pos.coords.accuracy
-    };
+            <div class="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 text-xs font-medium flex items-center space-x-2 shadow-sm">
+                <span>⚠️</span>
+                <span>Llegas con <strong class="font-bold">107 min de retardo</strong></span>
+            </div>
 
-    const response = await fetch('/api/asistencia/checkin', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(payload)
-    });
+            <div id="estado-pendiente" class="block bg-stone-50 border border-dashed border-stone-300 rounded-xl p-4 flex items-center space-x-3">
+                <span class="w-3 h-3 rounded-full bg-amber-500 inline-block"></span>
+                <div>
+                    <p class="text-sm font-semibold text-stone-800">Entrada pendiente</p>
+                    <p class="text-xs text-stone-500 mt-0.5">Hora actual: 08:48</p>
+                </div>
+            </div>
 
-    const data = await response.json();
+            <button onclick="abrirModalQR()" class="w-full bg-white hover:bg-stone-50 border border-gray-300 hover:border-gray-400 text-gray-800 font-semibold py-3 px-4 rounded-xl text-sm transition flex items-center justify-center space-x-2 shadow-sm">
+                <span>📷</span>
+                <span>Escanear QR y registrar entrada</span>
+            </button>
+        </div>
 
-    if (data.aprobado) {
-      alert(`✅ Entrada registrada correctamente a las ${data.hora_registro}`);
-    } else {
-      alert(`❌ Rechazado: ${data.motivo_rechazo || 'Fuera de rango'}`);
-    }
-    cargarHistorial();
-  } catch (e) {
-    alert("Error al obtener coordenadas GPS. Verifica los permisos de ubicación en tu dispositivo.");
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = `<i class="fas fa-qrcode"></i> Escanear QR y registrar entrada`;
-  }
-}
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200 space-y-4">
+            <h2 class="text-xs font-bold text-gray-400 tracking-wider uppercase">Registros de hoy</h2>
+            
+            <div id="registro-vacio" class="hidden flex flex-col items-center justify-center py-6 text-center space-y-2">
+                <span class="text-2xl text-stone-400">🕒</span>
+                <p class="text-xs text-stone-500 font-medium">Sin registros por ahora</p>
+            </div>
 
-function inicializarModulo() {
-  const opciones = { hour: '2-digit', minute: '2-digit', hour12: false };
-  const horaActualStr = new Date().toLocaleTimeString('es-MX', opciones);
-  if(document.getElementById('hora-actual')) document.getElementById('hora-actual').textContent = horaActualStr;
-  if(document.getElementById('hora-gps')) document.getElementById('hora-gps').textContent = horaActualStr;
-  cargarHistorial();
-}
+            <div id="registro-lista" class="block">
+                <div class="flex items-center justify-between bg-white border border-gray-100 rounded-xl p-3 shadow-sm">
+                    <div class="flex items-center space-x-3">
+                        <div class="bg-stone-100 text-stone-500 w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm">
+                            🕒
+                        </div>
+                        <div>
+                            <p class="text-sm font-semibold text-gray-900">Entrada</p>
+                            <p class="text-xs text-gray-500 flex items-center space-x-1 mt-0.5">
+                                <span>📍</span>
+                                <span>19,522 m del punto fijo</span>
+                            </p>
+                        </div>
+                    </div>
+                    <div class="text-right space-y-1">
+                        <p class="text-sm font-bold text-gray-900">08:47</p>
+                        <span id="badge-estatus" class="inline-block bg-red-50 text-red-700 border border-red-200 text-[11px] font-bold px-2.5 py-0.5 rounded-md shadow-sm">
+                            ⚠️ Rechazado
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-// Llamada corregida sin tildes/acentos extraños
-inicializarModulo();
-</script>
+    </div>
+
+    <div id="modal-qr" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-sm rounded-2xl shadow-xl overflow-hidden transform transition-all border border-gray-200 flex flex-col items-center p-6 space-y-4">
+            <div class="w-full flex justify-between items-center border-b border-gray-100 pb-2">
+                <h3 class="text-md font-bold text-gray-900 flex items-center space-x-1.5">
+                    <span>📷</span>
+                    <span>Cámara de Validación</span>
+                </h3>
+                <button onclick="cerrarModalQR()" class="text-gray-400 hover:text-gray-600 font-bold text-sm bg-gray-100 hover:bg-gray-200 w-7 h-7 rounded-full flex items-center justify-center transition">✕</button>
+            </div>
+            
+            <div class="w-full aspect-square bg-stone-900 rounded-xl relative flex flex-col items-center justify-center overflow-hidden border border-stone-800">
+                <div class="absolute inset-x-0 h-0.5 bg-cyan-500 shadow-[0_0_10px_#06b6d4] top-1/2 animate-bounce w-full"></div>
+                
+                <span class="text-4xl">🔲</span>
+                <p class="text-xs text-stone-400 mt-2 font-medium">Apunta al QR del Administrador</p>
+            </div>
+
+            <p class="text-xs text-center text-stone-500">Mantén el dispositivo firme dentro del perímetro establecido de la sucursal.</p>
+        </div>
+    </div>
+
+    <script>
+        // Cambiar dinámicamente entre las diferentes vistas de la UI mediante el selector superior
+        function cambiarVista(vista) {
+            // Referencias del DOM
+            const estadoPendiente = document.getElementById('estado-pendiente');
+            const badgeEstatus = document.getElementById('badge-estatus');
+            const registroLista = document.getElementById('registro-lista');
+            const registroVacio = document.getElementById('registro-vacio');
+            
+            // Botones de control superior
+            const btnPendiente = document.getElementById('btn-v-pendiente');
+            const btnRechazado = document.getElementById('btn-v-rechazado');
+            const btnModal = document.getElementById('btn-v-modal');
+
+            // Reset de estilos de botones
+            [btnPendiente, btnRechazado, btnModal].forEach(btn => {
+                btn.className = "flex-1 py-2.5 px-2 text-center rounded-lg border border-stone-200 text-stone-600 hover:bg-white transition";
+            });
+
+            if (vista === 'pendiente') {
+                btnPendiente.className = "flex-1 py-2.5 px-2 text-center rounded-lg border border-stone-300 bg-white shadow-sm font-bold text-stone-900 transition";
+                estadoPendiente.className = "block bg-stone-50 border border-dashed border-stone-300 rounded-xl p-4 flex items-center space-x-3";
+                registroLista.classList.add('hidden');
+                registroVacio.classList.remove('hidden');
+                cerrarModalQR();
+            } 
+            else if (vista === 'rechazado') {
+                btnRechazado.className = "flex-1 py-2.5 px-2 text-center rounded-lg border-red-300 bg-red-50 text-red-900 shadow-sm font-bold transition";
+                estadoPendiente.className = "block bg-red-50 border border-dashed border-red-200 rounded-xl p-4 flex items-center space-x-3 text-red-900";
+                estadoPendiente.innerHTML = `<span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span><div><p class="text-sm font-bold">Entrada Rechazada por Geofencing</p><p class="text-xs text-red-600 mt-0.5">Fuera de perímetro (19,522 m de desfase)</p></div>`;
+                registroLista.classList.remove('hidden');
+                registroVacio.classList.add('hidden');
+                badgeEstatus.className = "inline-block bg-red-50 text-red-700 border border-red-200 text-[11px] font-bold px-2.5 py-0.5 rounded-md shadow-sm";
+                badgeEstatus.innerText = "⚠️ Rechazado";
+                cerrarModalQR();
+            } 
+            else if (vista === 'modal') {
+                btnModal.className = "flex-1 py-2.5 px-2 text-center rounded-lg border-stone-300 bg-white shadow-sm font-bold text-stone-900 transition";
+                abrirModalQR();
+            }
+        }
+
+        // Gestión de la Ventana Emergente (Modal QR de escaneo)
+        function abrirModalQR() {
+            document.getElementById('modal-qr').classList.remove('hidden');
+        }
+
+        function cerrarModalQR() {
+            document.getElementById('modal-qr').classList.add('hidden');
+        }
+
+        // Inicializar datos estables automáticos al cargar el componente
+        document.addEventListener("DOMContentLoaded", () => {
+            const opciones = { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' };
+            const fechaHoy = new Date().toLocaleDateString('es-MX', opciones);
+            document.getElementById('fecha-actual').innerText = fechaHoy;
+        });
+    </script>
 </body>
 </html>
-"""
-
-def get_checkin_template(username="usuario", fecha_hoy="lunes 1 jun 2026"):
-    """Función exportable requerida explícitamente por web_router.py"""
-    html = ASISTENCIA_HTML.replace("{{ username }}", username)
-    html = html.replace("{{ fecha_hoy }}", fecha_hoy)
-    return ASISTENCIA_STYLES + html
