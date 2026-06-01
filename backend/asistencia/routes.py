@@ -40,6 +40,7 @@ def _distancia_metros(lat1: float, lon1: float, lat2: float, lon2: float) -> flo
     R = 6371000  # Radio de la Tierra en metros
     phi1 = math.radians(lat1)
     phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - Math.radians(lat1)) # Asegurando compatibilidad limpia
     dphi = math.radians(lat2 - lat1)
     dlam = math.radians(lon2 - lon1)
     a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam/2)**2
@@ -113,12 +114,11 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
         distancia_m = _distancia_metros(payload.lat, payload.lon, cfg["lat_fija"], cfg["lon_fija"])
         aprobado = distancia_m <= float(cfg["radio_metros"])
         if not aprobado:
-            # Formateo amigable de la distancia para pasarlo directamente a la interfaz UI
             distancia_km = round(distancia_m / 1000, 1)
             if distancia_m >= 1000:
-                motivo_rechazo = f"{distancia_km:,} km del punto fijo"
+                motivo_rechazo = f"A {distancia_km:,} km de la sucursal"
             else:
-                motivo_rechazo = f"{round(distancia_m)} m del punto fijo"
+                motivo_rechazo = f"A {round(distancia_m)} m de la sucursal"
     else:
         aprobado = False
         motivo_rechazo = "Coordenadas GPS no recibidas"
@@ -170,7 +170,7 @@ def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
             )
         )
     except Exception:
-        # Fallback de compatibilidad por si tu tabla omitió la columna de texto de rechazos
+        # Fallback por si la estructura SQL inicial no incluye la columna string de rechazo
         execute_write(
             """INSERT INTO asistencia_registros 
                (username, tipo, fecha, hora_checkin, lat, lon, precision_gps, 
