@@ -1051,161 +1051,297 @@ async def panel_cluster():
 
 
 # ------------------------------------------------------------
-# ASISTENCIA – ADMIN
+# ASISTENCIA – ADMIN (v2 — diseño profesional)
 # ------------------------------------------------------------
 @router.get("/app/asistencia", response_class=HTMLResponse)
 async def asistencia_admin():
-    contenido = (
-        """
+    contenido = """
     <script>if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; }</script>
-    """
-        + ASISTENCIA_STYLES +
-        """
-    <div class="asistencia-container">
-        <div class="evidencia-info" style="margin-bottom:20px;">
-            <b>📍 Configuración de Asistencia</b><br>
-            <span style="font-size:0.85rem;">Define las coordenadas y el radio para el registro de asistencia.</span>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+    <style>
+      .asis-wrap { font-family: 'DM Sans', system-ui, sans-serif; }
+      .asis-grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap:14px; margin-bottom:20px; }
+      .asis-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:28px; }
+      .asis-card { background: white; border: 0.5px solid #e0ddd5; border-radius: 14px; padding: 1.125rem 1.25rem; }
+      .asis-card-title { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #aaa; margin-bottom: 14px; display: flex; align-items: center; gap: 7px; }
+      .asis-card-title i { font-size: 14px; color: #004B87; }
+      .asis-field label { display: block; font-size: 11px; font-weight: 600; color: #888; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.05em; }
+      .asis-field input[type="number"], .asis-field input[type="date"] {
+        width: 100%; padding: 10px 12px; border: 0.5px solid #ddd; border-radius: 9px;
+        font-family: 'DM Mono', monospace; font-size: 13px; color: #111;
+        background: #fafaf8; transition: border-color 0.15s;
+        margin-bottom: 0;
+      }
+      .asis-field input:focus { outline: none; border-color: #004B87; background: white; }
+      .asis-btn { display: inline-flex; align-items: center; gap: 7px; padding: 11px 18px; border-radius: 9px; font-family: 'DM Sans', system-ui, sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; }
+      .asis-btn-primary { background: #004B87; color: white; }
+      .asis-btn-primary:hover { background: #003d70; }
+      .asis-btn-secondary { background: white; color: #444; border: 0.5px solid #ccc; }
+      .asis-btn-secondary:hover { background: #f7f6f2; }
+      .asis-btn-warning { background: #FAEEDA; color: #854F0B; border: 0.5px solid #FAC775; }
+      .asis-btn-warning:hover { background: #f5e4c0; }
+      .asis-btn-success { background: #EAF3DE; color: #3B6D11; border: 0.5px solid #C0DD97; }
+      .asis-btn-success:hover { background: #d8eccc; }
+      .asis-btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 24px; }
+      .asis-qr-section { display: none; }
+      .asis-qr-canvas-wrap { background: white; border: 0.5px solid #e0ddd5; border-radius: 14px; padding: 1.5rem; text-align: center; }
+      .asis-qr-meta { background: #F7F6F2; border-radius: 12px; padding: 1rem 1.25rem; }
+      .asis-qr-meta-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 0.5px solid #e8e5dd; font-size: 13px; }
+      .asis-qr-meta-row:last-child { border-bottom: none; }
+      .asis-qr-meta-label { color: #888; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+      .asis-qr-meta-val { font-family: 'DM Mono', monospace; font-weight: 500; color: #111; }
+      .asis-table-wrap { overflow-x: auto; border-radius: 12px; border: 0.5px solid #e0ddd5; }
+      .asis-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      .asis-table thead th { background: #004B87; color: white; padding: 11px 14px; text-align: left; font-weight: 600; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
+      .asis-table thead th:first-child { border-radius: 12px 0 0 0; }
+      .asis-table thead th:last-child  { border-radius: 0 12px 0 0; }
+      .asis-table tbody td { padding: 11px 14px; border-bottom: 0.5px solid #f0ede5; color: #333; }
+      .asis-table tbody tr:last-child td { border-bottom: none; }
+      .asis-table tbody tr:hover td { background: #fafaf7; }
+      .asis-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; border: 0.5px solid; }
+      .asis-badge-ok  { background: #EAF3DE; color: #3B6D11; border-color: #C0DD97; }
+      .asis-badge-err { background: #FCEBEB; color: #A32D2D; border-color: #F09595; }
+      .asis-empty { text-align: center; padding: 2.5rem; color: #aaa; font-size: 13px; }
+      .asis-filter-row { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+      .asis-filter-row input { margin-bottom: 0; }
+      .asis-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); padding: 13px 24px; border-radius: 50px; font-size: 13px; font-weight: 600; z-index: 9999; display: none; }
+      @media (max-width: 640px) { .asis-grid-3 { grid-template-columns: 1fr; } .asis-grid-2 { grid-template-columns: 1fr; } }
+    </style>
+
+    <div class="asis-wrap">
+
+      <!-- KPIs de hoy -->
+      <div id="asisKpis" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;"></div>
+
+      <!-- Configuración de geocerca -->
+      <div class="asis-card" style="margin-bottom:20px;">
+        <div class="asis-card-title"><i class="ti ti-map-pin"></i> Configuración de geocerca</div>
+        <div class="asis-grid-3">
+          <div class="asis-field"><label>Latitud fija</label><input type="number" id="latFija" step="0.000001" value="32.5027"></div>
+          <div class="asis-field"><label>Longitud fija</label><input type="number" id="lonFija" step="0.000001" value="-117.0037"></div>
+          <div class="asis-field"><label>Radio permitido (m)</label><input type="number" id="radioMetros" value="200" min="10" max="5000"></div>
         </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:20px;">
-            <div><label>Latitud fija</label><input type="number" id="latFija" step="0.000001" value="32.5027"></div>
-            <div><label>Longitud fija</label><input type="number" id="lonFija" step="0.000001" value="-117.0037"></div>
-            <div><label>Radio (metros)</label><input type="number" id="radioMetros" value="200" min="10" max="5000"></div>
+        <div class="asis-btn-row" style="margin-bottom:0;">
+          <button class="asis-btn asis-btn-primary" onclick="guardarConfiguracion()"><i class="ti ti-device-floppy"></i> Guardar</button>
+          <button class="asis-btn asis-btn-primary" onclick="generarQR()"><i class="ti ti-qrcode"></i> Generar QR</button>
+          <button class="asis-btn asis-btn-warning" onclick="usarUbicacionActual()"><i class="ti ti-current-location"></i> Usar mi ubicación</button>
         </div>
-        <div style="display:flex; gap:12px; margin-bottom:28px; flex-wrap:wrap;">
-            <button class="btn-primary" onclick="guardarConfiguracion()">💾 Guardar Configuración</button>
-            <button class="btn-primary" onclick="generarQR()">🔄 Generar QR de Asistencia</button>
-            <button class="btn-warning" onclick="usarUbicacionActual()">📍 Usar mi ubicación</button>
-        </div>
-        <div id="qrSection" style="display:none; margin-bottom:32px;">
-            <div class="section-title">📲 QR para Escanear</div>
-            <div style="display:flex; gap:32px; align-items:flex-start; flex-wrap:wrap;">
-                <div style="background:white; padding:24px; border-radius:16px; text-align:center;"><div id="qrCanvas"></div><p style="color:#16a34a; font-weight:600;">✅ QR Permanente — sin expiración</p><p style="font-size:0.8rem; color:#6b7280;">Se regenera solo al cambiar la configuración</p><button class="btn-primary" onclick="generarQR()">🔄 Regenerar QR</button></div>
-                <div style="flex:1;"><div class="inv-info-bar">📍 Punto de asistencia</div><p><b>Lat:</b> <span id="qrLatLabel"></span></p><p><b>Lon:</b> <span id="qrLonLabel"></span></p><p><b>Radio:</b> <span id="qrRadioLabel"></span> m</p><div id="mapaLink"></div></div>
+      </div>
+
+      <!-- QR section -->
+      <div id="qrSection" class="asis-qr-section" style="margin-bottom:24px;">
+        <div class="asis-grid-2">
+          <div class="asis-qr-canvas-wrap">
+            <div id="qrCanvas" style="display:inline-block;margin-bottom:12px;"></div>
+            <p style="font-size:12px;color:#3B6D11;font-weight:600;margin-bottom:4px;"><i class="ti ti-circle-check" style="font-size:14px;vertical-align:-2px;"></i> QR permanente — sin expiración</p>
+            <p style="font-size:11px;color:#aaa;">Se regenera solo al cambiar configuración</p>
+            <button class="asis-btn asis-btn-secondary" onclick="generarQR()" style="margin-top:12px;"><i class="ti ti-refresh"></i> Regenerar</button>
+          </div>
+          <div>
+            <div class="asis-qr-meta" style="margin-bottom:12px;">
+              <div class="asis-qr-meta-row"><span class="asis-qr-meta-label">Latitud</span><span class="asis-qr-meta-val" id="qrLatLabel">—</span></div>
+              <div class="asis-qr-meta-row"><span class="asis-qr-meta-label">Longitud</span><span class="asis-qr-meta-val" id="qrLonLabel">—</span></div>
+              <div class="asis-qr-meta-row"><span class="asis-qr-meta-label">Radio</span><span class="asis-qr-meta-val"><span id="qrRadioLabel">—</span> m</span></div>
             </div>
+            <div id="mapaLink"></div>
+          </div>
         </div>
-        <div class="section-title">📋 Registros de Asistencia</div>
-        <div style="display:flex; gap:12px; margin-bottom:12px;"><input type="date" id="fechaFiltro" onchange="cargarRegistros()"><button class="btn-primary" onclick="cargarRegistros()">🔄 Actualizar</button><button class="btn-success" onclick="exportarCSV()">📥 Exportar CSV</button></div>
-        <div id="tablaAsistencia"></div>
+      </div>
+
+      <!-- Tabla de registros -->
+      <div class="asis-card">
+        <div class="asis-card-title"><i class="ti ti-table"></i> Registros de asistencia</div>
+        <div class="asis-filter-row">
+          <div class="asis-field" style="flex:0 0 auto;"><label>Fecha</label><input type="date" id="fechaFiltro" onchange="cargarRegistros()"></div>
+          <button class="asis-btn asis-btn-secondary" onclick="cargarRegistros()" style="margin-top:16px;"><i class="ti ti-refresh"></i> Actualizar</button>
+          <button class="asis-btn asis-btn-success" onclick="exportarCSV()" style="margin-top:16px;"><i class="ti ti-download"></i> Exportar CSV</button>
+        </div>
+        <div class="asis-table-wrap">
+          <div id="tablaAsistencia"></div>
+        </div>
+      </div>
+
     </div>
+
+    <div class="asis-toast" id="asisToast"></div>
+
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <script>
-        const fetchAuth = window.fetchAuth;
-        document.getElementById('fechaFiltro').value = new Date().toLocaleDateString('sv-SE', {timeZone:'America/Tijuana'});
-        cargarRegistros();
+      const fetchAuth = window.fetchAuth;
 
-        async function cargarConfiguracion() {
-            const res = await fetchAuth('/api/asistencia/configuracion');
-            if (res.ok) {
-                const config = await res.json();
-                document.getElementById('latFija').value = config.lat_fija;
-                document.getElementById('lonFija').value = config.lon_fija;
-                document.getElementById('radioMetros').value = config.radio_metros;
-            }
-        }
+      function toast(msg, tipo) {
+        const el = document.getElementById('asisToast');
+        el.textContent = msg;
+        el.style.background = tipo === 'ok' ? '#004B87' : tipo === 'err' ? '#A32D2D' : '#854F0B';
+        el.style.color = 'white';
+        el.style.display = 'block';
+        setTimeout(() => { el.style.display = 'none'; }, 3000);
+      }
 
-        async function guardarConfiguracion() {
-            const config = {
-                lat_fija: parseFloat(document.getElementById('latFija').value),
-                lon_fija: parseFloat(document.getElementById('lonFija').value),
-                radio_metros: parseInt(document.getElementById('radioMetros').value)
-            };
-            await fetchAuth('/api/asistencia/configuracion', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(config) });
-            alert('Configuración guardada');
-        }
+      document.getElementById('fechaFiltro').value = new Date().toLocaleDateString('sv-SE', {timeZone:'America/Tijuana'});
 
-        function usarUbicacionActual() {
-            if (!navigator.geolocation) return alert('GPS no soportado');
-            navigator.geolocation.getCurrentPosition(pos => {
-                document.getElementById('latFija').value = pos.coords.latitude.toFixed(6);
-                document.getElementById('lonFija').value = pos.coords.longitude.toFixed(6);
-                alert('Coordenadas actualizadas');
+      async function cargarKpis() {
+        try {
+          const fecha = document.getElementById('fechaFiltro').value;
+          const res = await fetchAuth('/api/asistencia/registros' + (fecha ? '?fecha=' + fecha : ''));
+          if (!res.ok) return;
+          const data = await res.json();
+          const total = data.length;
+          const aprobados = data.filter(r => r.aprobado).length;
+          const rechazados = total - aprobados;
+          const tecnicos = new Set(data.map(r => r.username)).size;
+          const kpis = [
+            { val: total,      lbl: 'Registros',  color: '#004B87' },
+            { val: aprobados,  lbl: 'Aprobados',  color: '#3B6D11' },
+            { val: rechazados, lbl: 'Rechazados', color: '#A32D2D' },
+            { val: tecnicos,   lbl: 'Técnicos',   color: '#854F0B' },
+          ];
+          document.getElementById('asisKpis').innerHTML = kpis.map(k =>
+            '<div style="background:white;border:0.5px solid #e0ddd5;border-radius:12px;padding:14px 16px;border-top:3px solid ' + k.color + ';">' +
+            '<div style="font-size:26px;font-weight:600;color:' + k.color + ';font-family:DM Mono,monospace;">' + k.val + '</div>' +
+            '<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#aaa;margin-top:3px;">' + k.lbl + '</div>' +
+            '</div>'
+          ).join('');
+        } catch(e) {}
+      }
+
+      async function cargarConfiguracion() {
+        try {
+          const res = await fetchAuth('/api/asistencia/configuracion');
+          if (!res.ok) return;
+          const data = await res.json();
+          const cfg = data && data.config ? data.config : data;
+          if (cfg) {
+            if (cfg.lat_fija   !== undefined) document.getElementById('latFija').value    = cfg.lat_fija;
+            if (cfg.lon_fija   !== undefined) document.getElementById('lonFija').value    = cfg.lon_fija;
+            if (cfg.radio_metros !== undefined) document.getElementById('radioMetros').value = cfg.radio_metros;
+          }
+        } catch(e) {}
+      }
+
+      async function guardarConfiguracion() {
+        const config = {
+          lat_fija:     parseFloat(document.getElementById('latFija').value),
+          lon_fija:     parseFloat(document.getElementById('lonFija').value),
+          radio_metros: parseInt(document.getElementById('radioMetros').value)
+        };
+        const res = await fetchAuth('/api/asistencia/configuracion', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(config) });
+        toast(res.ok ? '✅ Configuración guardada' : '❌ Error al guardar', res.ok ? 'ok' : 'err');
+      }
+
+      function usarUbicacionActual() {
+        if (!navigator.geolocation) return toast('GPS no soportado en este dispositivo', 'warn');
+        navigator.geolocation.getCurrentPosition(pos => {
+          document.getElementById('latFija').value = pos.coords.latitude.toFixed(6);
+          document.getElementById('lonFija').value = pos.coords.longitude.toFixed(6);
+          toast('📍 Coordenadas actualizadas desde tu GPS', 'ok');
+        }, () => toast('No se pudo obtener la ubicación', 'err'));
+      }
+
+      async function generarQR() {
+        const lat   = parseFloat(document.getElementById('latFija').value);
+        const lon   = parseFloat(document.getElementById('lonFija').value);
+        const radio = parseInt(document.getElementById('radioMetros').value);
+        if (isNaN(lat) || isNaN(lon) || isNaN(radio)) { toast('Completa todos los campos de configuración', 'warn'); return; }
+        try {
+          await guardarConfiguracion();
+          const res = await fetchAuth('/api/asistencia/generar-qr');
+          const data = await res.json();
+          const qrContainer = document.getElementById('qrCanvas');
+          qrContainer.innerHTML = '';
+          if (typeof QRCode === 'undefined') {
+            await new Promise((resolve, reject) => {
+              const s = document.createElement('script');
+              s.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+              s.onload = resolve; s.onerror = reject;
+              document.head.appendChild(s);
             });
-        }
+          }
+          new QRCode(qrContainer, { text: data.qr_url, width: 200, height: 200, colorDark: '#002B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.L });
+          document.getElementById('qrLatLabel').textContent   = data.config.lat_fija;
+          document.getElementById('qrLonLabel').textContent   = data.config.lon_fija;
+          document.getElementById('qrRadioLabel').textContent = data.config.radio_metros;
+          document.getElementById('mapaLink').innerHTML =
+            '<a href="https://www.google.com/maps?q=' + data.config.lat_fija + ',' + data.config.lon_fija + '" target="_blank" ' +
+            'style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#004B87;font-weight:600;">' +
+            '<i class="ti ti-map-2" style="font-size:15px;"></i> Ver punto en Google Maps</a>';
+          document.getElementById('qrSection').style.display = 'block';
+        } catch(e) { toast('Error al generar el QR: ' + (e.message || ''), 'err'); }
+      }
 
-        async function generarQR() {
-            const lat = parseFloat(document.getElementById('latFija').value);
-            const lon = parseFloat(document.getElementById('lonFija').value);
-            const radio = parseInt(document.getElementById('radioMetros').value);
-            if (isNaN(lat) || isNaN(lon) || isNaN(radio)) {
-                alert('Completa todos los campos de configuración.');
-                return;
-            }
-            try {
-                await guardarConfiguracion();
-                const res = await fetchAuth('/api/asistencia/generar-qr');
-                const data = await res.json();
-                const qrContainer = document.getElementById('qrCanvas');
-                qrContainer.innerHTML = '';
-                if (typeof QRCode === 'undefined') {
-                    await new Promise((resolve, reject) => {
-                        const script = document.createElement('script');
-                        script.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
-                        script.onload = resolve;
-                        script.onerror = reject;
-                        document.head.appendChild(script);
-                    });
-                }
-                new QRCode(qrContainer, {
-                    text: data.qr_url,
-                    width: 220,
-                    height: 220,
-                    colorDark: '#002B5B',
-                    colorLight: '#ffffff',
-                    correctLevel: QRCode.CorrectLevel.L
-                });
-                document.getElementById('qrLatLabel').textContent = data.config.lat_fija;
-                document.getElementById('qrLonLabel').textContent = data.config.lon_fija;
-                document.getElementById('qrRadioLabel').textContent = data.config.radio_metros;
-                document.getElementById('mapaLink').innerHTML = '<a href="https://www.google.com/maps?q=' + data.config.lat_fija + ',' + data.config.lon_fija + '" target="_blank" style="color:#0057A8;">🗺 Ver en Google Maps</a>';
-                document.getElementById('qrSection').style.display = 'block';
-                // QR permanente — sin temporizador
-            } catch(e) {
-                console.error('Error detallado:', e);
-                alert('Error al generar el QR: ' + (e.message || 'Error desconocido'));
-            }
-        }
+      async function cargarRegistros() {
+        const fecha = document.getElementById('fechaFiltro').value;
+        const tabla = document.getElementById('tablaAsistencia');
+        tabla.innerHTML = '<div class="asis-empty"><i class="ti ti-loader" style="font-size:22px;"></i><br>Cargando...</div>';
+        try {
+          const res = await fetchAuth('/api/asistencia/registros' + (fecha ? '?fecha=' + fecha : ''));
+          if (!res.ok) { tabla.innerHTML = '<div class="asis-empty">Error al cargar registros.</div>'; return; }
+          const data = await res.json();
+          if (!data.length) { tabla.innerHTML = '<div class="asis-empty"><i class="ti ti-calendar-off" style="font-size:28px;display:block;margin-bottom:8px;"></i>Sin registros para esta fecha.</div>'; return; }
+          let html = '<table class="asis-table"><thead><tr><th>Técnico</th><th>Fecha</th><th>Hora check-in</th><th>Tipo</th><th>Distancia</th><th>Estado</th></tr></thead><tbody>';
+          data.forEach(r => {
+            const ok     = r.aprobado;
+            const badge  = ok
+              ? '<span class="asis-badge asis-badge-ok"><i class="ti ti-circle-check"></i> Aprobado</span>'
+              : '<span class="asis-badge asis-badge-err"><i class="ti ti-map-pin-off"></i> Rechazado</span>';
+            const dist   = r.distancia_metros ? Math.round(r.distancia_metros).toLocaleString('es-MX') + ' m' : '—';
+            const tipo   = r.tipo ? (r.tipo === 'salida' ? 'Salida' : 'Entrada') : '—';
+            html += '<tr>' +
+              '<td><b>' + r.username + '</b></td>' +
+              '<td style="font-family:monospace;">' + r.fecha + '</td>' +
+              '<td style="font-family:monospace;">' + (r.hora_checkin || r.hora || '—') + '</td>' +
+              '<td>' + tipo + '</td>' +
+              '<td style="font-family:monospace;">' + dist + '</td>' +
+              '<td>' + badge + '</td>' +
+              '</tr>';
+          });
+          html += '</tbody></table>';
+          tabla.innerHTML = html;
+          cargarKpis();
+        } catch(e) { tabla.innerHTML = '<div class="asis-empty">Error de conexión.</div>'; }
+      }
 
-        async function cargarRegistros() {
-            const fecha = document.getElementById('fechaFiltro').value;
-            try {
-                const res = await fetchAuth('/api/asistencia/registros' + (fecha ? '?fecha=' + fecha : ''));
-                if (!res.ok) { document.getElementById('tablaAsistencia').innerHTML = '<p>Error al cargar registros.</p>'; return; }
-                const data = await res.json();
-                if (!data.length) { document.getElementById('tablaAsistencia').innerHTML = '<p>Sin registros para esta fecha.</p>'; return; }
-                let html = '<table class="data-table"><thead><tr><th>Técnico</th><th>Fecha</th><th>Hora Check-in</th><th>Distancia</th><th>Estado</th></tr></thead><tbody>';
-                data.forEach(r => {
-                    const estado = r.aprobado ? '<span class="badge" style="background:#16a34a;color:white;">✅ Aprobado</span>' : '<span class="badge" style="background:#dc2626;color:white;">❌ Rechazado</span>';
-                    html += '<tr><td><b>' + r.username + '</b></td><td>' + r.fecha + '</td><td>' + r.hora_checkin + '</td><td>' + (r.distancia_metros ? r.distancia_metros.toFixed(0) + ' m' : '—') + '</td><td>' + estado + '</td></tr>';
-                });
-                html += '</tbody></table>';
-                document.getElementById('tablaAsistencia').innerHTML = html;
-            } catch(e) { document.getElementById('tablaAsistencia').innerHTML = '<p>Error de conexión.</p>'; }
-        }
+      function exportarCSV() {
+        const fecha = document.getElementById('fechaFiltro').value;
+        fetchAuth('/api/asistencia/registros' + (fecha ? '?fecha=' + fecha : '')).then(r => r.json()).then(data => {
+          if (!data.length) return toast('Sin datos para exportar', 'warn');
+          const headers = ['Técnico','Fecha','Hora Check-in','Tipo','Distancia (m)','Aprobado'];
+          const rows = data.map(r => [r.username, r.fecha, r.hora_checkin || r.hora || '', r.tipo || '', r.distancia_metros ? Math.round(r.distancia_metros) : '', r.aprobado ? 'Sí' : 'No']);
+          const csv = [headers, ...rows].map(r => r.join(',')).join('\\n');
+          const blob = new Blob([csv], { type: 'text/csv' });
+          const url  = URL.createObjectURL(blob);
+          const a    = document.createElement('a');
+          a.href = url; a.download = 'asistencia_' + (fecha || 'all') + '.csv'; a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          toast('✅ CSV exportado', 'ok');
+        });
+      }
 
-        function exportarCSV() {
-            const fecha = document.getElementById('fechaFiltro').value;
-            fetchAuth('/api/asistencia/registros' + (fecha ? '?fecha=' + fecha : '')).then(res => res.json()).then(data => {
-                if (!data.length) return alert('Sin datos para exportar');
-                const headers = ['Técnico','Fecha','Hora Check-in','Distancia (m)','Aprobado'];
-                const rows = data.map(r => [r.username, r.fecha, r.hora_checkin, r.distancia_metros ? r.distancia_metros.toFixed(0) : '', r.aprobado ? 'Sí' : 'No']);
-                const csv = [headers, ...rows].map(r => r.join(',')).join('\\n');
-                const blob = new Blob([csv], { type: 'text/csv' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a'); a.href = url; a.download = 'asistencia_' + (fecha || 'all') + '.csv'; a.click();
-                setTimeout(() => URL.revokeObjectURL(url), 1000);
-            });
-        }
-
-        cargarConfiguracion();
+      cargarConfiguracion();
+      cargarRegistros();
     </script>
     """
-    )
     return HTMLResponse(content=pagina_con_menu("📍 Control de Asistencia", contenido, "asistencia"))
 
 
 @router.get("/app/checkin", response_class=HTMLResponse)
 async def checkin_tecnico():
-    return HTMLResponse(content=pagina_con_menu("📍 Registrar Asistencia", get_checkin_template(), "checkin"))
+    html = get_checkin_template()
+    init_script = """
+    <script>
+        window.__ct_username = window.username || '';
+        if (typeof window.fetchAuth === 'function') {
+            window.fetchAuth('/api/asistencia/configuracion').then(r => r.json()).then(data => {
+                const cfg = data && data.config ? data.config : data;
+                window.__ct_radio = cfg && cfg.radio_metros ? cfg.radio_metros : 200;
+            }).catch(() => { window.__ct_radio = 200; });
+        }
+    </script>
+    """
+    html = html.replace('</body>', init_script + '</body>')
+    return HTMLResponse(content=pagina_con_menu("📍 Registrar Asistencia", html, "checkin"))
 
 
 # ------------------------------------------------------------
