@@ -1330,14 +1330,125 @@ async def asistencia_admin():
 async def checkin_tecnico():
     html = get_checkin_template()
     init_script = """
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
     <script>
-        window.__ct_username = window.username || '';
+    // Esperar a que pagina_con_menu inicialice window.username desde localStorage
+    window.addEventListener('DOMContentLoaded', function() {
+        window.__ct_username = localStorage.getItem('username') || '';
         if (typeof window.fetchAuth === 'function') {
             window.fetchAuth('/api/asistencia/configuracion').then(r => r.json()).then(data => {
                 const cfg = data && data.config ? data.config : data;
                 window.__ct_radio = cfg && cfg.radio_metros ? cfg.radio_metros : 200;
             }).catch(() => { window.__ct_radio = 200; });
+            // Cargar datos ahora que username está disponible
+            if (typeof cargarHorario  === 'function') cargarHorario();
+            if (typeof cargarRegistros === 'function') cargarRegistros();
         }
+    });
+
+    // ── Lógica real de escaneo QR + registro de checkin ──────────────────────
+    let _qrStream = null;
+    let _qrAnimFrame = null;
+    let _qrTipo = 'entrada';
+
+    window.abrirModalQR = function(tipo) {
+        _qrTipo = tipo || 'entrada';
+        document.getElementById('ct-modal-overlay').classList.add('open');
+        _iniciarCamara();
+    };
+
+    window.cerrarModalQR = function() {
+        document.getElementById('ct-modal-overlay').classList.remove('open');
+        _detenerCamara();
+    };
+
+    function _iniciarCamara() {
+        const video = document.getElementById('ct-qr-video');
+        if (!video) return;
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+            .then(stream => {
+                _qrStream = stream;
+                video.srcObject = stream;
+                video.setAttribute('playsinline', true);
+                video.play();
+                _qrAnimFrame = requestAnimationFrame(_tickQR);
+            })
+            .catch(err => {
+                console.warn('Cámara no disponible:', err);
+                // Fallback: registrar con GPS directo sin QR
+                _registrarConGPS();
+            });
+    }
+
+    function _detenerCamara() {
+        if (_qrAnimFrame) { cancelAnimationFrame(_qrAnimFrame); _qrAnimFrame = null; }
+        if (_qrStream) { _qrStream.getTracks().forEach(t => t.stop()); _qrStream = null; }
+    }
+
+    function _tickQR() {
+        const video = document.getElementById('ct-qr-video');
+        if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) {
+            _qrAnimFrame = requestAnimationFrame(_tickQR);
+            return;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width  = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+        if (code && code.data && (code.data.includes('/app/checkin') || code.data.includes('carrier'))) {
+            _detenerCamara();
+            document.getElementById('ct-modal-overlay').classList.remove('open');
+            _registrarConGPS();
+        } else {
+            _qrAnimFrame = requestAnimationFrame(_tickQR);
+        }
+    }
+
+    function _registrarConGPS() {
+        const tipo = _qrTipo;
+        const btn  = document.querySelector('.ct-btn-primary');
+        if (btn) { btn.disabled = true; btn.textContent = 'Registrando...'; }
+
+        if (!navigator.geolocation) {
+            alert('Tu dispositivo no soporta GPS. No se puede registrar asistencia.');
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-qrcode"></i> Escanear QR y registrar ' + tipo; }
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            pos => _enviarRegistro(tipo, pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy),
+            err => {
+                alert('No se pudo obtener tu ubicación GPS. Activa el GPS e intenta de nuevo.');
+                if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-qrcode"></i> Escanear QR y registrar ' + tipo; }
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+    }
+
+    async function _enviarRegistro(tipo, lat, lon, accuracy) {
+        try {
+            const res  = await window.fetchAuth('/api/asistencia/registrar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tipo, lat, lon, accuracy })
+            });
+            const data = await res.json();
+            if (data.aprobado) {
+                alert('✅ ' + (tipo === 'entrada' ? 'Entrada' : 'Salida') + ' registrada correctamente a las ' + data.hora);
+            } else {
+                alert('⚠️ Registro guardado pero fuera del perímetro.\\n' + data.mensaje);
+            }
+            // Recargar registros
+            if (typeof cargarRegistros === 'function') cargarRegistros();
+            if (typeof cargarHorario   === 'function') cargarHorario();
+        } catch(e) {
+            alert('Error al registrar: ' + e.message);
+        }
+        const btn = document.querySelector('.ct-btn-primary');
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-qrcode"></i> Escanear QR y registrar entrada'; }
+    }
     </script>
     """
     html = html.replace('</body>', init_script + '</body>')
