@@ -3,6 +3,7 @@ from pydantic import BaseModel
 import pymysql
 from db import get_db_connection
 from datetime import datetime
+import os
 
 router = APIRouter(
     prefix="/asistencia",
@@ -22,11 +23,9 @@ def obtener_registros(fecha: str = Query(None)):
     try:
         with connection.cursor(pymysql.cursors.DictCursor) as cursor:
             if fecha:
-                sql = "SELECT * FROM registros_asistencia WHERE DATE(fecha) = %s ORDER BY fecha DESC"
-                cursor.execute(sql, (fecha,))
+                cursor.execute("SELECT * FROM registros_asistencia WHERE DATE(fecha) = %s ORDER BY fecha DESC", (fecha,))
             else:
-                sql = "SELECT * FROM registros_asistencia ORDER BY fecha DESC"
-                cursor.execute(sql)
+                cursor.execute("SELECT * FROM registros_asistencia ORDER BY fecha DESC")
             registros = cursor.fetchall()
             for r in registros:
                 if 'fecha' in r and isinstance(r['fecha'], datetime):
@@ -67,11 +66,15 @@ def guardar_configuracion(config: GeofenceConfig):
             resultado = cursor.fetchone()
             count = resultado.get('count', 0) if isinstance(resultado, dict) else resultado[0]
             if count > 0:
-                sql = "UPDATE configuracion_geocerca SET lat_fija = %s, lon_fija = %s, radio_metros = %s"
-                cursor.execute(sql, (config.lat_fija, config.lon_fija, config.radio_metros))
+                cursor.execute(
+                    "UPDATE configuracion_geocerca SET lat_fija = %s, lon_fija = %s, radio_metros = %s",
+                    (config.lat_fija, config.lon_fija, config.radio_metros)
+                )
             else:
-                sql = "INSERT INTO configuracion_geocerca (lat_fija, lon_fija, radio_metros) VALUES (%s, %s, %s)"
-                cursor.execute(sql, (config.lat_fija, config.lon_fija, config.radio_metros))
+                cursor.execute(
+                    "INSERT INTO configuracion_geocerca (lat_fija, lon_fija, radio_metros) VALUES (%s, %s, %s)",
+                    (config.lat_fija, config.lon_fija, config.radio_metros)
+                )
             connection.commit()
             return {"status": "success", "message": "Geocerca actualizada correctamente"}
     except Exception as e:
@@ -83,10 +86,6 @@ def guardar_configuracion(config: GeofenceConfig):
 
 @router.get("/generar-qr")
 def generar_qr():
-    """
-    Devuelve la URL del QR de check-in y la configuración activa de geocerca.
-    El frontend usa data.qr_url y data.config.{lat_fija, lon_fija, radio_metros}
-    """
     connection = get_db_connection()
     if not connection:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="No hay conexión con la base de datos")
@@ -96,16 +95,9 @@ def generar_qr():
             config = cursor.fetchone()
             if not config:
                 config = {"lat_fija": 32.471823, "lon_fija": -116.798104, "radio_metros": 200}
-
-        # La URL que el técnico escaneará para hacer check-in
-        import os
         base_url = os.getenv("APP_BASE_URL", "").rstrip("/")
         qr_url = f"{base_url}/app/checkin"
-
-        return {
-            "qr_url": qr_url,
-            "config": config
-        }
+        return {"qr_url": qr_url, "config": config}
     except Exception as e:
         print(f"Error en generar_qr: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
