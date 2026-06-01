@@ -56,6 +56,15 @@ def get_stats_tecnicos(current_user=Depends(verify_token)):
 
 
 # ── Reporte Excel completo (5 hojas) ──────────────────────────────────────────
+
+def _hhmm_to_min_dash(hhmm) -> int:
+    """Convierte HH:MM a minutos — usado en reporte Excel."""
+    try:
+        h, m = str(hhmm)[:5].split(":")
+        return int(h) * 60 + int(m)
+    except Exception:
+        return 0
+
 @router.get("/reporte-excel")
 def reporte_excel(current_user=Depends(verify_token)):
     try:
@@ -259,8 +268,7 @@ def reporte_excel(current_user=Depends(verify_token)):
             horas_trab = "—"
             if pares[key].get("entrada") and pares[key].get("salida"):
                 try:
-                    def _min(t): h,m=str(t)[:5].split(":"); return int(h)*60+int(m)
-                    diff = _min(pares[key]["salida"]) - _min(pares[key]["entrada"])
+                    diff = _hhmm_to_min_dash(pares[key]["salida"]) - _hhmm_to_min_dash(pares[key]["entrada"])
                     horas_trab = f"{round(max(0,diff)/60,1)}h"
                 except Exception:
                     horas_trab = "—"
@@ -351,8 +359,7 @@ def reporte_excel(current_user=Depends(verify_token)):
                 fecha_key = str(e["fecha"])
                 if fecha_key in salidas_map and e.get("hora_checkin"):
                     try:
-                        def _min2(t): hh,mm=str(t)[:5].split(":"); return int(hh)*60+int(mm)
-                        diff = _min2(salidas_map[fecha_key]) - _min2(e["hora_checkin"])
+                        diff = _hhmm_to_min_dash(salidas_map[fecha_key]) - _hhmm_to_min_dash(e["hora_checkin"])
                         horas_total += max(0, diff) / 60
                     except Exception:
                         pass
