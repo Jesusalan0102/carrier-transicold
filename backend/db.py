@@ -4,7 +4,6 @@ from contextlib import contextmanager
 from typing import List, Dict, Any, Optional
 import os
 from dotenv import load_dotenv
-
 load_dotenv()
 
 # Ruta del certificado
@@ -23,7 +22,6 @@ if os.path.exists(CERT_PATH):
         "ssl": {"ca": CERT_PATH}
     }
 else:
-    # Si no hay certificado, conectar sin SSL (solo para desarrollo)
     DB_CONFIG = {
         "host": os.getenv("DB_HOST"),
         "port": int(os.getenv("DB_PORT", 4000)),
@@ -42,6 +40,10 @@ def get_db():
         yield conn
     finally:
         conn.close()
+
+def get_db_connection():
+    """Retorna una conexión directa a la base de datos"""
+    return pymysql.connect(**DB_CONFIG)
 
 def execute_read(sql: str, params: tuple = ()) -> List[Dict[str, Any]]:
     """Ejecuta una consulta SELECT y retorna los resultados como lista de diccionarios"""
