@@ -1,5 +1,17 @@
 {
-  "deploy": {
-    "appsBuildDir": "backend"
+  "build": {
+    "type": "custom"
+  },
+  "run": {
+    "main": "main:app",
+    "type": "uvicorn",
+    "args": [
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "9000",
+      "--workers",
+      "1"
+    ]
   }
 }
