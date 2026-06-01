@@ -6,7 +6,7 @@ Adaptada 100% a la paleta de colores corporativa y datos reales de Carrier Trans
 
 ASISTENCIA_STYLES = """
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght=300;400;500;600;700&display=swap');
     body {
         font-family: 'Inter', sans-serif;
     }
@@ -112,7 +112,6 @@ const CONFIG = {
   fecha: new Date().toISOString().split('T')[0]
 };
 
-// Cargar registros reales del servidor y pintarlos con estilos profesionales
 async function cargarHistorial() {
   const contenedor = document.getElementById('registros');
   try {
@@ -203,14 +202,15 @@ function inicializarModulo() {
   cargarHistorial();
 }
 
-inicializarMódulo();
+// Llamada corregida sin tildes/acentos extraños
+inicializarModulo();
 </script>
 </body>
 </html>
 """
 
 def get_checkin_template(username="usuario", fecha_hoy="lunes 1 jun 2026"):
-    """Esta función es requerida por web_router.py"""
+    """Función exportable requerida explícitamente por web_router.py"""
     html = ASISTENCIA_HTML.replace("{{ username }}", username)
     html = html.replace("{{ fecha_hoy }}", fecha_hoy)
     return ASISTENCIA_STYLES + html
