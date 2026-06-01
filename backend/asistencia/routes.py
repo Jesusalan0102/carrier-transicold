@@ -1,209 +1,46 @@
-"""
-backend/asistencia/routes.py
-Rutas de Asistencia - Versión Mejorada y Corregida (Junio 2026)
-Adaptado para inyectar dinámicamente los motivos y distancias estructuradas de geofencing
-"""
-
-import math
-import os
-from datetime import datetime
-from typing import Optional
-
-import pytz
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-
-from db import execute_read, execute_write
-from auth import verify_token
-
-router = APIRouter(prefix="/api/asistencia", tags=["asistencia"])
-
-TZ_TJ = pytz.timezone("America/Tijuana")
-
-# ── Schemas ────────────────────────────────────────────────────────────────────
-class CheckinPayload(BaseModel):
-    username: str
-    tipo: str
-    fecha: str
-    lat: Optional[float] = None
-    lon: Optional[float] = None
-    precision_gps: Optional[float] = None
-    selfie_url: Optional[str] = None
-
-class ConfigPayload(BaseModel):
-    lat_fija: float
-    lon_fija: float
-    radio_metros: int = 300
-
-# ── Helpers ────────────────────────────────────────────────────────────────────
-def _distancia_metros(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Calcula la distancia de círculo gran círculo usando la fórmula de Haversine"""
-    R = 6371000  # Radio de la Tierra en metros
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlam = math.radians(lon2 - lon1)
-    
-    a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam/2)**2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return R * c
-
-def _hora_tj() -> str:
-    return datetime.now(TZ_TJ).strftime("%H:%M")
-
-def _hhmm_to_min(hhmm: str) -> int:
-    if not hhmm:
-        return 0
-    try:
-        h, m = map(int, hhmm.split(":")[:2])
-        return h * 60 + m
-    except ValueError:
-        return 0
-
-def _get_config():
-    rows = execute_read("SELECT lat_fija, lon_fija, radio_metros FROM asistencia_config LIMIT 1")
-    if rows and isinstance(rows[0], dict):
-        return rows[0]
-    elif rows and isinstance(rows[0], (tuple, list)):
-        return {"lat_fija": rows[0][0], "lon_fija": rows[0][1], "radio_metros": rows[0][2]}
-    return {"lat_fija": 32.5027, "lon_fija": -117.0037, "radio_metros": 300}
-
-# ── Endpoints ─────────────────────────────────────────────────────────────────
-
-@router.get("/registros/{username}/{fecha}")
-def obtener_registros_dia(username: str, fecha: str, current_user=Depends(verify_token)):
-    """
-    Retorna los registros del empleado para pintarlos dinámicamente en la interfaz limpia.
-    """
-    query = """
-        SELECT tipo, hora_checkin, distancia_metros, aprobado, motivo_rechazo 
-        FROM asistencia_registros 
-        WHERE username = %s AND fecha = %s 
-        ORDER BY hora_checkin DESC
-    """
-    rows = execute_read(query, (username, fecha))
-    return {"ok": True, "registros": rows or []}
-
-
-@router.post("/checkin")
-def checkin(payload: CheckinPayload, current_user=Depends(verify_token)):
-    tipo = payload.tipo.lower().strip()
-    if tipo not in ("entrada", "salida"):
-        raise HTTPException(status_code=400, detail="Tipo debe ser 'entrada' o 'salida'")
-
-    fecha = payload.fecha
-
-    # Validar duplicados de intentos Exitosos (permite reintentar si el previo fue rechazado)
-    existente = execute_read(
-        "SELECT id FROM asistencia_registros WHERE username=%s AND fecha=%s AND tipo=%s AND aprobado = 1",
-        (payload.username, fecha, tipo)
-    )
-    if existente:
-        raise HTTPException(status_code=400, detail=f"Ya cuentas con una {tipo} válida registrada hoy.")
-
-    # Validar flujo entrada → salida
-    if tipo == "salida":
-        entrada = execute_read(
-            "SELECT id FROM asistencia_registros WHERE username=%s AND fecha=%s AND tipo='entrada' AND aprobado = 1",
-            (payload.username, fecha)
-        )
-        if not entrada:
-            raise HTTPException(status_code=400, detail="Debes registrar tu entrada aprobada primero.")
-
-    # ── Validación de Geofencing (Perímetro) ──────────────────────────────────
-    cfg = _get_config()
-    distancia_m = None
-    aprobado = True
-    motivo_rechazo = None
-
-    if payload.lat is not None and payload.lon is not None:
-        distancia_m = _distancia_metros(payload.lat, payload.lon, float(cfg["lat_fija"]), float(cfg["lon_fija"]))
-        aprobado = distancia_m <= float(cfg["radio_metros"])
-        if not aprobado:
-            distancia_km = round(distancia_m / 1000, 1)
-            if distancia_m >= 1000:
-                motivo_rechazo = f"A {distancia_km:,} km de la sucursal"
-            else:
-                motivo_rechazo = f"A {round(distancia_m)} m de la sucursal"
-    else:
-        aprobado = False
-        motivo_rechazo = "Coordenadas GPS no recibidas"
-
-    hora_actual = _hora_tj()
-    retardo_min = 0
-    horas_trabajadas = None
-
-    # Calcular retraso (entrada)
-    if tipo == "entrada":
-        try:
-            horario = execute_read(
-                "SELECT hora_entrada FROM horarios WHERE username=%s AND fecha=%s LIMIT 1",
-                (payload.username, fecha)
-            )
-            if horario:
-                # Compatibilidad segura si la fila es un diccionario o una tupla
-                hora_entrada_raw = horario[0].get("hora_entrada") if isinstance(horario[0], dict) else horario[0][0]
-                if hora_entrada_raw:
-                    hora_prog = _hhmm_to_min(str(hora_entrada_raw))
-                    hora_real = _hhmm_to_min(hora_actual)
-                    retardo_min = max(0, hora_real - hora_prog)
-        except Exception:
-            retardo_min = 0
-
-    # Calcular horas de jornada (salida)
-    if tipo == "salida" and aprobado:
-        try:
-            ent_reg = execute_read(
-                "SELECT hora_checkin FROM asistencia_registros WHERE username=%s AND fecha=%s AND tipo='entrada' AND aprobado = 1",
-                (payload.username, fecha)
-            )
-            if ent_reg:
-                hora_checkin_raw = ent_reg[0].get("hora_checkin") if isinstance(ent_reg[0], dict) else ent_reg[0][0]
-                if hora_checkin_raw:
-                    entrada_min = _hhmm_to_min(str(hora_checkin_raw))
-                    salida_min = _hhmm_to_min(hora_actual)
-                    horas_trabajadas = round(max(0, (salida_min - entrada_min) / 60), 1)
-        except Exception:
-            horas_trabajadas = None
-
-    # ── Almacenamiento Seguro en DB ───────────────────────────────────────────
-    distancia_final = round(distancia_m, 1) if distancia_m is not None else None
-    
-    try:
-        execute_write(
-            """INSERT INTO asistencia_registros 
-               (username, tipo, fecha, hora_checkin, lat, lon, precision_gps, 
-                distancia_metros, aprobado, retardo_min, selfie_url, motivo_rechazo)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (
-                payload.username, tipo, fecha, hora_actual,
-                payload.lat, payload.lon, payload.precision_gps,
-                distancia_final, 1 if aprobado else 0, retardo_min,
-                payload.selfie_url, motivo_rechazo
-            )
-        )
-    except Exception:
-        # Fallback por si el esquema SQL de producción no tiene la columna motivo_rechazo de forma temporal
-        execute_write(
-            """INSERT INTO asistencia_registros 
-               (username, tipo, fecha, hora_checkin, lat, lon, precision_gps, 
-                distancia_metros, aprobado, retardo_min, selfie_url)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (
-                payload.username, tipo, fecha, hora_actual,
-                payload.lat, payload.lon, payload.precision_gps,
-                distancia_final, 1 if aprobado else 0, retardo_min,
-                payload.selfie_url
-            )
-        )
-
-    return {
-        "ok": True,
-        "tipo": tipo,
-        "hora_registro": hora_actual,
-        "aprobado": aprobado,
-        "distancia_metros": distancia_final,
-        "motivo_rechazo": motivo_rechazo,
-        "retardo_min": retardo_min,
-        "horas_trabajadas": horas_trabajadas
+// BUSCA LA FUNCIÓN QUE CARGA LA CONFIGURACIÓN Y REEMPLÁZALA POR ESTA VERSIÓN COMPLETA:
+async function cargarConfiguracionGeocerca() {
+    try {
+        const res = await window.fetchAuth('/api/asistencia/configuracion');
+        const data = await res.json();
+        
+        // Saneamiento definitivo: Si data es null, undefined o no trae la propiedad config
+        const config = data && data.config ? data.config : { lat_fija: 32.5027, lon_fija: -117.0037, radio_metros: 200 };
+        
+        // Pintar de forma segura en los inputs del formulario administrativo sin colapsar
+        if(document.getElementById('lat_fija')) document.getElementById('lat_fija').value = config.lat_fija ?? 32.5027;
+        if(document.getElementById('lon_fija')) document.getElementById('lon_fija').value = config.lon_fija ?? -117.0037;
+        if(document.getElementById('radio_metros')) document.getElementById('radio_metros').value = config.radio_metros ?? 200;
+        
+        // Guardar en scope global por seguridad para el generador del QR
+        window.currentGeocercaConfig = config;
+        
+    } catch (error) {
+        console.warn("La tabla de configuración está vacía o el backend no responde. Inicializando valores de Tijuana por defecto:", error);
+        
+        // Valores de respaldo para que la app siga operativa al 100%
+        window.currentGeocercaConfig = { lat_fija: 32.5027, lon_fija: -117.0037, radio_metros: 200 };
+        
+        if(document.getElementById('lat_fija')) document.getElementById('lat_fija').value = 32.5027;
+        if(document.getElementById('lon_fija')) document.getElementById('lon_fija').value = -117.0037;
+        if(document.getElementById('radio_metros')) document.getElementById('radio_metros').value = 200;
     }
+}
+
+// MODIFICA TU BOTÓN DE GENERAR QR PARA USAR EL VALOR PROTEGIDO:
+function generarQRAsistencia() {
+    try {
+        // En lugar de leer directo de un objeto propenso a ser undefined, usamos la variable blindada
+        const lat = window.currentGeocercaConfig?.lat_fija || 32.5027;
+        const lon = window.currentGeocercaConfig?.lon_fija || -117.0037;
+        const radio = window.currentGeocercaConfig?.radio_metros || 200;
+        
+        // Tu lógica actual para armar el QR...
+        const urlQR = `https://tu-dominio.com/app/checkin?lat=${lat}&lon=${lon}&radius=${radio}`;
+        console.log("QR Generado de forma segura:", urlQR);
+        
+        // Renderizar el QR usando tu librería...
+    } catch(err) {
+        alert("Error al generar el QR: " + err.message);
+    }
+}
