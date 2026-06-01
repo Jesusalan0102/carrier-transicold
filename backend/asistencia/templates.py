@@ -101,31 +101,58 @@ ASISTENCIA_HTML = """
     <h3 class="uppercase text-[11px] tracking-widest text-slate-400 font-bold mb-3">REGISTROS DE HOY</h3>
     
     <div id="registros" class="space-y-3">
-      <div class="flex items-center justify-between p-3.5 bg-rose-50 rounded-xl border border-rose-200 shadow-sm transition-all">
-        <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-xl bg-rose-100 flex items-center justify-center text-rose-600 text-xs">
-            <i class="fa-solid fa-xmark text-sm"></i>
-          </div>
-          <div>
-            <p class="text-xs font-bold text-slate-800">Entrada</p>
-            <p class="text-[11px] text-rose-600 font-medium mt-0.5 flex items-center gap-1">
-              <span>📍</span> 19,522 m del punto fijo
-            </p>
-          </div>
-        </div>
-        <div class="text-right">
-          <p class="text-xs font-bold text-slate-700">08:47</p>
-          <span class="inline-block text-[10px] bg-rose-200 text-rose-800 font-bold px-2 py-0.5 rounded-md mt-1 border border-rose-300">
-            Rechazado
-          </span>
-        </div>
       </div>
-    </div>
   </div>
 
 </div>
 
 <script>
+const CONFIG = {
+  username: "{{ username }}",
+  fecha: new Date().toISOString().split('T')[0]
+};
+
+// Cargar registros reales del servidor y pintarlos con estilos profesionales
+async function cargarHistorial() {
+  const contenedor = document.getElementById('registros');
+  try {
+    const response = await fetch(`/api/asistencia/registros/${CONFIG.username}/${CONFIG.fecha}`);
+    const data = await response.json();
+    
+    if (!data.registros || data.registros.length === 0) {
+      contenedor.innerHTML = `<p class="text-xs text-slate-400 text-center py-4 font-medium">No hay registros guardados el día de hoy.</p>`;
+      return;
+    }
+    
+    contenedor.innerHTML = data.registros.map(reg => {
+      const esAprobado = reg.aprobado === 1 || reg.aprobado === true;
+      return `
+        <div class="flex items-center justify-between p-3.5 ${esAprobado ? 'bg-emerald-50/60 border-emerald-200' : 'bg-rose-50 border-rose-200'} rounded-xl border shadow-sm transition-all">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl ${esAprobado ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'} flex items-center justify-center text-xs font-bold">
+              <i class="${esAprobado ? 'fa-solid fa-check' : 'fa-solid fa-xmark'} text-sm"></i>
+            </div>
+            <div>
+              <p class="text-xs font-bold text-slate-800 capitalize">${reg.tipo}</p>
+              <p class="text-[11px] ${esAprobado ? 'text-emerald-600' : 'text-rose-600'} font-medium mt-0.5 flex items-center gap-1">
+                <span>📍</span> ${esAprobado ? 'Dentro de zona de trabajo' : (reg.motivo_rechazo || 'Fuera de rango')}
+              </p>
+            </div>
+          </div>
+          <div class="text-right">
+            <p class="text-xs font-bold text-slate-700">${reg.hora_checkin}</p>
+            <span class="inline-block text-[10px] ${esAprobado ? 'bg-emerald-200 text-emerald-800 border-emerald-300' : 'bg-rose-200 text-rose-800 border-rose-300'} font-bold px-2 py-0.5 rounded-md mt-1 border">
+              ${esAprobado ? 'Aprobado' : 'Rechazado'}
+            </span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (error) {
+    contenedor.innerHTML = `<p class="text-xs text-rose-500 text-center py-2">Error al sincronizar el historial.</p>`;
+  }
+}
+
 async function registrarAsistencia() {
   const btn = document.getElementById('btn-registrar');
   btn.disabled = true;
@@ -138,9 +165,9 @@ async function registrarAsistencia() {
     }));
 
     const payload = {
-      username: "{{ username }}",
+      username: CONFIG.username,
       tipo: "entrada",
-      fecha: new Date().toISOString().split('T')[0],
+      fecha: CONFIG.fecha,
       lat: pos.coords.latitude,
       lon: pos.coords.longitude,
       precision_gps: pos.coords.accuracy
@@ -157,27 +184,26 @@ async function registrarAsistencia() {
     if (data.aprobado) {
       alert(`✅ Entrada registrada correctamente a las ${data.hora_registro}`);
     } else {
-      alert(`❌ Rechazado: ${data.motivo_rechazo || 'Error de perímetro'}`);
+      alert(`❌ Rechazado: ${data.motivo_rechazo || 'Fuera de rango'}`);
     }
-    location.reload();
+    cargarHistorial();
   } catch (e) {
-    alert("Error al obtener coordenadas GPS. Verifica los permisos de tu navegador.");
+    alert("Error al obtener coordenadas GPS. Verifica los permisos de ubicación en tu dispositivo.");
   } finally {
     btn.disabled = false;
     btn.innerHTML = `<i class="fas fa-qrcode"></i> Escanear QR y registrar entrada`;
   }
 }
 
-// Mantener el reloj sincronizado con el sistema local de Tijuana
-function actualizarRelojes() {
+function inicializarModulo() {
   const opciones = { hour: '2-digit', minute: '2-digit', hour12: false };
   const horaActualStr = new Date().toLocaleTimeString('es-MX', opciones);
-  
   if(document.getElementById('hora-actual')) document.getElementById('hora-actual').textContent = horaActualStr;
   if(document.getElementById('hora-gps')) document.getElementById('hora-gps').textContent = horaActualStr;
+  cargarHistorial();
 }
 
-actualizarRelojes();
+inicializarMódulo();
 </script>
 </body>
 </html>
