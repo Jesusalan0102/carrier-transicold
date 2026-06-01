@@ -13,5 +13,8 @@
       "--workers",
       "1"
     ]
+  },
+  "instance": {
+    "maxMemory": 512
   }
 }
