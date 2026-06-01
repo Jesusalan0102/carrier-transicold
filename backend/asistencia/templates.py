@@ -1,4 +1,21 @@
-<!DOCTYPE html>
+# -*- coding: utf-8 -*-
+
+# Estilos CSS de respaldo reutilizables en tu aplicación
+ASISTENCIA_STYLES = """
+<style>
+    .brand-blue { background-color: #004B87; }
+    .brand-dark { background-color: #0A2540; }
+    .text-brand { color: #004B87; }
+    .bg-gray-custom { background-color: #F4F4F2; }
+</style>
+"""
+
+def get_checkin_template() -> str:
+    """
+    Retorna el diseño HTML adaptado para la interfaz profesional e 
+    institucional de Carrier Transicold.
+    """
+    return """<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -31,7 +48,9 @@
         <div class="flex items-center justify-between border-b border-gray-200 pb-4">
             <div class="flex items-center space-x-3">
                 <div class="brand-blue text-white w-12 h-12 rounded-full flex items-center justify-center shadow-sm">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
                 </div>
                 <div>
                     <h1 class="text-xl font-semibold text-gray-900 tracking-tight">Registrar asistencia</h1>
@@ -51,7 +70,7 @@
             </div>
             <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-1.5 rounded-lg shadow-sm flex items-center space-x-1">
                 <span>🟢</span>
-                <span>GPS ±90m</span>
+                <span>GPS &plusmn;90m</span>
             </div>
         </div>
 
@@ -74,7 +93,7 @@
                 <span>Llegas con <strong class="font-bold">107 min de retardo</strong></span>
             </div>
 
-            <div id="estado-pendiente" class="block bg-stone-50 border border-dashed border-stone-300 rounded-xl p-4 flex items-center space-x-3">
+            <div id="estado-pendiente" class="bg-stone-50 border border-dashed border-stone-300 rounded-xl p-4 flex items-center space-x-3">
                 <span class="w-3 h-3 rounded-full bg-amber-500 inline-block"></span>
                 <div>
                     <p class="text-sm font-semibold text-stone-800">Entrada pendiente</p>
@@ -134,44 +153,39 @@
             
             <div class="w-full aspect-square bg-stone-900 rounded-xl relative flex flex-col items-center justify-center overflow-hidden border border-stone-800">
                 <div class="absolute inset-x-0 h-0.5 bg-cyan-500 shadow-[0_0_10px_#06b6d4] top-1/2 animate-bounce w-full"></div>
-                
                 <span class="text-4xl">🔲</span>
                 <p class="text-xs text-stone-400 mt-2 font-medium">Apunta al QR del Administrador</p>
             </div>
-
             <p class="text-xs text-center text-stone-500">Mantén el dispositivo firme dentro del perímetro establecido de la sucursal.</p>
         </div>
     </div>
 
     <script>
-        // Cambiar dinámicamente entre las diferentes vistas de la UI mediante el selector superior
         function cambiarVista(vista) {
-            // Referencias del DOM
             const estadoPendiente = document.getElementById('estado-pendiente');
             const badgeEstatus = document.getElementById('badge-estatus');
             const registroLista = document.getElementById('registro-lista');
             const registroVacio = document.getElementById('registro-vacio');
             
-            // Botones de control superior
             const btnPendiente = document.getElementById('btn-v-pendiente');
             const btnRechazado = document.getElementById('btn-v-rechazado');
             const btnModal = document.getElementById('btn-v-modal');
 
-            // Reset de estilos de botones
             [btnPendiente, btnRechazado, btnModal].forEach(btn => {
                 btn.className = "flex-1 py-2.5 px-2 text-center rounded-lg border border-stone-200 text-stone-600 hover:bg-white transition";
             });
 
             if (vista === 'pendiente') {
                 btnPendiente.className = "flex-1 py-2.5 px-2 text-center rounded-lg border border-stone-300 bg-white shadow-sm font-bold text-stone-900 transition";
-                estadoPendiente.className = "block bg-stone-50 border border-dashed border-stone-300 rounded-xl p-4 flex items-center space-x-3";
+                estadoPendiente.className = "bg-stone-50 border border-dashed border-stone-300 rounded-xl p-4 flex items-center space-x-3";
+                estadoPendiente.innerHTML = `<span class="w-3 h-3 rounded-full bg-amber-500 inline-block"></span><div><p class="text-sm font-semibold text-stone-800">Entrada pendiente</p><p class="text-xs text-stone-500 mt-0.5">Hora actual: 08:48</p></div>`;
                 registroLista.classList.add('hidden');
                 registroVacio.classList.remove('hidden');
                 cerrarModalQR();
             } 
             else if (vista === 'rechazado') {
                 btnRechazado.className = "flex-1 py-2.5 px-2 text-center rounded-lg border-red-300 bg-red-50 text-red-900 shadow-sm font-bold transition";
-                estadoPendiente.className = "block bg-red-50 border border-dashed border-red-200 rounded-xl p-4 flex items-center space-x-3 text-red-900";
+                estadoPendiente.className = "bg-red-50 border border-dashed border-red-200 rounded-xl p-4 flex items-center space-x-3 text-red-900";
                 estadoPendiente.innerHTML = `<span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span><div><p class="text-sm font-bold">Entrada Rechazada por Geofencing</p><p class="text-xs text-red-600 mt-0.5">Fuera de perímetro (19,522 m de desfase)</p></div>`;
                 registroLista.classList.remove('hidden');
                 registroVacio.classList.add('hidden');
@@ -185,7 +199,6 @@
             }
         }
 
-        // Gestión de la Ventana Emergente (Modal QR de escaneo)
         function abrirModalQR() {
             document.getElementById('modal-qr').classList.remove('hidden');
         }
@@ -194,7 +207,6 @@
             document.getElementById('modal-qr').classList.add('hidden');
         }
 
-        // Inicializar datos estables automáticos al cargar el componente
         document.addEventListener("DOMContentLoaded", () => {
             const opciones = { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' };
             const fechaHoy = new Date().toLocaleDateString('es-MX', opciones);
@@ -202,4 +214,4 @@
         });
     </script>
 </body>
-</html>
+</html>"""
