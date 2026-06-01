@@ -1,9 +1,12 @@
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, status, Depends
 from pydantic import BaseModel
+from typing import Optional
 import pymysql
 from db import get_db_connection
 from datetime import datetime
 import os
+import math
+from auth import verify_token
 
 router = APIRouter(
     prefix="/asistencia",
@@ -83,6 +86,63 @@ def guardar_configuracion(config: GeofenceConfig):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     finally:
         connection.close()
+
+class RegistroCheckin(BaseModel):
+    tipo: str          # 'entrada' | 'salida'
+    lat:  float
+    lon:  float
+    accuracy: Optional[float] = None
+
+def _haversine(lat1, lon1, lat2, lon2):
+    R = 6371000
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+@router.post("/registrar")
+def registrar_checkin(payload: RegistroCheckin, current_user=Depends(verify_token)):
+    if payload.tipo not in ("entrada", "salida"):
+        raise HTTPException(status_code=400, detail="tipo debe ser 'entrada' o 'salida'")
+
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(status_code=500, detail="Sin conexión a base de datos")
+    try:
+        with connection.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute("SELECT lat_fija, lon_fija, radio_metros FROM configuracion_geocerca LIMIT 1")
+            cfg = cursor.fetchone() or {"lat_fija": 32.471823, "lon_fija": -116.798104, "radio_metros": 200}
+
+        distancia = _haversine(payload.lat, payload.lon, cfg["lat_fija"], cfg["lon_fija"])
+        aprobado  = 1 if distancia <= cfg["radio_metros"] else 0
+        ahora     = datetime.now()
+        hora_str  = ahora.strftime("%H:%M:%S")
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO registros_asistencia "
+                "(username, fecha, tipo, hora_checkin, distancia_metros, aprobado) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (current_user["username"], ahora, payload.tipo, hora_str, round(distancia, 1), aprobado)
+            )
+        connection.commit()
+
+        return {
+            "ok":       True,
+            "aprobado": bool(aprobado),
+            "distancia_metros": round(distancia, 1),
+            "radio_metros":     cfg["radio_metros"],
+            "hora":     hora_str,
+            "tipo":     payload.tipo,
+            "mensaje":  "✅ Registro aprobado" if aprobado else f"❌ Fuera del perímetro ({round(distancia)}m / límite {cfg['radio_metros']}m)"
+        }
+    except Exception as e:
+        connection.rollback()
+        print(f"Error en registrar_checkin: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        connection.close()
+
 
 @router.get("/generar-qr")
 def generar_qr():
