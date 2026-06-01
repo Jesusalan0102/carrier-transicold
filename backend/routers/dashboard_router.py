@@ -200,6 +200,195 @@ def reporte_excel(current_user=Depends(verify_token)):
                 if r%2==0: cell.fill=GRIS
         widths(ws5)
 
+        # ── Hoja 6: Asistencia_Detalle ────────────────────────────────────────
+        ws6 = wb.create_sheet("Asistencia_Detalle")
+        c6 = ["Técnico", "Fecha", "Día", "Tipo", "Hora Programada",
+              "Hora Real", "Retardo (min)", "Horas Trabajadas",
+              "Distancia (m)", "GPS Aprobado", "Selfie"]
+        hdr(ws6, 1, c6)
+
+        dias_es = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"]
+
+        registros_asis = execute_read(
+            """
+            SELECT
+                ar.username,
+                ar.fecha,
+                ar.tipo,
+                ar.hora_checkin,
+                ar.retardo_min,
+                ar.distancia_metros,
+                ar.aprobado,
+                ar.selfie_url,
+                h.hora_entrada,
+                h.hora_salida
+            FROM asistencia_registros ar
+            LEFT JOIN horarios h
+                ON h.username = ar.username AND h.fecha = ar.fecha
+            ORDER BY ar.fecha DESC, ar.username, ar.tipo
+            """
+        ) or []
+
+        # Calcular horas trabajadas agrupando entrada/salida por técnico+fecha
+        from collections import defaultdict
+        pares = defaultdict(dict)
+        for r in registros_asis:
+            key = (r["username"], str(r["fecha"]))
+            pares[key][r["tipo"]] = r["hora_checkin"]
+
+        row6 = 2
+        fill_fila = {True: PatternFill("solid", fgColor="F0FDF4"),
+                     False: PatternFill("solid", fgColor="FEF2F2")}
+
+        for r in registros_asis:
+            fecha_str = str(r["fecha"])
+            try:
+                from datetime import date as _date
+                dia_idx = _date.fromisoformat(fecha_str).weekday()
+                dia_nombre = dias_es[dia_idx]
+            except Exception:
+                dia_nombre = "—"
+
+            tipo = r["tipo"]
+            hora_prog = r["hora_entrada"] if tipo == "entrada" else r["hora_salida"]
+            hora_prog_str = str(hora_prog)[:5] if hora_prog else "—"
+            hora_real_str = str(r["hora_checkin"])[:5] if r["hora_checkin"] else "—"
+
+            # Horas trabajadas: calcular si hay par entrada+salida
+            key = (r["username"], fecha_str)
+            horas_trab = "—"
+            if pares[key].get("entrada") and pares[key].get("salida"):
+                try:
+                    def _min(t): h,m=str(t)[:5].split(":"); return int(h)*60+int(m)
+                    diff = _min(pares[key]["salida"]) - _min(pares[key]["entrada"])
+                    horas_trab = f"{round(max(0,diff)/60,1)}h"
+                except Exception:
+                    horas_trab = "—"
+
+            retardo = r.get("retardo_min") or 0
+            dist    = round(float(r["distancia_metros"]),0) if r.get("distancia_metros") is not None else "—"
+            aprobado_str = "✓ Sí" if r.get("aprobado") else "✗ No"
+            selfie_str   = "Sí" if r.get("selfie_url") else "No"
+
+            aprobado_bool = bool(r.get("aprobado"))
+            fila_fill = fill_fila[aprobado_bool]
+
+            vals6 = [
+                r["username"], fecha_str, dia_nombre, tipo.capitalize(),
+                hora_prog_str, hora_real_str,
+                int(retardo) if tipo == "entrada" else "—",
+                horas_trab if tipo == "salida" else "—",
+                dist, aprobado_str, selfie_str
+            ]
+            for c, v in enumerate(vals6, 1):
+                cell = ws6.cell(row6, c, v)
+                cell.alignment = CENTER if c in (1,3,4,9,10,11) else LEFT
+                cell.fill = fila_fill
+                # Colorear retardo
+                if c == 7 and tipo == "entrada" and isinstance(v, int):
+                    if v == 0:
+                        cell.font = Font(color="16a34a", bold=True)
+                    elif v <= 15:
+                        cell.font = Font(color="d97706", bold=True)
+                    else:
+                        cell.font = Font(color="dc2626", bold=True)
+            row6 += 1
+
+        widths(ws6)
+        ws6.freeze_panes = "A2"
+
+        # ── Hoja 7: Resumen_Puntualidad ───────────────────────────────────────
+        ws7 = wb.create_sheet("Resumen_Puntualidad")
+        c7 = ["Técnico", "Días con Horario", "Asistencias", "Faltas",
+              "A Tiempo (0 min)", "Retardo Leve (1-15 min)", "Retardo Grave (>15 min)",
+              "Retardo Promedio (min)", "Retardo Total (min)",
+              "Horas Trabajadas Total", "% Puntualidad"]
+        hdr(ws7, 1, c7)
+
+        tecnicos_lista = execute_read(
+            "SELECT username FROM users WHERE role='tecnico' ORDER BY username"
+        ) or []
+
+        row7 = 2
+        for tec in tecnicos_lista:
+            uname = tec["username"]
+
+            # Días con horario asignado
+            dias_horario = execute_read(
+                "SELECT COUNT(DISTINCT fecha) as t FROM horarios WHERE username=%s", (uname,)
+            )[0]["t"] or 0
+
+            # Registros de entrada del técnico
+            entradas = execute_read(
+                """SELECT ar.fecha, ar.hora_checkin, ar.retardo_min,
+                          h.hora_entrada, h.hora_salida
+                   FROM asistencia_registros ar
+                   LEFT JOIN horarios h ON h.username=ar.username AND h.fecha=ar.fecha
+                   WHERE ar.username=%s AND ar.tipo='entrada'
+                   ORDER BY ar.fecha""",
+                (uname,)
+            ) or []
+
+            # Registros de salida para calcular horas trabajadas
+            salidas = execute_read(
+                "SELECT fecha, hora_checkin FROM asistencia_registros WHERE username=%s AND tipo='salida'",
+                (uname,)
+            ) or []
+            salidas_map = {str(s["fecha"]): str(s["hora_checkin"])[:5] for s in salidas}
+
+            asistencias   = len(entradas)
+            faltas        = max(0, dias_horario - asistencias)
+            a_tiempo      = sum(1 for e in entradas if (e.get("retardo_min") or 0) == 0)
+            ret_leve      = sum(1 for e in entradas if 0 < (e.get("retardo_min") or 0) <= 15)
+            ret_grave     = sum(1 for e in entradas if (e.get("retardo_min") or 0) > 15)
+            total_retardo = sum((e.get("retardo_min") or 0) for e in entradas)
+            prom_retardo  = round(total_retardo / asistencias, 1) if asistencias > 0 else 0
+            puntualidad   = round(a_tiempo / asistencias * 100, 1) if asistencias > 0 else 0
+
+            # Horas trabajadas totales
+            horas_total = 0.0
+            for e in entradas:
+                fecha_key = str(e["fecha"])
+                if fecha_key in salidas_map and e.get("hora_checkin"):
+                    try:
+                        def _min2(t): hh,mm=str(t)[:5].split(":"); return int(hh)*60+int(mm)
+                        diff = _min2(salidas_map[fecha_key]) - _min2(e["hora_checkin"])
+                        horas_total += max(0, diff) / 60
+                    except Exception:
+                        pass
+            horas_total = round(horas_total, 1)
+
+            # Color fila según puntualidad
+            if puntualidad >= 90:
+                row_fill = PatternFill("solid", fgColor="F0FDF4")
+            elif puntualidad >= 70:
+                row_fill = PatternFill("solid", fgColor="FFFBEB")
+            else:
+                row_fill = PatternFill("solid", fgColor="FEF2F2")
+
+            vals7 = [
+                uname, dias_horario, asistencias, faltas,
+                a_tiempo, ret_leve, ret_grave,
+                prom_retardo, total_retardo,
+                f"{horas_total}h",
+                f"{puntualidad}%"
+            ]
+            for c, v in enumerate(vals7, 1):
+                cell = ws7.cell(row7, c, v)
+                cell.alignment = CENTER
+                cell.fill = row_fill
+                if c == 11:  # % Puntualidad
+                    if puntualidad >= 90:
+                        cell.font = Font(color="16a34a", bold=True)
+                    elif puntualidad >= 70:
+                        cell.font = Font(color="d97706", bold=True)
+                    else:
+                        cell.font = Font(color="dc2626", bold=True)
+            row7 += 1
+
+        widths(ws7)
+        ws7.freeze_panes = "A2"
+
         buf = io.BytesIO()
         wb.save(buf); buf.seek(0)
         fecha = datetime.now().strftime("%Y%m%d_%H%M")
