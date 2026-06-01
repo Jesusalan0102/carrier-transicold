@@ -172,10 +172,23 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
     <html lang="es">
     <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+        <meta name="theme-color" content="#002B5B">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+        <meta name="apple-mobile-web-app-title" content="Carrier">
+        <link rel="manifest" href="/static/manifest.json">
+        <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
         <title>{titulo} – Carrier Transicold</title>
         {BASE_STYLE}
         <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+        <script>
+            if ('serviceWorker' in navigator) {{
+                navigator.serviceWorker.register('/static/sw.js')
+                    .catch(err => console.warn('SW error:', err));
+            }}
+        </script>
         <script>
             window.token = localStorage.getItem('access_token');
             window.role = localStorage.getItem('role');
