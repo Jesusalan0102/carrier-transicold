@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 import pymysql
-from db import get_db_connection  # Asegura que apunte correctamente a tu manejador de conexiones
+from db import get_db_connection  # CORREGIDO: Apunta al archivo 'db.py' real de tu backend
 from datetime import datetime
 
 # Definimos el router con el prefijo /asistencia. 
@@ -64,7 +64,7 @@ def obtener_configuracion():
             cursor.execute("SELECT latitud_fija, longitud_fija, radio_permitido FROM configuracion_geocerca LIMIT 1")
             config = cursor.fetchone()
             if not config:
-                # Valores por defecto de respaldo (vistos en tu captura de pantalla)
+                # Valores por defecto de respaldo
                 return {"latitud_fija": 32.471823, "longitud_fija": -116.798104, "radio_permitido": 200.0}
             return config
     except Exception as e:
