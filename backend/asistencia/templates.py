@@ -2,17 +2,11 @@
 ASISTENCIA_STYLES = """
 <style>
     .brand-blue { background-color: #004B87; }
-    .brand-dark { background-color: #0A2540; }
     .text-brand { color: #004B87; }
-    .bg-gray-custom { background-color: #F4F4F2; }
 </style>
 """
 
 def get_checkin_template() -> str:
-    """
-    Template actualizado - Carrier Transicold
-    Incluye: Mis Horarios + Registro de Asistencia + Hora Tijuana correcta
-    """
     return """<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -54,19 +48,19 @@ def get_checkin_template() -> str:
     .ct-schedule-col { text-align: center; }
     .ct-schedule-label { font-size: 11px; color: #666; }
     .ct-schedule-time { font-family: 'DM Mono', monospace; font-size: 26px; font-weight: 500; }
-    
-    /* Mis Horarios */
-    .ct-horarios-table {
-      width: 100%; border-collapse: collapse;
-    }
-    .ct-horarios-table th {
-      text-align: left; font-size: 11px; color: #888; padding: 8px 0;
-    }
-    .ct-horarios-table td {
-      padding: 10px 0; border-top: 0.5px solid #f0ede5;
-      font-size: 14px;
-    }
+
+    /* Tabla Horarios */
+    .ct-horarios-table { width: 100%; border-collapse: collapse; }
+    .ct-horarios-table th { text-align: left; font-size: 11px; color: #888; padding: 8px 0; }
+    .ct-horarios-table td { padding: 10px 0; border-top: 0.5px solid #f0ede5; font-size: 14px; }
     .ct-horarios-table .hora { font-family: 'DM Mono', monospace; font-weight: 500; }
+
+    /* Botón */
+    .ct-btn-primary {
+      width: 100%; padding: 14px; background: #004B87; color: white;
+      border: none; border-radius: 10px; font-weight: 600; font-size: 15px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
   </style>
 </head>
 <body>
@@ -74,9 +68,7 @@ def get_checkin_template() -> str:
 
   <!-- Header -->
   <div class="ct-header">
-    <div class="ct-logo">
-      <i class="ti ti-building-factory" style="font-size:28px;color:white;"></i>
-    </div>
+    <div class="ct-logo"><i class="ti ti-building-factory" style="font-size:28px;color:white;"></i></div>
     <div>
       <div class="ct-title">Carrier Transicold</div>
       <small id="ct-fecha" style="color:#666;"></small>
@@ -87,20 +79,14 @@ def get_checkin_template() -> str:
   <div class="ct-card">
     <div class="ct-section-label">📅 Mis Horarios</div>
     <table class="ct-horarios-table" id="tabla-mis-horarios">
-      <thead>
-        <tr>
-          <th>Fecha</th>
-          <th>Entrada</th>
-          <th>Salida</th>
-        </tr>
-      </thead>
+      <thead><tr><th>Fecha</th><th>Entrada</th><th>Salida</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
 
   <!-- HORARIO DE HOY -->
   <div class="ct-card">
-    <div class="ct-section-label">Hoy • <span id="ct-hora-actual"></span></div>
+    <div class="ct-section-label">HOY • <span id="ct-hora-actual"></span></div>
     <div class="ct-schedule">
       <div class="ct-schedule-col">
         <div class="ct-schedule-label">Entrada</div>
@@ -111,77 +97,114 @@ def get_checkin_template() -> str:
         <div class="ct-schedule-time" id="p-hora-salida">--:--</div>
       </div>
     </div>
-    <button class="ct-btn-primary" onclick="abrirModalQR()" style="width:100%; margin-top:12px; padding:14px;">
+    <button class="ct-btn-primary" onclick="abrirModalQR()" style="margin-top: 16px;">
       <i class="ti ti-qrcode"></i> Registrar Asistencia (QR)
     </button>
   </div>
 
 </div>
 
+<!-- ==================== MODAL QR COMPLETO ==================== -->
+<div class="ct-modal-overlay" id="ct-modal-overlay">
+  <div class="ct-modal">
+    <div class="ct-modal-header">
+      <div class="ct-modal-title"><i class="ti ti-qrcode"></i> Validación de Asistencia</div>
+      <button class="ct-modal-close" onclick="cerrarModalQR()">✕</button>
+    </div>
+
+    <!-- Paso 1: Escanear QR -->
+    <div id="ct-paso1" class="ct-paso">
+      <div style="padding:16px;">
+        <div style="position:relative;background:#0A1521;border-radius:12px;overflow:hidden;">
+          <video id="ct-qr-video" style="width:100%;display:block;" playsinline autoplay muted></video>
+          <canvas id="ct-qr-canvas" style="display:none;"></canvas>
+          <div id="ct-scan-line" style="position:absolute;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,#00ffcc,#00ffcc,transparent);animation:scan 2s linear infinite;"></div>
+        </div>
+        <div style="text-align:center;margin-top:12px;color:#666;font-size:13px;">Apunta al código QR de la sucursal</div>
+      </div>
+    </div>
+
+    <!-- Paso 2: Selfie -->
+    <div id="ct-paso2" class="ct-paso" style="display:none;padding:16px;">
+      <div style="text-align:center;">
+        <button class="ct-btn-primary" onclick="ct_lanzarFotoConfirmacion()" style="margin:20px 0;">
+          <i class="ti ti-camera-selfie"></i> Tomar Selfie
+        </button>
+      </div>
+    </div>
+
+    <!-- Paso 3: Confirmar -->
+    <div id="ct-paso3" class="ct-paso" style="display:none;padding:16px;">
+      <img id="ct-preview-img" style="width:100%;border-radius:12px;margin-bottom:12px;">
+      <button id="ct-btn-confirmar" class="ct-btn-primary" onclick="ct_confirmarRegistro()">
+        ✅ Confirmar Registro
+      </button>
+    </div>
+  </div>
+</div>
+
 <script>
-(async function () {
-  const username = window.__ct_username || '';
+// Variables globales
+let currentTipo = "entrada";
+let currentFoto = null;
 
-  // Fecha y hora Tijuana
-  function actualizarHoraTijuana() {
-    const opciones = { timeZone: 'America/Tijuana', hour: '2-digit', minute: '2-digit' };
-    const hora = new Intl.DateTimeFormat('es-MX', opciones).format(new Date());
-    document.getElementById('ct-hora-actual').textContent = hora;
-  }
-  setInterval(actualizarHoraTijuana, 30000);
-  actualizarHoraTijuana();
+// Hora Tijuana
+function actualizarHoraTijuana() {
+  const opciones = { timeZone: 'America/Tijuana', hour: '2-digit', minute: '2-digit', hour12: true };
+  document.getElementById('ct-hora-actual').textContent = new Intl.DateTimeFormat('es-MX', opciones).format(new Date());
+}
+setInterval(actualizarHoraTijuana, 30000);
+actualizarHoraTijuana();
 
-  // Fecha legible
-  document.getElementById('ct-fecha').textContent = new Date().toLocaleDateString('es-MX', {
-    weekday: 'long', day: 'numeric', month: 'long'
-  });
+// Fecha
+document.getElementById('ct-fecha').textContent = new Date().toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long' });
 
-  // Cargar Mis Horarios
-  async function cargarMisHorarios() {
-    try {
-      const res = await window.fetchAuth('/api/horarios/mios');
-      const data = await res.json();
-      const tbody = document.querySelector('#tabla-mis-horarios tbody');
-      tbody.innerHTML = '';
+// Cargar Mis Horarios
+async function cargarMisHorarios() {
+  try {
+    const res = await window.fetchAuth('/api/horarios/mios');
+    const data = await res.json();
+    const tbody = document.querySelector('#tabla-mis-horarios tbody');
+    tbody.innerHTML = data.map(h => `
+      <tr>
+        <td>${h.fecha}</td>
+        <td class="hora">${h.hora_entrada || '—'}</td>
+        <td class="hora">${h.hora_salida || '—'}</td>
+      </tr>
+    `).join('');
+  } catch(e) { console.error(e); }
+}
 
-      if (!data || data.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:#888;padding:20px;">No tienes horarios asignados</td></tr>`;
-        return;
-      }
+// Cargar horario hoy
+async function cargarHorarioHoy() {
+  try {
+    const hoy = new Date().toISOString().split('T')[0];
+    const username = window.__ct_username || '';
+    const res = await window.fetchAuth(`/api/horarios/hoy?username=${username}&fecha=${hoy}`);
+    const data = await res.json();
+    const h = data.horario || {};
+    document.getElementById('p-hora-entrada').textContent = h.hora_entrada?.slice(0,5) || '--:--';
+    document.getElementById('p-hora-salida').textContent = h.hora_salida?.slice(0,5) || '--:--';
+  } catch(e) {}
+}
 
-      data.forEach(h => {
-        const row = document.createElement('tr');
-        row.innerHTML = `
-          <td>${h.fecha}</td>
-          <td class="hora">${h.hora_entrada || '—'}</td>
-          <td class="hora">${h.hora_salida || '—'}</td>
-        `;
-        tbody.appendChild(row);
-      });
-    } catch (e) {
-      console.error("Error cargando mis horarios:", e);
-    }
-  }
+// Modal
+window.abrirModalQR = () => {
+  document.getElementById('ct-modal-overlay').style.display = 'flex';
+  document.getElementById('ct-paso1').style.display = 'block';
+  document.getElementById('ct-paso2').style.display = 'none';
+  document.getElementById('ct-paso3').style.display = 'none';
+};
 
-  // Cargar horario de hoy
-  async function cargarHorarioHoy() {
-    try {
-      const hoy = new Date().toISOString().split('T')[0];
-      const res = await window.fetchAuth(`/api/horarios/hoy?username=${encodeURIComponent(username)}&fecha=${hoy}`);
-      const data = await res.json();
-      const h = data.horario || {};
+window.cerrarModalQR = () => {
+  document.getElementById('ct-modal-overlay').style.display = 'none';
+};
 
-      document.getElementById('p-hora-entrada').textContent = h.hora_entrada ? h.hora_entrada.slice(0,5) : '--:--';
-      document.getElementById('p-hora-salida').textContent = h.hora_salida ? h.hora_salida.slice(0,5) : '--:--';
-    } catch (e) {
-      console.warn("No se pudo cargar horario de hoy", e);
-    }
-  }
-
-  // Inicializar
-  await Promise.all([cargarMisHorarios(), cargarHorarioHoy()]);
-
-})();
+// Iniciar
+document.addEventListener('DOMContentLoaded', () => {
+  cargarMisHorarios();
+  cargarHorarioHoy();
+});
 </script>
 </body>
 </html>"""
