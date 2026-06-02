@@ -508,30 +508,18 @@ async def asignaciones():
         <div id="msgAsignacion" style="grid-column: span 3; font-size:0.85rem;"></div>
     </form>
     <script>
-        const fetchAuth =  window.fetchAuth = async (url, options) => {{
-                options = options || {{}};
-                // FIX: Object.assign preserva Content-Type y otros headers del caller
-                const headers = Object.assign({{}}, options.headers || {{}});
-                headers['Authorization'] = 'Bearer ' + window.token;
-                try {{
-                    const res = await fetch(url, {{ ...options, headers }});
-                    if (res.status === 401) {{
-                        localStorage.clear();
-                        window.location.href = '/app';
-                        return null;
-                    }}
-                    return res;
-                }} catch (networkErr) {{
-                    // FIX: capturar errores de red reales y devolver objeto compatible
-                    console.error('[fetchAuth] Error de red:', networkErr);
-                    return {{
-                        ok:     false,
-                        status: 503,
-                        json:   async () => ({{ detail: 'Sin conexión al servidor. Intenta de nuevo.' }}),
-                    }};
-                }}
-            }};
-                }
+        const fetchAuth = window.fetchAuth;
+        const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series'];
+        async function cargarSolicitudes() {
+            const lista = document.getElementById('listaSolicitudes');
+            lista.innerHTML = '<p>Cargando...</p>';
+            try {
+                const res = await fetchAuth('/api/asignaciones/?estado=solicitado');
+                if (!res.ok) throw new Error('Error');
+                const data = await res.json();
+                let html = '';
+                if (!Array.isArray(data) || data.length === 0) { html = '<p>No hay solicitudes pendientes.</p>'; }
+                else { data.forEach(s => { html += `<div style="background:white;border-left:4px solid var(--carrier-warn);padding:12px 16px;margin-bottom:8px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;"><div><b>${s.actividad_id}</b> — Unidad: <b>${s.unidad}</b><br><small>Técnico: ${s.tecnico}</small></div><div style="display:flex;gap:8px;"><button class="btn-success" onclick="aprobar(${s.id})">✅ Aprobar</button><button class="btn-danger" onclick="rechazar(${s.id})">❌ Rechazar</button></div></div>`; }); }
                 lista.innerHTML = html;
             } catch (err) { lista.innerHTML = '<p style="color:var(--carrier-danger);">Error al cargar solicitudes.</p>'; }
             const [unidadesRes, tecnicosRes] = await Promise.all([fetchAuth('/api/unidades/'), fetchAuth('/api/usuarios/')]);
