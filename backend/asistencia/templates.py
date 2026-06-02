@@ -552,7 +552,7 @@ def get_checkin_template() -> str:
   setInterval(() => { if (elHoraTag) elHoraTag.textContent = horaHHMM(); }, 30000);
 
   // ── Cargar horario del día ─────────────────────────────────────────────────
-  async function cargarHorario() {
+  window.cargarHorario = async function cargarHorario() {
     try {
       // Usar la fecha local del dispositivo (no UTC) para evitar desfase con Tijuana
       const ahora = new Date();
@@ -602,7 +602,7 @@ def get_checkin_template() -> str:
   }
 
   // ── Cargar registros del día ───────────────────────────────────────────────
-  async function cargarRegistros() {
+  window.cargarRegistros = async function cargarRegistros() {
     try {
       // Usar fecha local (no UTC) para no desfasar en zona Tijuana
       const ahora = new Date();
