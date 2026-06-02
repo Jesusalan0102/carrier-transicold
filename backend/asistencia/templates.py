@@ -453,42 +453,45 @@ def get_checkin_template() -> str:
       </button>
     </div>
 
-    <!-- Inputs ocultos para cámara nativa (más confiable en iOS) -->
-    <input type="file" id="ct-input-foto"   accept="image/*" capture="environment" style="display:none" onchange="ct_onFotoSeleccionada(this)">
-    <input type="file" id="ct-input-selfie" accept="image/*" capture="user"        style="display:none" onchange="ct_onSelfieSeleccionada(this)">
-
-    <!-- PASO 1: Fotografiar el QR del administrador -->
+    <!-- PASO 1: Escáner QR en tiempo real -->
     <div id="ct-paso1" style="padding:16px;">
-      <div style="background:#0A1521;border-radius:12px;padding:28px 16px;text-align:center;margin-bottom:14px;">
-        <div style="font-size:48px;margin-bottom:8px;">📷</div>
-        <p style="color:rgba(255,255,255,0.8);font-size:13px;font-weight:500;">Toma una foto del QR del administrador</p>
-        <p style="color:rgba(255,255,255,0.4);font-size:11px;margin-top:4px;">Apunta la cámara al código QR de la sucursal</p>
+      <div style="position:relative;background:#0A1521;border-radius:12px;overflow:hidden;margin-bottom:14px;">
+        <video id="ct-qr-video" style="width:100%;display:block;border-radius:12px;" playsinline autoplay muted></video>
+        <canvas id="ct-qr-canvas" style="display:none;"></canvas>
+        <!-- Marco de escaneo -->
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
+          <div style="width:200px;height:200px;position:relative;">
+            <div style="position:absolute;top:0;left:0;width:28px;height:28px;border-top:3px solid #00d4ff;border-left:3px solid #00d4ff;border-radius:4px 0 0 0;"></div>
+            <div style="position:absolute;top:0;right:0;width:28px;height:28px;border-top:3px solid #00d4ff;border-right:3px solid #00d4ff;border-radius:0 4px 0 0;"></div>
+            <div style="position:absolute;bottom:0;left:0;width:28px;height:28px;border-bottom:3px solid #00d4ff;border-left:3px solid #00d4ff;border-radius:0 0 0 4px;"></div>
+            <div style="position:absolute;bottom:0;right:0;width:28px;height:28px;border-bottom:3px solid #00d4ff;border-right:3px solid #00d4ff;border-radius:0 0 4px 0;"></div>
+            <div id="ct-scan-line" style="position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#00d4ff,transparent);animation:ctScan 1.8s ease-in-out infinite;"></div>
+          </div>
+        </div>
+        <div id="ct-qr-status" style="position:absolute;bottom:10px;left:0;right:0;text-align:center;color:rgba(255,255,255,0.7);font-size:12px;">Apunta al código QR...</div>
       </div>
       <div id="ct-qr-result" style="font-size:12px;color:#854F0B;background:#FAEEDA;border-radius:8px;padding:8px 12px;margin-bottom:10px;display:none;"></div>
-      <button class="ct-btn-primary" onclick="ct_lanzarCamara()" style="margin-bottom:8px;">
-        <i class="ti ti-qrcode"></i> Fotografiar QR
-      </button>
       <button class="ct-btn-secondary" onclick="cerrarModalQR()">
         <i class="ti ti-x" style="font-size:14px;"></i> Cancelar
       </button>
     </div>
 
-    <!-- PASO 2: Foto de confirmación (selfie) -->
+    <!-- PASO 2: Foto selfie de confirmación -->
+    <input type="file" id="ct-input-selfie" accept="image/*" capture="user" style="display:none" onchange="ct_onSelfieSeleccionada(this)">
     <div id="ct-paso2" style="padding:16px;display:none;">
       <div style="background:#EAF3DE;border:0.5px solid #C0DD97;border-radius:10px;padding:12px;margin-bottom:14px;display:flex;align-items:center;gap:8px;">
         <span style="font-size:18px;">✅</span>
         <div>
-          <div style="font-size:12px;font-weight:600;color:#3B6D11;">QR escaneado</div>
-          <div style="font-size:11px;color:#3B6D11;">Ahora toma una foto de confirmación</div>
+          <div style="font-size:12px;font-weight:600;color:#3B6D11;">QR detectado</div>
+          <div style="font-size:11px;color:#3B6D11;">Ahora toma una selfie como evidencia</div>
         </div>
       </div>
       <div style="background:#0A1521;border-radius:12px;padding:28px 16px;text-align:center;margin-bottom:14px;">
         <div style="font-size:48px;margin-bottom:8px;">🤳</div>
         <p style="color:rgba(255,255,255,0.8);font-size:13px;font-weight:500;">Toma una selfie como evidencia</p>
-        <p style="color:rgba(255,255,255,0.4);font-size:11px;margin-top:4px;">Esta foto queda registrada en el sistema</p>
       </div>
       <button class="ct-btn-primary" onclick="ct_lanzarFotoConfirmacion()" style="margin-bottom:8px;">
-        <i class="ti ti-camera-selfie"></i> Tomar foto de confirmación
+        <i class="ti ti-camera-selfie"></i> Tomar selfie
       </button>
       <button class="ct-btn-secondary" onclick="cerrarModalQR()">
         <i class="ti ti-x" style="font-size:14px;"></i> Cancelar
@@ -497,7 +500,7 @@ def get_checkin_template() -> str:
 
     <!-- PASO 3: Preview + confirmar -->
     <div id="ct-paso3" style="padding:16px;display:none;">
-      <img id="ct-preview-img" style="width:100%;border-radius:12px;margin-bottom:12px;display:none;max-height:220px;object-fit:cover;" alt="Foto de confirmación">
+      <img id="ct-preview-img" style="width:100%;border-radius:12px;margin-bottom:12px;display:none;max-height:220px;object-fit:cover;" alt="Selfie de confirmación">
       <div style="background:#F7F6F2;border-radius:10px;padding:12px;margin-bottom:14px;font-size:12px;color:#555;">
         <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:0.5px solid #e8e5dd;">
           <span style="color:#aaa;font-weight:600;text-transform:uppercase;font-size:10px;">GPS</span>
