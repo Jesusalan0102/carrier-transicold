@@ -33,10 +33,17 @@ def obtener_registros(fecha: str = Query(None)):
             else:
                 cursor.execute("SELECT * FROM registros_asistencia ORDER BY fecha DESC")
             registros = cursor.fetchall()
+            result = []
             for r in registros:
-                if 'fecha' in r and isinstance(r['fecha'], datetime):
-                    r['fecha'] = r['fecha'].strftime('%Y-%m-%d %H:%M:%S')
-            return registros
+                row = dict(r)
+                if 'fecha' in row and isinstance(row['fecha'], datetime):
+                    row['fecha'] = row['fecha'].strftime('%Y-%m-%d %H:%M:%S')
+                if 'hora_checkin' in row and row['hora_checkin'] is not None:
+                    row['hora_checkin'] = str(row['hora_checkin'])
+                # Remove binary foto field from response (too large)
+                row.pop('foto', None)
+                result.append(row)
+            return result
     except Exception as e:
         print(f"Error en obtener_registros: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
