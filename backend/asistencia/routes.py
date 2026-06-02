@@ -29,6 +29,13 @@ class GeofenceConfig(BaseModel):
     lon_fija: float
     radio_metros: int
 
+class RegistroAsistenciaBody(BaseModel):
+    tipo: str
+    lat: float
+    lon: float
+    accuracy: Optional[float] = None
+    foto_base64: Optional[str] = None
+
 
 # ── GET Registros ─────────────────────────────────────────────────────────────
 @router.get("/registros")
@@ -126,16 +133,14 @@ def _haversine(lat1, lon1, lat2, lon2):
 
 @router.post("/registrar")
 async def registrar_asistencia(
-    username: str = Form(...),
-    tipo: str = Form(...),
-    lat: float = Form(...),
-    lon: float = Form(...),
-    foto: UploadFile = File(None),
+    body: RegistroAsistenciaBody,
     current_user=Depends(verify_token)
 ):
     """Registra entrada/salida con hora exacta de Tijuana"""
-    if current_user["username"] != username and current_user["role"] != "admin":
-        raise HTTPException(403, "No tienes permiso para registrar por otro usuario")
+    username = current_user["username"]
+    tipo = body.tipo
+    lat = body.lat
+    lon = body.lon
 
     if tipo not in ("entrada", "salida"):
         raise HTTPException(400, "Tipo debe ser 'entrada' o 'salida'")
@@ -149,12 +154,17 @@ async def registrar_asistencia(
     distancia = _haversine(lat, lon, config["lat_fija"], config["lon_fija"])
     aprobado = 1 if distancia <= config["radio_metros"] else 0
 
+    # Procesar foto base64 si viene
+    foto_bytes = None
+    if body.foto_base64:
+        try:
+            b64data = body.foto_base64.split(",", 1)[-1]
+            foto_bytes = base64.b64decode(b64data)
+        except Exception:
+            foto_bytes = None
+
     connection = get_db_connection()
     try:
-        foto_bytes = None
-        if foto:
-            foto_bytes = await foto.read()
-
         with connection.cursor() as cursor:
             cursor.execute(
                 """
