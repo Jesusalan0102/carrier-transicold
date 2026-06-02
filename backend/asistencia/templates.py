@@ -130,6 +130,8 @@ def get_checkin_template() -> str:
         <button class="ct-btn-primary" onclick="ct_lanzarFotoConfirmacion()" style="margin:20px 0;">
           <i class="ti ti-camera-selfie"></i> Tomar Selfie
         </button>
+        <input type="file" id="ct-input-selfie" accept="image/*" capture="user"
+               style="display:none;" onchange="ct_onSelfieSeleccionada(this)">
       </div>
     </div>
 
@@ -188,17 +190,7 @@ async function cargarHorarioHoy() {
   } catch(e) {}
 }
 
-// Modal
-window.abrirModalQR = () => {
-  document.getElementById('ct-modal-overlay').style.display = 'flex';
-  document.getElementById('ct-paso1').style.display = 'block';
-  document.getElementById('ct-paso2').style.display = 'none';
-  document.getElementById('ct-paso3').style.display = 'none';
-};
-
-window.cerrarModalQR = () => {
-  document.getElementById('ct-modal-overlay').style.display = 'none';
-};
+// Las funciones abrirModalQR y cerrarModalQR son inyectadas por web_router.py (init_script)
 
 // Iniciar
 document.addEventListener('DOMContentLoaded', () => {
