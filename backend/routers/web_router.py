@@ -1371,14 +1371,20 @@ async def checkin_tecnico():
     }
 
     // ── Abrir modal (paso 1: tomar foto del QR) ───────────────────────────────
+    // ── Escáner QR en tiempo real ──────────────────────────────────────────────
+    var _qrStream    = null;
+    var _qrScanLoop  = null;
+
     window.abrirModalQR = function(tipo) {
         _qrTipo    = tipo || 'entrada';
         _qrFotoB64 = null;
         document.getElementById('ct-modal-overlay').classList.add('open');
         _mostrarPaso('paso1');
+        _iniciarEscanerQR();
     };
 
     window.cerrarModalQR = function() {
+        _detenerEscanerQR();
         document.getElementById('ct-modal-overlay').classList.remove('open');
         _qrFotoB64 = null;
     };
@@ -1390,50 +1396,55 @@ async def checkin_tecnico():
         });
     }
 
-    // ── Paso 1: usuario selecciona/captura foto del QR ────────────────────────
-    window.ct_lanzarCamara = function() {
-        document.getElementById('ct-input-foto').click();
-    };
+    function _iniciarEscanerQR() {
+        var video = document.getElementById('ct-qr-video');
+        var status = document.getElementById('ct-qr-status');
+        if (!video) return;
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            if (status) status.textContent = '❌ Tu navegador no soporta cámara en tiempo real';
+            return;
+        }
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+        .then(function(stream) {
+            _qrStream = stream;
+            video.srcObject = stream;
+            video.play();
+            video.addEventListener('loadedmetadata', function() {
+                _qrScanLoop = setInterval(_escanearFrame, 350);
+            }, { once: true });
+        })
+        .catch(function(err) {
+            if (status) status.textContent = '❌ No se pudo acceder a la cámara: ' + err.message;
+        });
+    }
 
-    window.ct_onFotoSeleccionada = function(input) {
-        var file = input.files[0];
-        if (!file) return;
-        var reader = new FileReader();
-        reader.onload = function(e) {
-            var dataUrl = e.target.result;
-            // Intentar leer QR con jsQR
-            var img = new Image();
-            img.onload = function() {
-                var canvas = document.createElement('canvas');
-                canvas.width  = img.width;
-                canvas.height = img.height;
-                var ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0);
-                var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                var code = null;
-                try { code = jsQR(imageData.data, imageData.width, imageData.height); } catch(err) {}
+    function _detenerEscanerQR() {
+        if (_qrScanLoop) { clearInterval(_qrScanLoop); _qrScanLoop = null; }
+        if (_qrStream)   { _qrStream.getTracks().forEach(function(t){ t.stop(); }); _qrStream = null; }
+        var video = document.getElementById('ct-qr-video');
+        if (video) { video.srcObject = null; }
+    }
 
-                if (code && (code.data.includes('checkin') || code.data.includes('carrier') || code.data.includes('cleverapps'))) {
-                    // QR válido -> mostrar preview y pasar al paso 2 (foto de selfie/evidencia)
-                    var qrEl = document.getElementById('ct-qr-result');
-                    if (qrEl) { qrEl.textContent = '✅ QR válido detectado'; qrEl.style.display = 'block'; qrEl.style.background='#EAF3DE'; qrEl.style.color='#3B6D11'; }
-                    _mostrarPaso('paso2');
-                    // reset input para el paso 2
-                    input.value = '';
-                } else {
-                    // No se detectó QR válido -> igual continuar (podría ser limitación de resolución)
-                    var qrEl = document.getElementById('ct-qr-result');
-                    if (qrEl) { qrEl.textContent = '⚠️ No se detectó QR — continúa si apuntaste al QR correcto'; qrEl.style.display = 'block'; }
-                    _mostrarPaso('paso2');
-                    input.value = '';
-                }
-            };
-            img.src = dataUrl;
-        };
-        reader.readAsDataURL(file);
-    };
+    function _escanearFrame() {
+        var video  = document.getElementById('ct-qr-video');
+        var canvas = document.getElementById('ct-qr-canvas');
+        if (!video || !canvas || video.readyState < 2) return;
+        canvas.width  = video.videoWidth;
+        canvas.height = video.videoHeight;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        var code = null;
+        try { code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' }); } catch(e) {}
+        if (code && (code.data.includes('checkin') || code.data.includes('carrier') || code.data.includes('cleverapps'))) {
+            _detenerEscanerQR();
+            var qrEl = document.getElementById('ct-qr-result');
+            if (qrEl) { qrEl.textContent = '✅ QR válido detectado'; qrEl.style.display = 'block'; qrEl.style.background='#EAF3DE'; qrEl.style.color='#3B6D11'; }
+            _mostrarPaso('paso2');
+        }
+    }
 
-    // ── Paso 2: usuario toma selfie/foto de confirmación ─────────────────────
+    // ── Selfie de confirmación ─────────────────────────────────────────────────
     window.ct_lanzarFotoConfirmacion = function() {
         document.getElementById('ct-input-selfie').click();
     };
@@ -1444,19 +1455,15 @@ async def checkin_tecnico():
         var reader = new FileReader();
         reader.onload = function(e) {
             _qrFotoB64 = e.target.result;
-            // Mostrar preview
             var preview = document.getElementById('ct-preview-img');
             if (preview) { preview.src = _qrFotoB64; preview.style.display = 'block'; }
-            // Actualizar info en paso3
             var tipoEl = document.getElementById('ct-paso3-tipo');
             if (tipoEl) tipoEl.textContent = _qrTipo;
             var gpsEl = document.getElementById('ct-paso3-gps');
             if (gpsEl) gpsEl.textContent = _gpsCoords ? ('±' + Math.round(_gpsCoords.accuracy || 0) + 'm') : 'Obteniendo...';
-            var tipoLabel = _qrTipo === 'salida' ? 'Salida' : 'Entrada';
             var btnEl = document.getElementById('ct-btn-confirmar');
-            if (btnEl) btnEl.textContent = '✅ Confirmar ' + tipoLabel;
+            if (btnEl) btnEl.textContent = '✅ Confirmar ' + (_qrTipo === 'salida' ? 'Salida' : 'Entrada');
             _mostrarPaso('paso3');
-            // Refrescar GPS en este momento
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                     function(pos) { _gpsCoords = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy }; },
@@ -1468,8 +1475,7 @@ async def checkin_tecnico():
         reader.readAsDataURL(file);
     };
 
-    // ── Paso 3: enviar al servidor ────────────────────────────────────────────
-    window.ct_confirmarRegistro = async function() {
+        window.ct_confirmarRegistro = async function() {
         var btn = document.getElementById('ct-btn-confirmar');
         if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
 
