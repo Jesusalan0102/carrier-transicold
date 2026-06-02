@@ -1332,10 +1332,16 @@ async def checkin_tecnico():
         }).catch(() => { window.__ct_radio = 200; });
     }
 
-    setTimeout(function() {
-        if (typeof cargarHorario  === 'function') cargarHorario();
-        if (typeof cargarRegistros === 'function') cargarRegistros();
-    }, 50);
+    // Llamar cuando el DOM esté listo y window.__ct_username ya esté seteado
+    function _ctInit() {
+        if (typeof window.cargarHorario  === 'function') window.cargarHorario();
+        if (typeof window.cargarRegistros === 'function') window.cargarRegistros();
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', _ctInit);
+    } else {
+        setTimeout(_ctInit, 100);
+    }
 
     // ── Variables de estado del modal ─────────────────────────────────────────
     var _qrTipo      = 'entrada';
