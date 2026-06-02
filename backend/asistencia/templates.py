@@ -551,10 +551,16 @@ def get_checkin_template() -> str:
   // ── Cargar horario del día ─────────────────────────────────────────────────
   async function cargarHorario() {
     try {
-      const hoy = new Date().toISOString().split('T')[0];
+      // Usar la fecha local del dispositivo (no UTC) para evitar desfase con Tijuana
+      const ahora = new Date();
+      const fechaLocal = [
+        ahora.getFullYear(),
+        String(ahora.getMonth() + 1).padStart(2, '0'),
+        String(ahora.getDate()).padStart(2, '0')
+      ].join('-');
       const username = window.__ct_username || '';
       const res = await window.fetchAuth(
-        '/api/horarios/hoy?username=' + encodeURIComponent(username) + '&fecha=' + hoy
+        '/api/horarios/hoy?username=' + encodeURIComponent(username) + '&fecha=' + fechaLocal
       );
       const data = await res.json();
       const h = data && data.horario ? data.horario : null;
@@ -595,7 +601,13 @@ def get_checkin_template() -> str:
   // ── Cargar registros del día ───────────────────────────────────────────────
   async function cargarRegistros() {
     try {
-      const hoy = new Date().toISOString().split('T')[0];
+      // Usar fecha local (no UTC) para no desfasar en zona Tijuana
+      const ahora = new Date();
+      const hoy = [
+        ahora.getFullYear(),
+        String(ahora.getMonth() + 1).padStart(2, '0'),
+        String(ahora.getDate()).padStart(2, '0')
+      ].join('-');
       const res  = await window.fetchAuth('/api/asistencia/registros?fecha=' + hoy);
       const data = await res.json();
 
