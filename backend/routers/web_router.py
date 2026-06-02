@@ -1388,6 +1388,21 @@ async def checkin_tecnico():
             var el = document.getElementById('ct-' + p);
             if (el) el.style.display = (p === paso) ? 'block' : 'none';
         });
+        // Actualizar progress dots
+        var pasoNum = parseInt(paso.replace('paso',''));
+        ['dot1','dot2','dot3'].forEach(function(d, i) {
+            var dot = document.getElementById(d);
+            if (!dot) return;
+            var n = i + 1;
+            dot.className = 'ct-step-dot' + (n === pasoNum ? ' active' : n < pasoNum ? ' done' : '');
+        });
+        // Actualizar título/subtítulo del modal
+        var titles = { paso1: ['Escanear QR', 'Apunta la cámara al código QR'], paso2: ['Tomar selfie', 'Verifica tu identidad con una foto'], paso3: ['Confirmar registro', 'Revisa los datos y confirma'] };
+        var t = titles[paso];
+        var tEl = document.getElementById('ct-modal-title');
+        var sEl = document.getElementById('ct-modal-subtitle');
+        if (tEl && t) tEl.textContent = t[0];
+        if (sEl && t) sEl.textContent = t[1];
     }
 
     function _iniciarEscanerQR() {
@@ -1451,16 +1466,22 @@ async def checkin_tecnico():
             _qrFotoB64 = e.target.result;
             var preview = document.getElementById('ct-preview-img');
             if (preview) { preview.src = _qrFotoB64; preview.style.display = 'block'; }
+            // Llenar campos del paso 3
             var tipoEl = document.getElementById('ct-paso3-tipo');
-            if (tipoEl) tipoEl.textContent = _qrTipo;
+            if (tipoEl) tipoEl.textContent = _qrTipo === 'salida' ? '🔴 Salida' : '🟢 Entrada';
+            var horaEl = document.getElementById('ct-paso3-hora');
+            if (horaEl) horaEl.textContent = new Intl.DateTimeFormat('es-MX', { timeZone:'America/Tijuana', hour:'2-digit', minute:'2-digit', hour12:false }).format(new Date());
             var gpsEl = document.getElementById('ct-paso3-gps');
             if (gpsEl) gpsEl.textContent = _gpsCoords ? ('±' + Math.round(_gpsCoords.accuracy || 0) + 'm') : 'Obteniendo...';
-            var btnEl = document.getElementById('ct-btn-confirmar');
-            if (btnEl) btnEl.textContent = '✅ Confirmar ' + (_qrTipo === 'salida' ? 'Salida' : 'Entrada');
+            var userEl = document.getElementById('ct-paso3-user');
+            if (userEl) userEl.textContent = window.__ct_username || '—';
             _mostrarPaso('paso3');
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
-                    function(pos) { _gpsCoords = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy }; },
+                    function(pos) {
+                        _gpsCoords = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy };
+                        if (gpsEl) gpsEl.textContent = '±' + Math.round(pos.coords.accuracy) + 'm';
+                    },
                     function() {},
                     { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
                 );
@@ -1474,8 +1495,8 @@ async def checkin_tecnico():
         if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
 
         if (!_gpsCoords) {
-            alert('Esperando GPS. Asegúrate de haber dado permiso de ubicación.');
-            if (btn) { btn.disabled = false; btn.textContent = '✅ Confirmar ' + _qrTipo; }
+            if (typeof ctToast === 'function') ctToast('⚠️ Esperando GPS. Activa el permiso de ubicación.', 'red');
+            if (btn) { btn.disabled = false; }
             return;
         }
 
@@ -1494,13 +1515,15 @@ async def checkin_tecnico():
             var data = await res.json();
             cerrarModalQR();
             if (data.aprobado) {
-                alert('✅ ' + (_qrTipo === 'entrada' ? 'Entrada' : 'Salida') + ' registrada a las ' + data.hora);
+                if (typeof ctToast === 'function') ctToast('✅ ' + (_qrTipo === 'entrada' ? 'Entrada' : 'Salida') + ' registrada a las ' + data.hora, 'green');
             } else {
-                alert('⚠️ Registrado, pero fuera del perímetro.\\n' + data.mensaje);
+                if (typeof ctToast === 'function') ctToast('⚠️ Fuera del perímetro. ' + (data.mensaje || ''), 'red');
             }
-            if (typeof cargarRegistros === 'function') cargarRegistros();
+            if (typeof cargarHorarioHoy  === 'function') cargarHorarioHoy();
+            if (typeof cargarMisHorarios === 'function') cargarMisHorarios();
+            if (typeof cargarRegistros   === 'function') cargarRegistros();
         } catch(e) {
-            alert('Error al enviar: ' + e.message);
+            if (typeof ctToast === 'function') ctToast('Error: ' + e.message, 'red');
         }
         if (btn) { btn.disabled = false; }
     };
