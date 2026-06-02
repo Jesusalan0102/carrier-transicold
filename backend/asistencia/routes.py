@@ -4,6 +4,9 @@ from typing import Optional
 import pymysql
 from db import get_db_connection
 from datetime import datetime
+import zoneinfo
+
+TZ_TJ = zoneinfo.ZoneInfo("America/Tijuana")
 import os
 import math
 from auth import verify_token
@@ -116,7 +119,7 @@ def registrar_checkin(payload: RegistroCheckin, current_user=Depends(verify_toke
 
         distancia = _haversine(payload.lat, payload.lon, cfg["lat_fija"], cfg["lon_fija"])
         aprobado  = 1 if distancia <= cfg["radio_metros"] else 0
-        ahora     = datetime.now()
+        ahora     = datetime.now(tz=TZ_TJ)
         hora_str  = ahora.strftime("%H:%M:%S")
 
         foto_bytes = None
