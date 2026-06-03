@@ -23,9 +23,8 @@ from db import init_db
 
 from asistencia.routes import router as asistencia_api_router
 from asistencia.horarios_routes import router as horarios_router
-from routers.reporte_router import router as reporte_router
-from routers.reportes import router as reportes_router
-
+# En main.py
+from routers.reportes_router import router as reportes_router  # ← cambia esto
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
