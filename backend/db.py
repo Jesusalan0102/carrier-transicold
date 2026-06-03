@@ -48,3 +48,20 @@ def execute_write(sql: str, params=None):
             return affected
     finally:
         conn.close()
+
+
+def get_db_connection():
+    """
+    Devuelve una conexión directa del pool.
+    El llamador es responsable de llamar connection.close() en un bloque finally.
+    Usado por asistencia/routes.py y reporte_router.py que manejan
+    el cursor y commit manualmente.
+    """
+    if pool is None:
+        print("❌ get_db_connection: el pool no está inicializado")
+        return None
+    try:
+        return pool.connection()
+    except Exception as e:
+        print(f"❌ Error obteniendo conexión del pool: {e}")
+        return None
