@@ -82,7 +82,7 @@ def obtener_configuracion():
             cursor.execute("SELECT lat_fija, lon_fija, radio_metros FROM configuracion_geocerca LIMIT 1")
             config = cursor.fetchone()
             if not config:
-                return {"lat_fija": 32.471823, "lon_fija": -116.798104, "radio_metros": 200}
+                return {"lat_fija": 19.394800, "lon_fija": -99.155600, "radio_metros": 200}
             return config
     except Exception as e:
         print(f"Error en obtener_configuracion: {e}")
