@@ -1,58 +1,32 @@
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from db import execute_read
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
-import bcrypt
-from jose import jwt
-from datetime import datetime, timedelta
-import os
+from typing import Optional
+from db import execute_read  # ← Ahora sí existe
 
-router = APIRouter(prefix="/api/auth", tags=["auth"])
-security = HTTPBearer()
+router = APIRouter()
 
-# Configuración
-# bcrypt directo (compatible con Python 3.14)
-SECRET_KEY = os.getenv("SECRET_KEY", "carrier_secret_key_2024_change_in_production")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
-class LoginRequest(BaseModel):
-    username: str
-    password: str
+class TokenData(BaseModel):
+    username: Optional[str] = None
 
-class TokenResponse(BaseModel):
-    access_token: str
-    role: str
-    username: str
+def verify_token(token: str = Depends(oauth2_scheme)):
+    # Aquí tu lógica de verificación (MSAL, JWT, etc.)
+    # Por ahora un placeholder
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return token
 
-def create_access_token(data: dict):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+@router.post("/login")
+async def login(credentials: dict):
+    # Tu lógica de login aquí
+    return {"access_token": "placeholder", "token_type": "bearer"}
 
-@router.post("/login", response_model=TokenResponse)
-def login(login_data: LoginRequest):
-    # Buscar usuario
-    users = execute_read(
-        "SELECT username, password, role FROM users WHERE username = %s",
-        (login_data.username,)
-    )
-    
-    if not users:
-        raise HTTPException(status_code=401, detail="Credenciales incorrectas")
-    
-    user = users[0]
-    
-    # Verificar contraseña usando bcrypt
-    if not bcrypt.checkpw(login_data.password.encode("utf-8"), user["password"].encode("utf-8")):
-        raise HTTPException(status_code=401, detail="Credenciales incorrectas")
-    
-    # Crear token
-    token = create_access_token({"sub": user["username"], "role": user["role"]})
-    
-    return {
-        "access_token": token,
-        "role": user["role"],
-        "username": user["username"]
-    }
+@router.get("/me")
+async def read_users_me(token: str = Depends(verify_token)):
+    return {"user": "usuario_actual"}
