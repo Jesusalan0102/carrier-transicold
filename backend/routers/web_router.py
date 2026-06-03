@@ -1,14 +1,12 @@
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
-# Importar módulos de asistencia
-from asistencia.routes import router as asistencia_router
+# FIX Bug 1 y 2: asistencia_router y horarios_router ya NO se incluyen aquí.
+# Se registran en main.py con prefix='/api' para que las rutas queden en
+# /api/asistencia/... y /api/horarios/... — coincidiendo con las llamadas del frontend.
 from asistencia.templates import get_checkin_template, ASISTENCIA_STYLES
 
 router = APIRouter()
-
-# Incluir routers de asistencia
-router.include_router(asistencia_router)
 
 # ------------------------------------------------------------
 # ESTILOS GLOBALES PREMIUM
@@ -196,12 +194,33 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
             if (!window.token) {{
                 window.location.href = '/app';
             }}
+            // FIX Bug 5: tryRefreshToken intenta renovar el JWT silenciosamente
+            // antes de forzar re-login cuando el servidor devuelve 401.
+            window._tryRefreshToken = async function() {{
+                try {{
+                    const res = await fetch('/api/auth/refresh', {{
+                        method: 'POST',
+                        headers: {{ 'Authorization': 'Bearer ' + window.token }}
+                    }});
+                    if (!res.ok) return false;
+                    const data = await res.json();
+                    window.token = data.access_token;
+                    localStorage.setItem('access_token', data.access_token);
+                    return true;
+                }} catch (e) {{ return false; }}
+            }};
             window.fetchAuth = async (url, options) => {{
                 options = options || {{}};
                 const headers = options.headers || {{}};
                 headers['Authorization'] = 'Bearer ' + window.token;
                 const res = await fetch(url, {{ ...options, headers }});
                 if (res.status === 401) {{
+                    // FIX Bug 5: intentar refresh antes de redirigir al login
+                    const refreshed = await window._tryRefreshToken();
+                    if (refreshed) {{
+                        headers['Authorization'] = 'Bearer ' + window.token;
+                        return await fetch(url, {{ ...options, headers }});
+                    }}
                     localStorage.clear();
                     window.location.href = '/app';
                 }}
@@ -478,7 +497,8 @@ async def dashboard():
             } catch (err) { console.error('Error al cargar dashboard:', err); document.getElementById('kpiContainer').innerHTML = '<p style="color:red;">Error al conectar con el servidor.</p>'; }
         }
         async function descargarEvidencias() { const unit = document.getElementById('unidadEv').value; if (!unit) return alert('Selecciona unidad'); const res = await fetchAuth(`/api/evidencias/download/${unit}`); if (!res.ok) return alert('Error al descargar'); const blob = await res.blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `evidencias_${unit}.zip`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
-        async function descargarReporte() { const res = await fetchAuth('/api/dashboard/reporte-excel'); if (!res.ok) return alert('Error al generar reporte'); const blob = await res.blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'reporte_maestro.xlsx'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+        // FIX Bug 3: se cambió la URL al endpoint completo de 22 tablas en reporte_router.
+        async function descargarReporte() { const res = await fetchAuth('/api/reportes/exportar-maestro'); if (!res.ok) return alert('Error al generar reporte maestro'); const blob = await res.blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'Reporte_Maestro_Carrier_Transicold.xlsx'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
         cargarDashboard();
     </script>
     """
