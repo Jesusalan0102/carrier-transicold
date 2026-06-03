@@ -169,7 +169,7 @@ async def registrar_asistencia(
             cursor.execute(
                 """
                 INSERT INTO registros_asistencia 
-                (username, fecha, tipo, hora_checkin, lat, lon, distancia_metros, aprobado, foto)
+                (username, fecha, tipo, hora_checkin, latitud, longitud, distancia_metros, aprobado, foto)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (username, fecha_hoy, tipo, hora_actual, lat, lon, round(distancia), aprobado, foto_bytes)
