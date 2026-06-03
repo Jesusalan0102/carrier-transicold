@@ -1,230 +1,142 @@
 import os
-import io
-import base64
-import math
-from datetime import datetime
-from fastapi import FastAPI, Depends, HTTPException, status
-from pydantic import BaseModel
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, Session
-import qrcode
+import gc
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, Response
 
-# -------------------------------------------------------------------------
-# Configuración e Infraestructura de Base de Datos (TiDB / MySQL)
-# -------------------------------------------------------------------------
-DATABASE_URL = f"mysql+pymysql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
+from routers.auth_router import router as auth_router
+from routers.dashboard_router import router as dashboard_router
+from routers.asignaciones_router import router as asignaciones_router
+from routers.tickets_router import router as tickets_router
+from routers.inventario_router import router as inventario_router
+from routers.unidades_router import router as unidades_router
+from routers.usuarios_router import router as usuarios_router
+from routers.evidencias_router import router as evidencias_router
+from routers.toma_valores_router import router as toma_valores_router
+from routers.comentarios_router import router as comentarios_router
+from routers.ws import router as ws_router
+from routers.cluster_router import router as cluster_router
+from routers.web_router import router as web_router
+from db import init_db
 
-engine = create_engine(
-    DATABASE_URL, 
-    pool_size=10, 
-    max_overflow=20, 
-    pool_pre_ping=True
-)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+from asistencia.routes import router as asistencia_api_router
+from asistencia.horarios_routes import router as horarios_router
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("⏳ [STARTUP] Inicializando conexiones de infraestructura...")
+    try:
+        init_db()
+        print("✅ [STARTUP] Base de datos TiDB conectada con éxito.")
+    except Exception as db_err:
+        print(f"❌ [CRITICAL] Falló la inicialización de la base de datos: {db_err}")
+    gc.collect()
+    print("🧹 [RAM] Memoria residual de compilación liberada correctamente.")
+    yield
+    print("🛑 [SHUTDOWN] Cerrando recursos...")
+
 
 app = FastAPI(
-    title="Sistema de Asistencia, QR y Geolocalización", 
-    version="1.0.0"
+    title="Carrier Transicold API",
+    version="2.0",
+    description="Sistema Operativo Carrier Transicold — API REST",
+    lifespan=lifespan
 )
 
-# Dependencia para obtener la sesión de la Base de Datos
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# -------------------------------------------------------------------------
-# Modelos de Entrada Pydantic (Validación de Datos)
-# -------------------------------------------------------------------------
-class QRCreateRequest(BaseModel):
-    config_id: int
-    datos_extra: str = ""
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-class AsistenciaRequest(BaseModel):
-    user_id: int
-    qr_token: str  # El token o información que venía dentro del QR leído
-    latitud_usuario: float
-    longitud_usuario: float
 
-# -------------------------------------------------------------------------
-# Funciones Auxiliares de Geolocalización (Fórmula de Haversine)
-# -------------------------------------------------------------------------
-def calcular_distancia_metros(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """
-    Calcula la distancia en metros entre dos coordenadas geográficas utilizando Haversine.
-    """
-    R = 6371000.0  # Radio de la Tierra en metros
-    
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    delta_phi = math.radians(lat2 - lat1)
-    delta_lambda = math.radians(lon2 - lon1)
-    
-    a = (math.sin(delta_phi / 2) ** 2 + 
-         math.cos(phi1) * math.cos(phi2) * (math.sin(delta_lambda / 2) ** 2))
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    
-    return R * c
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    path = os.path.join(os.path.dirname(__file__), "static", "favicon.ico")
+    if not os.path.exists(path):
+        return Response(status_code=204)
+    return FileResponse(path)
 
-# -------------------------------------------------------------------------
-# Endpoints de la API
-# -------------------------------------------------------------------------
 
 @app.get("/")
-def read_root():
-    return {
-        "status": "online", 
-        "timestamp": datetime.utcnow().isoformat(),
-        "database": "connected"
-    }
+def root():
+    return {"mensaje": "API Carrier Transicold operativa", "docs": "/docs"}
 
-@app.post("/api/qr/generar", status_code=status.HTTP_201_CREATED)
-def generar_codigo_qr(request: QRCreateRequest, db: Session = Depends(get_db)):
-    """
-    Obtiene los parámetros de configuración de asistencia y geocercas para incrustarlos
-    en un código QR dinámico devuelto en formato Base64.
-    """
-    # 1. Validar que exista la configuración en la tabla 'asistencia_config'
-    query_config = text("""
-        SELECT id, nombre, sucursal_id 
-        FROM asistencia_config 
-        WHERE id = :config_id
-    """)
-    configuracion = db.execute(query_config, {"config_id": request.config_id}).fetchone()
-    
-    if not configuracion:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail="La configuración de asistencia especificada no existe."
-        )
-        
-    # 2. Estructurar la información única que contendrá el QR de asistencia
-    # Nota: Se añade timestamp para evitar fraude por capturas de pantalla viejas
-    timestamp_actual = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-    contenido_qr = f"ASISTENCIA|CONF_{configuracion.id}|SUC_{configuracion.sucursal_id}|TS_{timestamp_actual}|{request.datos_extra}"
-    
+
+@app.get("/test-onedrive")
+def test_onedrive():
+    vars_presentes = {
+        "MS_CLIENT_ID":     bool(os.getenv("MS_CLIENT_ID")),
+        "MS_CLIENT_SECRET": bool(os.getenv("MS_CLIENT_SECRET")),
+        "MS_TENANT_ID":     bool(os.getenv("MS_TENANT_ID")),
+        "MS_USER_EMAIL":    os.getenv("MS_USER_EMAIL", "NO DEFINIDO"),
+    }
     try:
-        # 3. Generar la imagen del Código QR usando la librería qrcode
-        qr = qrcode.QRCode(
-            version=1,
-            error_correction=qrcode.constants.ERROR_CORRECT_L,
-            box_size=10,
-            border=4,
-        )
-        qr.add_data(contenido_qr)
-        qr.make(fit=True)
-        
-        img = qr.make_image(fill_color="black", back_color="white")
-        
-        # 4. Convertir la imagen a una cadena Base64
-        buffer = io.BytesIO()
-        img.save(buffer, format="PNG")
-        qr_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-        
+        from onedrive_service import _get_token
+        token = _get_token()
         return {
-            "success": True,
-            "config_id": request.config_id,
-            "contenido_encriptado": contenido_qr,
-            "qr_base64": f"data:image/png;base64,{qr_base64}"
+            "status": "OK ✅ — Conexión con OneDrive exitosa",
+            "variables": vars_presentes,
+            "token_preview": token[:20] + "..." if token else "None"
         }
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error interno al generar el QR: {str(e)}"
-        )
+        return {"status": "ERROR ❌", "variables": vars_presentes, "detalle": str(e)}
 
-@app.post("/api/asistencia/registrar", status_code=status.HTTP_201_CREATED)
-def registrar_asistencia(request: AsistenciaRequest, db: Session = Depends(get_db)):
-    """
-    Valida la lectura del QR, comprueba si el usuario se encuentra dentro del rango
-    permitido por su geocerca y guarda las coordenadas físicas exactas en la base de datos.
-    """
-    # 1. Verificar existencia del usuario
-    query_user = text("SELECT id, name FROM users WHERE id = :user_id")
-    usuario = db.execute(query_user, {"user_id": request.user_id}).fetchone()
-    if not usuario:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail="El usuario especificado no existe."
-        )
 
-    # 2. Parsear el QR recibido para extraer el ID de la configuración
-    try:
-        partes_qr = request.qr_token.split("|")
-        if len(partes_qr) < 4 or partes_qr[0] != "ASISTENCIA":
-            raise ValueError()
-        config_id = int(partes_qr[1].replace("CONF_", ""))
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El código QR escaneado no es válido o ha expirado."
-        )
-
-    # 3. Traer los límites geográficos desde la tabla 'configuracion_geocerca'
-    query_geocerca = text("""
-        SELECT latitud_centro, longitud_centro, radio_permitido_metros, activo 
-        FROM configuracion_geocerca 
-        WHERE asistencia_config_id = :config_id AND activo = 1
-        LIMIT 1
-    """)
-    geocerca = db.execute(query_geocerca, {"config_id": config_id}).fetchone()
-
-    if not geocerca:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No se encontró una configuración de geocerca activa para este punto de asistencia."
-        )
-
-    # 4. Calcular distancia física real entre el empleado y el centro de la sucursal
-    distancia_calculada = calcular_distancia_metros(
-        request.latitud_usuario, request.longitud_usuario,
-        geocerca.latitud_centro, geocerca.longitud_centro
+@app.get("/auth/onedrive/callback")
+def onedrive_callback(code: str = None, error: str = None):
+    if error:
+        return {"error": error}
+    if not code:
+        return {"error": "No se recibió código"}
+    import requests
+    resp = requests.post(
+        "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        data={
+            "client_id":     "dc1c0d4f-0f48-44db-9fde-a63178fb8ab0",
+            "client_secret": os.getenv("MS_CLIENT_SECRET_PERSONAL", ""),
+            "code":          code,
+            "redirect_uri":  "https://carrier-transicold.onrender.com/auth/onedrive/callback",
+            "grant_type":    "authorization_code",
+            "scope":         "https://graph.microsoft.com/Files.ReadWrite offline_access User.Read",
+        }
     )
+    data = resp.json()
+    if "refresh_token" in data:
+        return {
+            "status": "✅ ÉXITO — Copia este refresh_token y guárdalo en Render como MS_REFRESH_TOKEN",
+            "refresh_token": data["refresh_token"],
+            "access_token_preview": data.get("access_token", "")[:30] + "..."
+        }
+    return {"error": data}
 
-    # 5. Validar si el usuario está fuera de la cerca perimetral
-    dentro_de_rango = distancia_calculada <= geocerca.radio_permitido_metros
 
-    # 6. Insertar el registro definitivo con coordenadas en 'asistencia_registros'
-    # También puedes guardar en 'valores_registrados' o 'registros_asistencia' según tu lógica exacta.
-    query_insert_asistencia = text("""
-        INSERT INTO asistencia_registros 
-        (user_id, fecha_registro, latitud, longitud, distancia_metros, dentro_geocerca, qr_origen) 
-        VALUES 
-        (:user_id, :fecha, :lat, :lon, :distancia, :dentro, :qr)
-    """)
-    
-    fecha_actual = datetime.utcnow()
-    
-    try:
-        db.execute(query_insert_asistencia, {
-            "user_id": request.user_id,
-            "fecha": fecha_actual,
-            "lat": request.latitud_usuario,
-            "lon": request.longitud_usuario,
-            "distancia": round(distancia_calculada, 2),
-            "dentro": 1 if dentro_de_rango else 0,
-            "qr": request.qr_token
-        })
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Fallo crítico al insertar las coordenadas en la base de datos: {str(e)}"
-        )
+# Routers con /api/ ya en su prefijo propio
+app.include_router(auth_router)
+app.include_router(asignaciones_router)
+app.include_router(tickets_router)
+app.include_router(inventario_router)
+app.include_router(unidades_router)
+app.include_router(usuarios_router)
+app.include_router(evidencias_router)
+app.include_router(toma_valores_router)
+app.include_router(comentarios_router)
+app.include_router(cluster_router)
+app.include_router(horarios_router)
+app.include_router(ws_router)
 
-    # 7. Retornar respuesta al Frontend
-    if not dentro_de_rango:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Fuera de rango geográfico. Se encuentra a {round(distancia_calculada, 1)} metros de la sucursal (Máximo permitido: {geocerca.radio_permitido_metros}m)."
-        )
+# Routers sin /api/ — se les agrega aquí
+app.include_router(dashboard_router,      prefix="/api")
+app.include_router(asistencia_api_router, prefix="/api")
 
-    return {
-        "success": True,
-        "message": "Asistencia y coordenadas registradas correctamente.",
-        "timestamp": fecha_actual.isoformat(),
-        "distancia_metros": round(distancia_calculada, 2)
-    }
+# Web router al final
+app.include_router(web_router)
