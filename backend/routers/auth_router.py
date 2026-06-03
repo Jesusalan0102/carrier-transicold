@@ -1,13 +1,31 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
+import bcrypt
 from db import execute_read
-from auth import create_access_token, verify_token, verify_password
+from auth import create_access_token, verify_token
 
 router = APIRouter()
 
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+def check_password(plain: str, stored: str) -> bool:
+    """
+    Verifica la contraseña usando bcrypt directo (compatible con bcrypt 5.0.0).
+    No usa passlib para evitar el error de incompatibilidad con bcrypt 5.0.0.
+    Soporta hashes $2a$, $2b$, $2y$ generados por bcrypt o passlib.
+    """
+    try:
+        stored_bytes = stored.encode("utf-8") if isinstance(stored, str) else stored
+        plain_bytes = plain.encode("utf-8")
+        # Normalizar prefijo $2y$ y $2a$ a $2b$ si es necesario
+        if stored_bytes.startswith(b"$2y$") or stored_bytes.startswith(b"$2a$"):
+            stored_bytes = b"$2b$" + stored_bytes[4:]
+        return bcrypt.checkpw(plain_bytes, stored_bytes)
+    except Exception as e:
+        print(f"[auth] Error en check_password: {e}")
+        return False
 
 @router.post("/login")
 async def login(credentials: LoginRequest):
@@ -24,13 +42,8 @@ async def login(credentials: LoginRequest):
 
     user = rows[0]
 
-    # 2. Verificar contraseña — compatible con passlib y bcrypt directo
-    try:
-        password_ok = verify_password(credentials.password, user["password"])
-    except Exception:
-        password_ok = False
-
-    if not password_ok:
+    # 2. Verificar contraseña
+    if not check_password(credentials.password, user["password"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales incorrectas"
