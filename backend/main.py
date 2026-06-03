@@ -7,8 +7,8 @@ import os
 from routers.auth_router import router as auth_router
 from routers.web_router import router as web_router          # Todas las rutas /app/*
 
-# FIX Bug 5: refresh_router vive dentro de auth.py (no es un archivo separado)
-from auth import refresh_router
+# refresh_router vive dentro de routers/auth_router.py
+from routers.auth_router import refresh_router
 
 # ── Routers de API (cada uno ya trae su propio prefix /api/...) ─────────────
 from routers.dashboard_router import router as dashboard_router       # /api/dashboard/...
