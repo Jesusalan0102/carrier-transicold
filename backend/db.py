@@ -5,7 +5,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
-# Importamos la función de lectura limpia desde tu db.py
+# Importamos la función de lectura directa desde tu db.py
 from db import execute_read 
 from auth import verify_token
 
@@ -45,7 +45,7 @@ def exportar_sistema_completo(current_user=Depends(verify_token)):
         
         # 4. Iterar y procesar cada tabla del sistema de manera dinámica
         for nombre_tabla in tablas_sistema:
-            # Creamos la query de manera segura usando backticks para proteger nombres reservados
+            # Creamos la query usando backticks para proteger nombres de tablas que puedan ser reservados
             sql = f"SELECT * FROM `{nombre_tabla}`"
             
             # Ejecutamos la consulta usando la función de lectura de tu db.py (retorna diccionarios)
@@ -55,7 +55,7 @@ def exportar_sistema_completo(current_user=Depends(verify_token)):
             ws = wb.create_sheet(title=nombre_tabla[:31])
             
             if registros:
-                # Extraemos el nombre de las columnas basándonos en el primer registro
+                # Extraemos los nombres de las columnas basándonos en las llaves del primer registro
                 columnas = list(registros[0].keys())
                 
                 # Insertar la primera fila con los encabezados
@@ -83,7 +83,7 @@ def exportar_sistema_completo(current_user=Depends(verify_token)):
                         fila_datos.append(valor)
                     ws.append(fila_datos)
             else:
-                # Si una tabla está completamente vacía, ponemos un mensaje elegante en lugar de dejarla desierta
+                # Si una tabla está vacía, añadimos una nota elegante en la pestaña
                 ws.cell(row=1, column=1, value="Sin registros actualmente en esta tabla.").font = Font(italic=True)
             
             # 5. Auto-ajuste inteligente del ancho de las columnas de acuerdo con el texto más largo
@@ -93,7 +93,7 @@ def exportar_sistema_completo(current_user=Depends(verify_token)):
                 for cell in col:
                     if cell.value:
                         max_len = max(max_len, len(str(cell.value)))
-                # Añadir un margen de seguridad de +3 caracteres
+                # Añadir un margen de seguridad de +3 caracteres para que no se corte el texto
                 ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
         
         # 6. Guardar la estructura completa en la memoria RAM (búfer binario BytesIO)
@@ -104,7 +104,7 @@ def exportar_sistema_completo(current_user=Depends(verify_token)):
         # Nombre por defecto del reporte al ser descargado
         nombre_archivo = "Reporte_Maestro_Carrier_Transicold.xlsx"
         
-        # Retornamos el stream directamente al navegador del administrador
+        # Retornamos el stream de datos directamente al navegador
         return StreamingResponse(
             excel_buffer,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
