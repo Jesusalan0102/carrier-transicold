@@ -1492,11 +1492,28 @@ async def checkin_tecnico():
 
         window.ct_confirmarRegistro = async function() {
         var btn = document.getElementById('ct-btn-confirmar');
-        if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+        if (btn) { btn.disabled = true; btn.textContent = 'Obteniendo GPS...'; }
+
+        // Siempre pide coordenadas frescas justo antes de enviar
+        await new Promise(function(resolve) {
+            if (!navigator.geolocation) { resolve(); return; }
+            navigator.geolocation.getCurrentPosition(
+                function(pos) {
+                    _gpsCoords = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy };
+                    var gpsEl = document.getElementById('ct-paso3-gps');
+                    if (gpsEl) gpsEl.textContent = '±' + Math.round(pos.coords.accuracy) + 'm';
+                    resolve();
+                },
+                function() { resolve(); },
+                { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+            );
+        });
+
+        if (btn) { btn.textContent = 'Enviando...'; }
 
         if (!_gpsCoords) {
             if (typeof ctToast === 'function') ctToast('⚠️ Esperando GPS. Activa el permiso de ubicación.', 'red');
-            if (btn) { btn.disabled = false; }
+            if (btn) { btn.disabled = false; btn.textContent = '✅ Confirmar registro'; }
             return;
         }
 
@@ -1525,7 +1542,7 @@ async def checkin_tecnico():
         } catch(e) {
             if (typeof ctToast === 'function') ctToast('Error: ' + e.message, 'red');
         }
-        if (btn) { btn.disabled = false; }
+        if (btn) { btn.disabled = false; btn.textContent = '✅ Confirmar registro'; }
     };
     </script>
     """
