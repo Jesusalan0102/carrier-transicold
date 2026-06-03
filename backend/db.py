@@ -6,7 +6,7 @@ from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
 # Importamos la función de lectura directa desde tu db.py
-from db import execute_read 
+
 from auth import verify_token
 
 router = APIRouter(
