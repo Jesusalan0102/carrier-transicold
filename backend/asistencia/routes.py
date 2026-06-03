@@ -1,6 +1,6 @@
 """
 routes.py — Backend de Asistencia Carrier Transicold
-Versión actualizada con Timezone Tijuana correcto y endpoints mejorados.
+Corregido: columnas latitud/longitud + validación GPS real con accuracy check.
 """
 
 from fastapi import APIRouter, HTTPException, Query, status, Depends, Form, File, UploadFile
@@ -14,6 +14,8 @@ import os
 import math
 import base64
 from auth import verify_token
+# ← Importamos el validador que ya existía pero no se usaba
+from asistencia.asistencia.gps_validator import validar_ubicacion, es_gps_preciso
 
 # ====================== TIMEZONE TIJUANA ======================
 TZ_TJ = zoneinfo.ZoneInfo("America/Tijuana")
@@ -22,6 +24,9 @@ router = APIRouter(
     prefix="/asistencia",
     tags=["Asistencia"]
 )
+
+# ── Máxima imprecisión GPS aceptada (metros) ──────────────────────────────────
+GPS_ACCURACY_LIMIT = 50   # Rechaza lecturas con error > 50 m
 
 
 class GeofenceConfig(BaseModel):
@@ -47,12 +52,12 @@ def obtener_registros(fecha: str = Query(None)):
         with connection.cursor(pymysql.cursors.DictCursor) as cursor:
             if fecha:
                 cursor.execute(
-                    "SELECT * FROM registros_asistencia WHERE DATE(fecha) = %s ORDER BY fecha DESC, hora_checkin DESC", 
+                    "SELECT * FROM registros_asistencia WHERE DATE(fecha) = %s ORDER BY fecha DESC, hora_checkin DESC",
                     (fecha,)
                 )
             else:
                 cursor.execute("SELECT * FROM registros_asistencia ORDER BY fecha DESC, hora_checkin DESC")
-            
+
             registros = cursor.fetchall()
             result = []
             for r in registros:
@@ -122,21 +127,13 @@ def guardar_configuracion(config: GeofenceConfig):
         connection.close()
 
 
-# ── REGISTRO DE ASISTENCIA (CORREGIDO CON TZ TIJUANA) ────────────────────────
-def _haversine(lat1, lon1, lat2, lon2):
-    R = 6371000
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-
+# ── REGISTRO DE ASISTENCIA ────────────────────────────────────────────────────
 @router.post("/registrar")
 async def registrar_asistencia(
     body: RegistroAsistenciaBody,
     current_user=Depends(verify_token)
 ):
-    """Registra entrada/salida con hora exacta de Tijuana"""
+    """Registra entrada/salida con hora exacta de Tijuana y validación GPS real."""
     username = current_user["username"]
     tipo = body.tipo
     lat = body.lat
@@ -145,16 +142,37 @@ async def registrar_asistencia(
     if tipo not in ("entrada", "salida"):
         raise HTTPException(400, "Tipo debe ser 'entrada' o 'salida'")
 
+    # ── 1. Validar precisión GPS (accuracy) ────────────────────────────────────
+    gps_ok, gps_msg = es_gps_preciso(body.accuracy, limite_metros=GPS_ACCURACY_LIMIT)
+    if not gps_ok:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "codigo": "GPS_IMPRECISO",
+                "mensaje": gps_msg,
+                "accuracy": body.accuracy,
+                "limite": GPS_ACCURACY_LIMIT,
+                "sugerencia": "Muévete a un lugar con mejor señal GPS o espera a que el GPS se estabilice."
+            }
+        )
+
+    # ── 2. Validar geocerca ────────────────────────────────────────────────────
+    config = obtener_configuracion()
+    dentro, distancia, geo_msg = validar_ubicacion(
+        lat_tecnico=lat,
+        lon_tecnico=lon,
+        lat_fija=config["lat_fija"],
+        lon_fija=config["lon_fija"],
+        radio_metros=config["radio_metros"]
+    )
+    aprobado = 1 if dentro else 0
+
+    # ── 3. Hora Tijuana ────────────────────────────────────────────────────────
     now_tj = datetime.now(TZ_TJ)
     fecha_hoy = now_tj.date().isoformat()
     hora_actual = now_tj.strftime("%H:%M:%S")
 
-    # Obtener configuración de geocerca
-    config = obtener_configuracion()
-    distancia = _haversine(lat, lon, config["lat_fija"], config["lon_fija"])
-    aprobado = 1 if distancia <= config["radio_metros"] else 0
-
-    # Procesar foto base64 si viene
+    # ── 4. Procesar foto base64 ────────────────────────────────────────────────
     foto_bytes = None
     if body.foto_base64:
         try:
@@ -163,12 +181,13 @@ async def registrar_asistencia(
         except Exception:
             foto_bytes = None
 
+    # ── 5. Insertar en DB ──────────────────────────────────────────────────────
     connection = get_db_connection()
     try:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO registros_asistencia 
+                INSERT INTO registros_asistencia
                 (username, fecha, tipo, hora_checkin, latitud, longitud, distancia_metros, aprobado, foto)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
@@ -181,10 +200,11 @@ async def registrar_asistencia(
             "aprobado": bool(aprobado),
             "distancia_metros": round(distancia),
             "radio_metros": config["radio_metros"],
+            "accuracy_metros": body.accuracy,
             "hora": hora_actual,
             "fecha": fecha_hoy,
             "tipo": tipo,
-            "mensaje": "✅ Registro exitoso" if aprobado else f"❌ Fuera del perímetro ({round(distancia)}m)"
+            "mensaje": "✅ Registro exitoso" if aprobado else f"❌ Fuera del perímetro ({round(distancia)}m / límite {config['radio_metros']}m)"
         }
 
     except Exception as e:
@@ -194,7 +214,7 @@ async def registrar_asistencia(
         connection.close()
 
 
-# ── QR y otras utilidades ─────────────────────────────────────────────────────
+# ── QR ────────────────────────────────────────────────────────────────────────
 @router.get("/generar-qr")
 def generar_qr():
     connection = get_db_connection()
@@ -204,7 +224,7 @@ def generar_qr():
         with connection.cursor(pymysql.cursors.DictCursor) as cursor:
             cursor.execute("SELECT lat_fija, lon_fija, radio_metros FROM configuracion_geocerca LIMIT 1")
             config = cursor.fetchone() or {"lat_fija": 32.471823, "lon_fija": -116.798104, "radio_metros": 200}
-        
+
         base_url = os.getenv("APP_BASE_URL", "").rstrip("/")
         qr_url = f"{base_url}/app/checkin"
         return {"qr_url": qr_url, "config": config}
