@@ -1,6 +1,9 @@
 """
 routes.py — Backend de Asistencia Carrier Transicold
-Corregido: columnas latitud/longitud + validación GPS real con accuracy check.
+Corregido:
+  - columnas latitud/longitud
+  - validación GPS real con accuracy check
+  - FIX Bug 4: accuracy=None ya no bloquea el registro (ver gps_validator.py)
 """
 
 from fastapi import APIRouter, HTTPException, Query, status, Depends, Form, File, UploadFile
@@ -14,7 +17,6 @@ import os
 import math
 import base64
 from auth import verify_token
-# ← Importamos el validador que ya existía pero no se usaba
 from asistencia.asistencia.gps_validator import validar_ubicacion, es_gps_preciso
 
 # ====================== TIMEZONE TIJUANA ======================
@@ -26,13 +28,16 @@ router = APIRouter(
 )
 
 # ── Máxima imprecisión GPS aceptada (metros) ──────────────────────────────────
-GPS_ACCURACY_LIMIT = 50   # Rechaza lecturas con error > 50 m
+# FIX Bug 4: ahora solo aplica cuando accuracy NO es None.
+# Si accuracy es None, gps_validator devuelve True (no bloquea).
+GPS_ACCURACY_LIMIT = 50   # Rechaza lecturas con error > 50 m (cuando se conoce el valor)
 
 
 class GeofenceConfig(BaseModel):
     lat_fija: float
     lon_fija: float
     radio_metros: int
+
 
 class RegistroAsistenciaBody(BaseModel):
     tipo: str
@@ -133,7 +138,14 @@ async def registrar_asistencia(
     body: RegistroAsistenciaBody,
     current_user=Depends(verify_token)
 ):
-    """Registra entrada/salida con hora exacta de Tijuana y validación GPS real."""
+    """
+    Registra entrada/salida con hora exacta de Tijuana y validación GPS.
+
+    FIX Bug 4: si accuracy es None (GPS no disponible, permisos denegados,
+    o dispositivo de escritorio) el registro ya NO se rechaza. Se guarda
+    con accuracy_metros = null y gps_sin_dato = True para que el admin
+    pueda identificarlo en el reporte de asistencia.
+    """
     username = current_user["username"]
     tipo = body.tipo
     lat = body.lat
@@ -143,6 +155,7 @@ async def registrar_asistencia(
         raise HTTPException(400, "Tipo debe ser 'entrada' o 'salida'")
 
     # ── 1. Validar precisión GPS (accuracy) ────────────────────────────────────
+    # Ahora es_gps_preciso devuelve True cuando accuracy es None (no bloquea).
     gps_ok, gps_msg = es_gps_preciso(body.accuracy, limite_metros=GPS_ACCURACY_LIMIT)
     if not gps_ok:
         raise HTTPException(
@@ -195,16 +208,25 @@ async def registrar_asistencia(
             )
             connection.commit()
 
+        # gps_sin_dato indica al frontend que el registro fue aceptado pero sin
+        # dato de precisión — útil para mostrarlo diferente en la UI del admin.
+        gps_sin_dato = body.accuracy is None
+
         return {
             "ok": True,
             "aprobado": bool(aprobado),
             "distancia_metros": round(distancia),
             "radio_metros": config["radio_metros"],
             "accuracy_metros": body.accuracy,
+            "gps_sin_dato": gps_sin_dato,
             "hora": hora_actual,
             "fecha": fecha_hoy,
             "tipo": tipo,
-            "mensaje": "✅ Registro exitoso" if aprobado else f"❌ Fuera del perímetro ({round(distancia)}m / límite {config['radio_metros']}m)"
+            "mensaje": (
+                "✅ Registro exitoso"
+                if aprobado
+                else f"❌ Fuera del perímetro ({round(distancia)}m / límite {config['radio_metros']}m)"
+            ) + (" ⚠️ Sin dato GPS" if gps_sin_dato else "")
         }
 
     except Exception as e:
