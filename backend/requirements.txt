@@ -15,8 +15,7 @@ DBUtils==3.1.2
 
 # --- Autenticación y seguridad ---
 python-jose[cryptography]==3.5.0
-passlib[bcrypt]==1.7.4
-bcrypt==5.0.0
+bcrypt==4.2.1
 PyJWT==2.13.0
 cryptography==45.0.7
 
