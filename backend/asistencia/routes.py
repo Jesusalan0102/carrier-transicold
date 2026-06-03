@@ -1,11 +1,11 @@
 """
 routes.py — Backend de Asistencia Carrier Transicold
-Corregido: columnas latitud/longitud + validación GPS real con accuracy check.
+Corregido: columnas latitud/longitud + validación GPS real + Limpieza de strings 'null'
 """
 
 from fastapi import APIRouter, HTTPException, Query, status, Depends, Form, File, UploadFile
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Dict, Any
 import pymysql
 from db import get_db_connection
 from datetime import datetime
@@ -14,7 +14,6 @@ import os
 import math
 import base64
 from auth import verify_token
-# ← Importamos el validador que ya existía pero no se usaba
 from asistencia.asistencia.gps_validator import validar_ubicacion, es_gps_preciso
 
 # ====================== TIMEZONE TIJUANA ======================
@@ -41,8 +40,14 @@ class RegistroAsistenciaBody(BaseModel):
     accuracy: Optional[float] = None
     foto_base64: Optional[str] = None
 
+class HorarioTecnicoBody(BaseModel):
+    username: str
+    fecha: str
+    hora_entrada: Optional[str] = None
+    hora_salida: Optional[str] = None
 
-# ── GET Registros ─────────────────────────────────────────────────────────────
+
+# ── GET Registros (Sanitizado para evitar textos "null") ──────────────────────
 @router.get("/registros")
 def obtener_registros(fecha: str = Query(None)):
     connection = get_db_connection()
@@ -60,14 +65,23 @@ def obtener_registros(fecha: str = Query(None)):
 
             registros = cursor.fetchall()
             result = []
+            
             for r in registros:
                 row = dict(r)
-                if 'fecha' in row and isinstance(row['fecha'], datetime):
-                    row['fecha'] = row['fecha'].strftime('%Y-%m-%d')
-                if 'hora_checkin' in row and row['hora_checkin']:
-                    row['hora_checkin'] = str(row['hora_checkin'])[:8]
+                
+                # Sanitización crucial: Evitar que valores NULL se conviertan en string "null"
+                for key, value in row.items():
+                    if value is None or str(value).lower() == "null":
+                        row[key] = "—"
+                
+                if 'fecha' in row and isinstance(r.get('fecha'), datetime):
+                    row['fecha'] = r['fecha'].strftime('%Y-%m-%d')
+                if 'hora_checkin' in row and r.get('hora_checkin'):
+                    row['hora_checkin'] = str(r['hora_checkin'])[:8]
+                
                 row.pop('foto', None)
                 result.append(row)
+                
             return result
     except Exception as e:
         print(f"Error en obtener_registros: {e}")
@@ -210,6 +224,56 @@ async def registrar_asistencia(
     except Exception as e:
         print(f"Error registrando asistencia: {e}")
         raise HTTPException(500, str(e))
+    finally:
+        connection.close()
+
+
+# ── AGREGAR/MODIFICAR HORARIO INDEPENDIENTE (NUEVO endpoint corregido) ───────
+@router.post("/horarios/guardar")
+def guardar_horario_independiente(body: HorarioTecnicoBody):
+    """Guarda o actualiza el horario asignado a un técnico para una fecha específica."""
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(status_code=500, detail="No hay conexión con la base de datos")
+    
+    # Limpieza preventiva para el usuario 'Test' u otros strings corruptos
+    h_entrada = None if (not body.hora_entrada or str(body.hora_entrada).lower() == "null" or body.hora_entrada == "—") else body.hora_entrada
+    h_salida = None if (not body.hora_salida or str(body.hora_salida).lower() == "null" or body.hora_salida == "—") else body.hora_salida
+
+    try:
+        with connection.cursor() as cursor:
+            # Comprobar si ya existe una asignación para esa fecha y usuario
+            cursor.execute(
+                "SELECT COUNT(*) FROM horarios_tecnicos WHERE username = %s AND fecha = %s",
+                (body.username, body.fecha)
+            )
+            existe = cursor.fetchone()
+            count = existe.get('COUNT(*)', 0) if isinstance(existe, dict) else existe[0]
+
+            if count > 0:
+                cursor.execute(
+                    """
+                    UPDATE horarios_tecnicos 
+                    SET hora_entrada = %s, hora_salida = %s 
+                    WHERE username = %s AND fecha = %s
+                    """,
+                    (h_entrada, h_salida, body.username, body.fecha)
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO horarios_tecnicos (username, fecha, hora_entrada, hora_salida) 
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (body.username, body.fecha, h_entrada, h_salida)
+                )
+            connection.commit()
+            return {"ok": True, "message": f"Horario para {body.username} actualizado correctamente."}
+            
+    except Exception as e:
+        connection.rollback()
+        print(f"Error guardando horario para {body.username}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         connection.close()
 
