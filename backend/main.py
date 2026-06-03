@@ -36,7 +36,7 @@ app.add_middleware(
 
 # ── Registro de routers ───────────────────────────────────────────────────────
 # auth_router no tiene prefix propio → se le asigna aquí
-app.include_router(auth_router, prefix="/auth", tags=["auth"])
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 
 # web_router no tiene prefix propio → sirve las páginas /app/* directamente
 app.include_router(web_router)
