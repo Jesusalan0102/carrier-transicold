@@ -24,6 +24,7 @@ from db import init_db
 from asistencia.routes import router as asistencia_api_router
 from asistencia.horarios_routes import router as horarios_router
 from routers.reporte_router import router as reporte_router
+from routers.reportes import router as reportes_router
 
 
 @asynccontextmanager
@@ -135,6 +136,7 @@ app.include_router(cluster_router)
 app.include_router(horarios_router)
 app.include_router(ws_router)
 app.include_router(reporte_router)
+app.include_router(reportes_router)
 
 # Routers sin /api/ — se les agrega aquí
 app.include_router(dashboard_router,      prefix="/api")
