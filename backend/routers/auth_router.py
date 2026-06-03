@@ -4,14 +4,11 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status, APIRouter
 from fastapi.security import OAuth2PasswordBearer
+from pydantic import BaseModel
 import os
 
 SECRET_KEY = os.getenv("SECRET_KEY", "carrier_secret_key_2024_change_in_production")
 ALGORITHM  = os.getenv("ALGORITHM", "HS256")
-
-# FIX Bug 5: se amplió el tiempo de expiración de 30 min a 8 horas para evitar
-# que el usuario reciba un 401 a mitad de una jornada de trabajo.
-# Si tu política de seguridad requiere sesiones más cortas, ajusta este valor.
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 480))  # 8 horas
 
 pwd_context   = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -58,26 +55,47 @@ async def get_current_user(credentials: str = Depends(oauth2_scheme)) -> dict:
     return verify_token(credentials)
 
 
-# ── FIX Bug 5: endpoint /api/auth/refresh ────────────────────────────────────
-# Permite al frontend renovar el token sin forzar un re-login completo.
-# El frontend debe llamar este endpoint antes de que expire el token actual,
-# o detectar el 401 y hacer el refresh automáticamente.
-#
-# Uso desde el frontend:
-#   const res = await fetch('/api/auth/refresh', {
-#       method: 'POST',
-#       headers: { 'Authorization': 'Bearer ' + window.token }
-#   });
-#   if (res.ok) {
-#       const data = await res.json();
-#       localStorage.setItem('access_token', data.access_token);
-#       window.token = data.access_token;
-#   }
-#
-# Este router se debe incluir en main.py con:
-#   app.include_router(refresh_router, prefix="/api/auth", tags=["auth"])
-# Ya está incluido en el main.py parcheado.
+# ── Router principal de autenticación ────────────────────────────────────────
+router = APIRouter()
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+@router.post("/login")
+def login(data: LoginRequest):
+    """
+    Autentica al usuario con username + password y devuelve un JWT.
+    El frontend llama POST /api/auth/login con JSON { username, password }.
+    """
+    from db import execute_read
+    rows = execute_read(
+        "SELECT id, username, password, role FROM users WHERE username = %s",
+        (data.username,)
+    )
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuario o contraseña incorrectos",
+        )
+    user = rows[0]
+    if not verify_password(data.password, user["password"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuario o contraseña incorrectos",
+        )
+    token = create_access_token(
+        data={"sub": user["username"], "role": user["role"]}
+    )
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "username": user["username"],
+        "role": user["role"],
+    }
+
+
+# ── Refresh router ────────────────────────────────────────────────────────────
 refresh_router = APIRouter()
 
 @refresh_router.post("/refresh")
