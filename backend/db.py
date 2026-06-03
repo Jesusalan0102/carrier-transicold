@@ -50,6 +50,18 @@ def execute_write(sql: str, params=None):
         conn.close()
 
 
+def execute_write_with_id(sql: str, params=None):
+    """Ejecuta INSERT y devuelve el lastrowid del registro creado."""
+    conn = pool.connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(sql, params or ())
+            conn.commit()
+            return cursor.lastrowid
+    finally:
+        conn.close()
+
+
 def get_db_connection():
     """
     Devuelve una conexión directa del pool.
