@@ -1,12 +1,19 @@
-from fastapi import APIRouter, HTTPException, Query
-from datetime import datetime, date, timedelta
-import pymysql
 import os
+from datetime import datetime, date, timedelta
+from typing import Optional, List, Dict, Any
+import pymysql
+import pymysql.cursors
+from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 
+# Inicialización del enrutador de FastAPI
 router = APIRouter()
 
 def get_db_connection():
-    """Establece la conexión con la base de datos TiDB / MySQL utilizando variables de entorno."""
+    """
+    Establece y retorna una conexión limpia a la base de datos TiDB / MySQL
+    utilizando las variables de entorno inyectadas en Clever Cloud.
+    """
     try:
         connection = pymysql.connect(
             host=os.getenv("DB_HOST", "127.0.0.1"),
@@ -14,25 +21,43 @@ def get_db_connection():
             password=os.getenv("DB_PASSWORD", ""),
             database=os.getenv("DB_NAME", "carrier_db"),
             port=int(os.getenv("DB_PORT", 3306)),
-            autocommit=True
+            autocommit=True,  # Crucial para evitar bloqueos de hilos en consultas concurrentes
+            cursorclass=pymysql.cursors.DictCursor
         )
         return connection
     except Exception as e:
-        print(f"Error crítico de conexión a la base de datos: {e}")
+        print(f"❌ [DATABASE ERROR] No se pudo conectar a la base de datos: {e}")
         return None
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 1. ENDPOINT: OBTENER LOGS DE ASISTENCIA INDIVIDUALES
+# 0. ENDPOINT DE VERIFICACIÓN DE ESTADO (HEALTH CHECK)
+# ──────────────────────────────────────────────────────────────────────────────
+@router.get("/")
+def health_check():
+    """
+    Endpoint requerido por los balanceadores de carga de Clever Cloud (GET /).
+    Garantiza que el contenedor responda con HTTP 200 OK de manera constante.
+    """
+    return {"status": "online", "environment": "production", "service": "carrier-backend"}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 1. ENDPOINT: OBTENER TODOS LOS LOGS DE ASISTENCIA (HISTORIAL LINEAL)
 # ──────────────────────────────────────────────────────────────────────────────
 @router.get("/registros")
-def obtener_registros(fecha: str = Query(None)):
-    """Retorna el historial lineal de marcados filtrado opcionalmente por fecha."""
+def obtener_registros(fecha: Optional[str] = Query(None, description="Filtrar por fecha en formato YYYY-MM-DD")):
+    """
+    Retorna la lista completa y plana de marcados históricos individuales.
+    Filtra opcionalmente por un día específico si el parámetro viene provisto.
+    """
     connection = get_db_connection()
     if not connection:
-        raise HTTPException(status_code=500, detail="No hay conexión con la base de datos")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail="No hay conexión disponible con el servidor de base de datos"
+        )
     
     try:
-        with connection.cursor(pymysql.cursors.DictCursor) as cursor:
+        with connection.cursor() as cursor:
             if fecha:
                 query = """
                     SELECT id, empleado_id, nombre, fecha, hora_checkin, tipo_marcado, latitud, longitud 
@@ -50,123 +75,142 @@ def obtener_registros(fecha: str = Query(None)):
                 cursor.execute(query)
 
             registros = cursor.fetchall()
-            result = []
+            resultado_limpio = []
             
-            for r in registros:
-                row = dict(r)
+            for registro in registros:
+                fila = dict(registro)
                 
-                # Sanitización preventiva campo por campo
-                for key, value in row.items():
-                    if value is None or str(value).strip().lower() == "null" or str(value).strip() == "":
-                        row[key] = "—"
+                # Saneamiento anti-null/vacíos celda por celda
+                for columna, valor in fila.items():
+                    if valor is None or str(valor).strip().lower() == "null" or str(valor).strip() == "":
+                        fila[columna] = "—"
                 
-                # Formateo seguro de objetos datetime/date a texto nativo
-                if 'fecha' in row and isinstance(r.get('fecha'), (date, datetime)):
-                    row['fecha'] = r['fecha'].strftime('%Y-%m-%d')
+                # Conversión segura y serialización de objetos tipo Date de Python
+                if 'fecha' in fila and isinstance(registro.get('fecha'), (date, datetime)):
+                    fila['fecha'] = registro['fecha'].strftime('%Y-%m-%d')
                 
-                if 'hora_checkin' in row and r.get('hora_checkin') and row['hora_checkin'] != "—":
-                    row['hora_checkin'] = str(r['hora_checkin'])[:8]
+                # Conversión segura de objetos tipo Time/Timedelta a String legible de 8 caracteres (HH:MM:SS)
+                if 'hora_checkin' in fila and registro.get('hora_checkin') and fila['hora_checkin'] != "—":
+                    fila['hora_checkin'] = str(registro['hora_checkin'])[:8]
                 
-                result.append(row)
+                resultado_limpio.append(fila)
                 
-            return result
+            return resultado_limpio
             
     except Exception as e:
-        print(f"Error en obtener_registros: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"❌ [ERROR EN /registros]: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     finally:
         connection.close()
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 2. ENDPOINT: DASHBOARD MATRIZ SEMANAL (ELIMINA EL BUG "✓ null")
+# 2. ENDPOINT: MATRIZ DEL DASHBOARD SEMANAL (RESUELVE EL BUG DE LOS BADGES VERDES)
 # ──────────────────────────────────────────────────────────────────────────────
 @router.get("/dashboard/semanal")
-def obtener_dashboard_semanal(fecha_inicio: str = Query(None)):
+def obtener_dashboard_semanal(fecha_inicio: Optional[str] = Query(None, description="Fecha de inicio de la semana YYYY-MM-DD")):
     """
-    Genera la estructura matricial de la semana para los técnicos.
-    Cualquier ausencia o celda vacía se envía como '—' para evitar que el frontend pinte un badge 'null'.
+    Construye la matriz semanal agrupada por usuario y día de la semana.
+    Si un usuario no tiene asistencia un día, se inyecta un guion plano '—' explícito.
+    Evita que el frontend reciba texto 'null' y dibuje botones de asistencia verdes erróneos.
     """
     connection = get_db_connection()
     if not connection:
-        raise HTTPException(status_code=500, detail="No hay conexión con la base de datos")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail="No hay conexión disponible con el servidor de base de datos"
+        )
         
     try:
-        # Si no se envía fecha, calculamos el lunes de la semana actual por defecto
-        if datetime:
-            if fecha_inicio:
-                lunes = datetime.strptime(fecha_inicio, '%Y-%m-%d').date()
-            else:
-                hoy = date.today()
-                lunes = hoy - timedelta(days=hoy.weekday())
+        # Calcular el rango de la semana (Lunes a Domingo)
+        if fecha_inicio:
+            try:
+                lunes_fecha = datetime.strptime(fecha_inicio, '%Y-%m-%d').date()
+            except ValueError:
+                raise HTTPException(status_code=400, detail="El formato de fecha_inicio debe ser YYYY-MM-DD")
+        else:
+            hoy = date.today()
+            lunes_fecha = hoy - timedelta(days=hoy.weekday())
         
-        # Generamos el arreglo de los 7 días de la semana en formato YYYY-MM-DD
-        dias_semana = [(lunes + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(7)]
+        # Array con las 7 fechas de la semana en formato texto YYYY-MM-DD
+        lista_dias = [(lunes_fecha + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(7)]
         
-        with connection.cursor(pymysql.cursors.DictCursor) as cursor:
-            # 1. Obtenemos el catálogo único de usuarios activos para iterar la matriz
+        with connection.cursor() as cursor:
+            # 1. Traer todos los usuarios del catálogo de la empresa
             cursor.execute("SELECT id, name FROM users ORDER BY name ASC")
-            usuarios = cursor.fetchall()
+            usuarios_sistema = cursor.fetchall()
             
-            # 2. Obtenemos todos los marcados válidos de la semana en cuestión
-            query_asistencia = """
-                SELECT nombre, DATE_FORMAT(fecha, '%%Y-%%m-%%d') as fecha_texto, hora_checkin, tipo_marcado 
+            # 2. Consultar todos los marcados que caen en este rango semanal
+            query_marcados = """
+                SELECT nombre, DATE_FORMAT(fecha, '%%Y-%%m-%%d') as fecha_formato, hora_checkin, tipo_marcado 
                 FROM registros_asistencia 
                 WHERE fecha BETWEEN %s AND %s
             """
-            cursor.execute(query_asistencia, (dias_semana[0], dias_semana[6]))
-            asistencias = cursor.fetchall()
+            cursor.execute(query_marcados, (lista_dias[0], lista_dias[6]))
+            marcados_semana = cursor.fetchall()
             
-        # Agrupamos las asistencias en un diccionario mapeado por (nombre, fecha)
-        mapa_asistencia = {}
-        for asis in asistencias:
-            llave = (asis['nombre'], asis['fecha_texto'])
-            if llave not in mapa_asistencia:
-                mapa_asistencia[llave] = []
-            mapa_asistencia[llave].append(asis)
+        # Agrupar los marcados de asistencia indexándolos por una tupla (nombre_empleado, fecha_dia)
+        diccionario_asistencias = {}
+        for marcado in marcados_semana:
+            clave_compuesta = (marcado['nombre'], marcado['fecha_formato'])
+            if clave_compuesta not in diccionario_asistencias:
+                diccionario_asistencias[clave_compuesta] = []
+            diccionario_asistencias[clave_compuesta].append(marcado)
             
-        matrix_response = []
+        matriz_final = []
         
-        # 3. Construcción de la matriz fila por fila (Usuario por Usuario)
-        for u in usuarios:
-            nombre_usuario = u['name']
-            fila = {
-                "usuario": nombre_usuario,
-                "detalles": u
+        # 3. Construcción iterativa renglón por renglón (Usuario por Usuario)
+        for usuario in usuarios_sistema:
+            nombre_tecnico = usuario['name']
+            fila_usuario = {
+                "usuario": nombre_tecnico,
+                "user_id": usuario['id']
             }
             
-            # Evaluamos cada uno de los 7 días para este usuario específico
-            for dia in dias_semana:
-                llave_busqueda = (nombre_usuario, dia)
+            # Recorrer cada uno de los 7 días para verificar si asistió o no
+            for dia in lista_dias:
+                clave_busqueda = (nombre_tecnico, dia)
                 
-                if llave_busqueda in mapa_asistencia:
-                    # El técnico asistió. Extraemos, por ejemplo, el primer marcado del día (Entrada)
-                    eventos_dia = mapa_asistencia[llave_busqueda]
-                    marcado_entrada = next((e for e in eventos_dia if e['tipo_marcado'].lower() == 'entrada'), eventos_dia[0])
+                if clave_busqueda in diccionario_asistencias:
+                    eventos_del_dia = diccionario_asistencias[clave_busqueda]
                     
-                    # Extraemos la hora formateada
-                    hora_cruda = marcado_entrada.get('hora_checkin')
-                    valor_celda = str(hora_cruda)[:5] if hora_cruda else "OK"
+                    # Buscamos prioritariamente el registro marcado como 'Entrada'
+                    marcado_principal = next(
+                        (evento for evento in eventos_del_dia if evento['tipo_marcado'].lower() == 'entrada'), 
+                        eventos_del_dia[0]
+                    )
+                    
+                    hora_cruda = marcado_principal.get('hora_checkin')
+                    if hora_cruda:
+                        # Formatear la hora a HH:MM de forma segura
+                        valor_celda = str(hora_cruda)[:5]
+                    else:
+                        valor_celda = "Asistió"
                 else:
-                    # El técnico no tiene registros ese día. Enviamos un guion plano.
+                    # Si no hay registros en la BD para este técnico y este día, enviamos guion estricto
                     valor_celda = "—"
                 
-                # BLINDAJE ABSOLUTO: Si por algún motivo el valor resultó nulo o es un string corrupto, lo forzamos a guion
+                # FILTRO DE BLINDAJE CRÍTICO:
+                # Si por alguna anomalía previa el valor_celda es None, vacío o el string "null",
+                # lo destruimos y forzamos a guion limpio para desarmar el badge verde del frontend.
                 if valor_celda is None or str(valor_celda).strip().lower() == "null" or str(valor_celda).strip() == "":
                     valor_celda = "—"
                     
-                # Guardamos el resultado del día en la estructura dinámica de la fila
-                fila[dia] = valor_celda
+                # Añadir la columna del día a la fila del usuario
+                fila_usuario[dia] = valor_celda
                 
-            matrix_response.append(fila)
+            matriz_final.append(fila_usuario)
             
         return {
-            "rango_semana": {"desde": dias_semana[0], "hasta": dias_semana[6]},
-            "dias_columnas": dias_semana,
-            "data": matrix_response
+            "rango": {
+                "lunes_inicio": lista_dias[0], 
+                "domingo_fin": lista_dias[6]
+            },
+            "columnas_fecha": lista_dias,
+            "rows": matriz_final
         }
         
     except Exception as e:
-        print(f"Error en obtener_dashboard_semanal: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"❌ [ERROR EN /dashboard/semanal]: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     finally:
         connection.close()
