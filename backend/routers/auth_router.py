@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
+import bcrypt as _bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status, APIRouter
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
@@ -11,16 +11,20 @@ SECRET_KEY = os.getenv("SECRET_KEY", "carrier_secret_key_2024_change_in_producti
 ALGORITHM  = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 480))  # 8 horas
 
-pwd_context   = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    """Genera un hash bcrypt de la contraseña."""
+    return _bcrypt.hashpw(password.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    """Verifica contraseña contra hash bcrypt (compatible con hashes generados por passlib)."""
+    try:
+        return _bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -65,8 +69,8 @@ class LoginRequest(BaseModel):
 @router.post("/login")
 def login(data: LoginRequest):
     """
-    Autentica al usuario con username + password y devuelve un JWT.
-    El frontend llama POST /api/auth/login con JSON { username, password }.
+    Autentica con username + password y devuelve un JWT.
+    Compatible con hashes generados por passlib[bcrypt] ya existentes en la BD.
     """
     from db import execute_read
     rows = execute_read(
@@ -100,10 +104,7 @@ refresh_router = APIRouter()
 
 @refresh_router.post("/refresh")
 def refresh_token(current_user: dict = Depends(verify_token)):
-    """
-    Recibe un JWT válido (aún no expirado) y devuelve uno nuevo con
-    el tiempo de expiración reiniciado. No requiere contraseña.
-    """
+    """Renueva el JWT sin requerir contraseña."""
     new_token = create_access_token(
         data={"sub": current_user["username"], "role": current_user["role"]}
     )
