@@ -1,9 +1,7 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
-import bcrypt
 from db import execute_read
-from auth import create_access_token, verify_token
-from fastapi import Depends
+from auth import create_access_token, verify_token, verify_password
 
 router = APIRouter()
 
@@ -26,12 +24,9 @@ async def login(credentials: LoginRequest):
 
     user = rows[0]
 
-    # 2. Verificar contraseña con bcrypt
+    # 2. Verificar contraseña — compatible con passlib y bcrypt directo
     try:
-        password_ok = bcrypt.checkpw(
-            credentials.password.encode("utf-8"),
-            user["password"].encode("utf-8")
-        )
+        password_ok = verify_password(credentials.password, user["password"])
     except Exception:
         password_ok = False
 
