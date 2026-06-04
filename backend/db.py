@@ -5,6 +5,32 @@ from dbutils.pooled_db import PooledDB  # ← Importante: dbutils en minúsculas
 
 pool = None
 
+def _run_migrations():
+    """Aplica migraciones de columnas nuevas sin romper si ya existen."""
+    conn = pool.connection()
+    try:
+        with conn.cursor() as cur:
+            # Agrega retardo_min a registros_asistencia si no existe
+            cur.execute("""
+                SELECT COUNT(*) FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME   = 'registros_asistencia'
+                  AND COLUMN_NAME  = 'retardo_min'
+            """)
+            row = cur.fetchone()
+            count = row[0] if isinstance(row, tuple) else list(row.values())[0]
+            if count == 0:
+                cur.execute(
+                    "ALTER TABLE registros_asistencia ADD COLUMN retardo_min INT NOT NULL DEFAULT 0"
+                )
+                conn.commit()
+                print("✅ Migración: columna retardo_min añadida a registros_asistencia")
+    except Exception as e:
+        print(f"⚠️  Migración omitida: {e}")
+    finally:
+        conn.close()
+
+
 def init_db():
     global pool
     if pool is not None:
@@ -25,6 +51,9 @@ def init_db():
         # ssl={"ca": "/etc/ssl/certs/ca-certificates.crt"}  # Descomenta si CleverCloud requiere SSL
     )
     print("✅ Pool de conexiones DB inicializado correctamente")
+
+    # ── Migraciones automáticas (idempotentes) ────────────────────────────────
+    _run_migrations()
 
 
 def execute_read(sql: str, params=None):
