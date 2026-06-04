@@ -241,7 +241,7 @@ def get_resumen(
     # Registros reales
     registros_raw = execute_read(
         f"SELECT username, fecha, tipo, hora_checkin, distancia_metros, aprobado, retardo_min "
-        f"FROM asistencia_registros WHERE fecha IN ({placeholders}) ORDER BY hora_checkin",
+        f"FROM registros_asistencia WHERE fecha IN ({placeholders}) ORDER BY hora_checkin",
         tuple(fechas)
     ) or []
 
