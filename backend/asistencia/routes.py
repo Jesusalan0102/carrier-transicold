@@ -195,16 +195,42 @@ async def registrar_asistencia(
             foto_bytes = None
 
     # ── 5. Insertar en DB ──────────────────────────────────────────────────────
+    # ── 5. Calcular retardo_min (solo para entradas) ───────────────────────────
+    retardo_min = 0
+    if tipo == "entrada":
+        try:
+            from db import execute_read as _exec_read
+            horario_rows = _exec_read(
+                "SELECT hora_entrada FROM horarios WHERE username=%s AND fecha=%s LIMIT 1",
+                (username, fecha_hoy)
+            )
+            if horario_rows and horario_rows[0].get("hora_entrada"):
+                he = horario_rows[0]["hora_entrada"]
+                # hora_entrada puede ser timedelta (pymysql TIME) o string "HH:MM"
+                if hasattr(he, "seconds"):           # timedelta
+                    prog_min = he.seconds // 60
+                else:
+                    parts = str(he)[:5].split(":")
+                    prog_min = int(parts[0]) * 60 + int(parts[1])
+                real_h, real_m = int(hora_actual[:2]), int(hora_actual[3:5])
+                real_min = real_h * 60 + real_m
+                TOLERANCIA = 15
+                retardo_min = max(0, real_min - prog_min - TOLERANCIA)
+        except Exception as _e:
+            print(f"[retardo] No se pudo calcular: {_e}")
+            retardo_min = 0
+
+    # ── 6. Insertar en DB ──────────────────────────────────────────────────────
     connection = get_db_connection()
     try:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
                 INSERT INTO registros_asistencia
-                (username, fecha, tipo, hora_checkin, latitud, longitud, distancia_metros, aprobado, foto)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (username, fecha, tipo, hora_checkin, latitud, longitud, distancia_metros, aprobado, retardo_min, foto)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (username, fecha_hoy, tipo, hora_actual, lat, lon, round(distancia), aprobado, foto_bytes)
+                (username, fecha_hoy, tipo, hora_actual, lat, lon, round(distancia), aprobado, retardo_min, foto_bytes)
             )
             connection.commit()
 
@@ -222,6 +248,7 @@ async def registrar_asistencia(
             "hora": hora_actual,
             "fecha": fecha_hoy,
             "tipo": tipo,
+            "retardo_min": retardo_min,
             "mensaje": (
                 "✅ Registro exitoso"
                 if aprobado
