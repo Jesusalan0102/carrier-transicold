@@ -52,7 +52,7 @@ app.include_router(refresh_router,       prefix="/api/auth",     tags=["auth"])
 # web_router primero (rutas /app/* no deben ceder a los de /api)
 app.include_router(web_router)
 
-app.include_router(dashboard_router,     prefix="/api")
+app.include_router(dashboard_router)
 app.include_router(reporte_router,       prefix="/api")
 
 app.include_router(tickets_router)
