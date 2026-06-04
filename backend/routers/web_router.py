@@ -1075,7 +1075,7 @@ async def admin():
         </button>
       </div>
 
-      <!-- ── ACTIVIDADES ── -->
+      <!-- -- ACTIVIDADES -- -->
       <div id="sec-actividades" class="section active">
         <div class="toolbar">
           <input type="text" id="search-act" placeholder="Buscar por ID, vehículo, técnico…" oninput="filterTable('act')" />
@@ -1137,7 +1137,7 @@ async def admin():
         </div>
       </div>
 
-      <!-- ── USUARIOS ── -->
+      <!-- -- USUARIOS -- -->
       <div id="sec-usuarios" class="section">
         <div class="toolbar">
           <input type="text" id="search-usr" placeholder="Buscar usuario…" oninput="filterTable('usr')" />
@@ -1198,7 +1198,7 @@ async def admin():
         </div>
       </div>
 
-      <!-- ── UNIDADES ── -->
+      <!-- -- UNIDADES -- -->
       <div id="sec-unidades" class="section">
         <div class="toolbar">
           <input type="text" id="search-uni" placeholder="Buscar unidad…" oninput="filterTable('uni')" />
@@ -1245,7 +1245,7 @@ async def admin():
         </div>
       </div>
 
-      <!-- ── SQL ── -->
+      <!-- -- SQL -- -->
       <div id="sec-sql" class="section">
         <div class="admin-notice"><i class="ti ti-info-circle"></i> Ejecuta consultas directas. Los cambios son permanentes.</div>
         <div class="sql-presets">
@@ -1274,7 +1274,7 @@ async def admin():
     const editing = { act: null, usr: null, uni: null };
     const selected = { act: new Set(), usr: new Set(), uni: new Set() };
 
-    // ── Carga desde API ──────────────────────────────────────
+    // -- Carga desde API --------------------------------------
     async function recargarActividades() {
         const estado = document.getElementById('filter-estado').value;
         const url = estado ? `/api/asignaciones/?estado=${estado}` : '/api/asignaciones/';
@@ -1295,7 +1295,7 @@ async def admin():
         filterTable('uni');
     }
 
-    // ── Badges ──────────────────────────────────────────────
+    // -- Badges ----------------------------------------------
     function badgeEstado(e) {
         const m = {
             pendiente:'badge-pending', en_proceso:'badge-req',
@@ -1307,7 +1307,7 @@ async def admin():
         return `<span class="admin-badge ${m[e]||''}">${e}</span>`;
     }
 
-    // ── Render tablas ────────────────────────────────────────
+    // -- Render tablas ----------------------------------------
     function renderAct() {
         const pg = pages.act; const rows = filtered.act;
         const slice = rows.slice((pg-1)*PER_PAGE, pg*PER_PAGE);
@@ -1374,7 +1374,7 @@ async def admin():
     function changePage(t,d){ pages[t]+=d; render(t); }
     function render(t){ if(t==='act')renderAct(); else if(t==='usr')renderUsr(); else renderUni(); }
 
-    // ── Filtros ──────────────────────────────────────────────
+    // -- Filtros ----------------------------------------------
     function filterTable(t) {
         if(t==='act'){
             const q=(document.getElementById('search-act').value||'').toLowerCase();
@@ -1397,7 +1397,7 @@ async def admin():
         }
     }
 
-    // ── Pestañas ─────────────────────────────────────────────
+    // -- Pestañas ---------------------------------------------
     function showTab(t) {
         ['actividades','usuarios','unidades','sql'].forEach(s=>{
             document.getElementById('sec-'+s).classList.toggle('active',s===t);
@@ -1405,7 +1405,7 @@ async def admin():
         });
     }
 
-    // ── Editar Actividades ───────────────────────────────────
+    // -- Editar Actividades -----------------------------------
     function editarFilaAct(id) {
         editing.act=id;
         const r=DATA.act.find(x=>x.id===id); if(!r) return;
@@ -1460,7 +1460,7 @@ async def admin():
         render(t);
     }
 
-    // ── Editar Usuarios ──────────────────────────────────────
+    // -- Editar Usuarios --------------------------------------
     function editarFilaUsr(id) {
         editing.usr=id;
         const r=DATA.usr.find(x=>x.id===id); if(!r) return;
@@ -1490,7 +1490,7 @@ async def admin():
         recargarUsuarios();
     }
 
-    // ── Editar Unidades ──────────────────────────────────────
+    // -- Editar Unidades --------------------------------------
     function editarFilaUni(id) {
         editing.uni=id;
         const r=DATA.uni.find(x=>x.id===id); if(!r) return;
@@ -1510,14 +1510,14 @@ async def admin():
         recargarUnidades();
     }
 
-    // ── Eliminar Actividades ─────────────────────────────────
+    // -- Eliminar Actividades ---------------------------------
     async function eliminarFilaAct(id) {
         if(!confirm('¿Eliminar actividad '+id+'?')) return;
         await fetchAuth('/api/asignaciones/'+id, {method:'DELETE'});
         recargarActividades();
     }
 
-    // ── Selección múltiple ───────────────────────────────────
+    // -- Selección múltiple -----------------------------------
     function toggleRow(t,id,cb){
         if(cb.checked) selected[t].add(id); else selected[t].delete(id);
         updateBulk(t); render(t);
@@ -1548,7 +1548,7 @@ async def admin():
         updateBulk(t);
     }
 
-    // ── SQL ──────────────────────────────────────────────────
+    // -- SQL --------------------------------------------------
     function setSQL(q){ document.getElementById('sql-input').value=q; }
     async function ejecutarSQL(){
         const sql=document.getElementById('sql-input').value.trim();
@@ -1570,7 +1570,7 @@ async def admin():
         } catch(e){ res.textContent='Error: '+e.message; }
     }
 
-    // ── Init ─────────────────────────────────────────────────
+    // -- Init -------------------------------------------------
     recargarActividades();
     recargarUsuarios();
     recargarUnidades();
@@ -1679,7 +1679,7 @@ async def mis_tareas():
             }
         }
 
-        // ────────── EVIDENCIA ──────────
+        // ---------- EVIDENCIA ----------
         async function subirEvidencia(tareaId, unidad) {
             const cntRes = await fetchAuth(`/api/evidencias/count?unit_number=${unidad}&tecnico=${username}`); const cnt = await cntRes.json();
             const totalPrev = cnt.total || 0; const restantes = 100 - totalPrev;
@@ -1696,7 +1696,7 @@ async def mis_tareas():
             };
         }
 
-        // ────────── VALORES ──────────
+        // ---------- VALORES ----------
         async function tomarValores(tareaId) {
             const camposRes = await fetchAuth('/api/toma-valores/campos'); const campos = await camposRes.json();
             let camposHTML = campos.length ? campos.map((c,i) => `<input type="text" id="campo_${i}" placeholder="${c.campo_nombre}">`).join('') : '<p>No hay campos configurados.</p>';
@@ -1707,7 +1707,7 @@ async def mis_tareas():
             };
         }
 
-        // ────────── SERIES ──────────
+        // ---------- SERIES ----------
         async function tomarSeries(tareaId) {
             const camposSeries = [
                 { key: 'vin_number', label: 'VIN Number' },{ key: 'reefer_serial', label: 'Serie del Reefer' },{ key: 'reefer_model', label: 'Modelo del Reefer' },
@@ -2137,7 +2137,7 @@ async def asistencia_admin():
     </div>
 
     <script>
-        // ── Tabs ──────────────────────────────────────────────────────────────
+        // Tabs --------------------------------------------------------------
         function switchTab(id, btn) {
             document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -2145,7 +2145,7 @@ async def asistencia_admin():
             btn.classList.add('active');
         }
 
-        // ── Init fechas ───────────────────────────────────────────────────────
+        // -- Init fechas -------------------------------------------------------
         const hoy = new Date();
         document.getElementById('fechaFiltro').value = hoy.toISOString().slice(0,10);
         const lunes = new Date(hoy); lunes.setDate(hoy.getDate() - (hoy.getDay() === 0 ? 6 : hoy.getDay()-1));
@@ -2154,7 +2154,7 @@ async def asistencia_admin():
         cargarRegistros();
         cargarHorarios();
 
-        // ── QR ────────────────────────────────────────────────────────────────
+        // -- QR ----------------------------------------------------------------
         let timerInterval = null; let segundosRestantes = 0;
 
         function usarUbicacionActual() {
@@ -2200,7 +2200,7 @@ async def asistencia_admin():
             if (el) el.textContent = m+':'+s;
         }
 
-        // ── Horarios Semanales ────────────────────────────────────────────────
+        // -- Horarios Semanales ------------------------------------------------
         let tecnicosData = [];
         let horariosData = {};
         const diasSemana = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
@@ -2317,7 +2317,7 @@ async def asistencia_admin():
             } catch(e) { alert('Error al guardar horarios.'); }
         }
 
-        // ── Registros del día ─────────────────────────────────────────────────
+        // -- Registros del día -------------------------------------------------
         async function cargarRegistros() {
             const fecha = document.getElementById('fechaFiltro').value;
             try {
