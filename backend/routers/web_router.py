@@ -1,15 +1,10 @@
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
-# FIX Bug 1 y 2: asistencia_router y horarios_router ya NO se incluyen aquí.
-# Se registran en main.py con prefix='/api' para que las rutas queden en
-# /api/asistencia/... y /api/horarios/... — coincidiendo con las llamadas del frontend.
-from asistencia.templates import get_checkin_template, ASISTENCIA_STYLES
-
 router = APIRouter()
 
 # ------------------------------------------------------------
-# ESTILOS GLOBALES PREMIUM
+# ESTILOS GLOBALES PREMIUM (botones grandes y modales con scroll)
 # ------------------------------------------------------------
 BASE_STYLE = """
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -80,6 +75,7 @@ BASE_STYLE = """
     .evidencia-info { background: #eff6ff; border: 1px solid #bfdbfe; border-left: 5px solid #3b82f6; border-radius: 10px; padding: 12px 18px; margin-bottom: 14px; }
     .inv-info-bar { background: linear-gradient(90deg, var(--carrier-blue) 0%, var(--carrier-accent) 100%); color: white; padding: 14px 20px; border-radius: 12px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
     .tv-field-badge { background: var(--carrier-light); border: 1px solid #c3d4f0; border-radius: 8px; padding: 6px 12px; font-size: 0.82rem; color: var(--carrier-blue); font-weight: 600; display: inline-block; margin-bottom: 8px; }
+    /* Visor: ocultar botones de acción */
     body.visor-mode .btn-primary,
     body.visor-mode .btn-danger,
     body.visor-mode .btn-success,
@@ -96,59 +92,13 @@ BASE_STYLE = """
     .modal-content { background: white; padding: 24px; border-radius: 16px; width: 90%; max-width: 500px; max-height: 80vh; overflow-y: auto; box-shadow: 0 12px 40px rgba(0,0,0,0.2); }
     .modal-content input { margin-bottom: 10px; }
     .modal-content .btn-primary, .modal-content .btn-danger, .modal-content .btn-success { margin-top: 8px; }
-    .hamburger { display: none; position: fixed; top: 14px; left: 14px; z-index: 300; background: var(--carrier-blue); color: white; border: none; border-radius: 10px; width: 44px; height: 44px; font-size: 1.3rem; cursor: pointer; box-shadow: 0 4px 12px rgba(0,43,91,0.35); align-items: center; justify-content: center; }
+    .hamburger {
+        display: none; position: fixed; top: 14px; left: 14px; z-index: 300;
+        background: var(--carrier-blue); color: white; border: none; border-radius: 10px;
+        width: 44px; height: 44px; font-size: 1.3rem; cursor: pointer;
+        box-shadow: 0 4px 12px rgba(0,43,91,0.35); align-items: center; justify-content: center;
+    }
     .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.45); z-index: 99; }
-    .status-table-wrapper {
-        overflow-x: auto;
-        border-radius: 16px;
-        background: white;
-        box-shadow: 0 4px 20px rgba(0,43,91,0.08);
-    }
-    .status-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 0.75rem;
-        min-width: 1000px;
-    }
-    .status-table th {
-        background: linear-gradient(135deg, #002B5B, #0057A8);
-        color: white;
-        padding: 12px 8px;
-        text-align: center;
-        font-weight: 600;
-        font-size: 0.75rem;
-        border-right: 1px solid rgba(255,255,255,0.15);
-    }
-    .status-table th:last-child { border-right: none; }
-    .status-table td {
-        padding: 10px 8px;
-        text-align: center;
-        border-bottom: 1px solid #e5e7eb;
-    }
-    .status-table tbody tr:hover td { background: #e8f0fb; }
-    .status-table .lote-cell { font-weight: 700; color: #002B5B; background: #f8fafc; }
-    .status-table .unit-cell { font-family: monospace; font-weight: 600; }
-    .status-badge-complete {
-        display: inline-block;
-        width: 28px;
-        height: 28px;
-        line-height: 28px;
-        background: #16a34a;
-        color: white;
-        border-radius: 50%;
-        font-weight: bold;
-        font-size: 1rem;
-    }
-    .status-badge-pending {
-        display: inline-block;
-        width: 28px;
-        height: 28px;
-        line-height: 28px;
-        background: #f3f4f6;
-        color: #9ca3af;
-        border-radius: 50%;
-        font-size: 0.8rem;
-    }
     @media (max-width: 768px) {
         .main-header { font-size: 1.2rem; }
         .kpi-num { font-size: 1.6rem; }
@@ -162,7 +112,7 @@ BASE_STYLE = """
 """
 
 # ------------------------------------------------------------
-# FUNCIÓN AUXILIAR CON SIDEBAR
+# FUNCIÓN AUXILIAR CON SIDEBAR, MENÚ Y CIERRE DE SESIÓN SIEMPRE VISIBLE
 # ------------------------------------------------------------
 def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_scripts: str = "") -> str:
     return f"""
@@ -170,23 +120,10 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
     <html lang="es">
     <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-        <meta name="theme-color" content="#002B5B">
-        <meta name="mobile-web-app-capable" content="yes">
-        <meta name="apple-mobile-web-app-capable" content="yes">
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-        <meta name="apple-mobile-web-app-title" content="Carrier">
-        <link rel="manifest" href="/static/manifest.json">
-        <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>{titulo} – Carrier Transicold</title>
         {BASE_STYLE}
         <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-        <script>
-            if ('serviceWorker' in navigator) {{
-                navigator.serviceWorker.register('/static/sw.js')
-                    .catch(err => console.warn('SW error:', err));
-            }}
-        </script>
         <script>
             window.token = localStorage.getItem('access_token');
             window.role = localStorage.getItem('role');
@@ -194,33 +131,13 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
             if (!window.token) {{
                 window.location.href = '/app';
             }}
-            // FIX Bug 5: tryRefreshToken intenta renovar el JWT silenciosamente
-            // antes de forzar re-login cuando el servidor devuelve 401.
-            window._tryRefreshToken = async function() {{
-                try {{
-                    const res = await fetch('/api/auth/refresh', {{
-                        method: 'POST',
-                        headers: {{ 'Authorization': 'Bearer ' + window.token }}
-                    }});
-                    if (!res.ok) return false;
-                    const data = await res.json();
-                    window.token = data.access_token;
-                    localStorage.setItem('access_token', data.access_token);
-                    return true;
-                }} catch (e) {{ return false; }}
-            }};
+
             window.fetchAuth = async (url, options) => {{
                 options = options || {{}};
                 const headers = options.headers || {{}};
                 headers['Authorization'] = 'Bearer ' + window.token;
                 const res = await fetch(url, {{ ...options, headers }});
                 if (res.status === 401) {{
-                    // FIX Bug 5: intentar refresh antes de redirigir al login
-                    const refreshed = await window._tryRefreshToken();
-                    if (refreshed) {{
-                        headers['Authorization'] = 'Bearer ' + window.token;
-                        return await fetch(url, {{ ...options, headers }});
-                    }}
                     localStorage.clear();
                     window.location.href = '/app';
                 }}
@@ -246,6 +163,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 <button onclick="logout()" class="logout-btn">🚪 Cerrar Sesión</button>
             </div>
         </div>
+
         <div class="main-content">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; flex-wrap:wrap; gap:12px;">
                 <h1 class="main-header">{titulo}</h1>
@@ -255,12 +173,14 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
             <script>if(window.role==='visor') document.getElementById('visorBanner').style.display='block';</script>
             {contenido}
         </div>
+
         <script>
             document.addEventListener('DOMContentLoaded', function() {{
                 if (window.role === 'visor') {{ document.body.classList.add('visor-mode'); }}
                 document.getElementById('sidebarUser').textContent = '👤 ' + window.username;
                 const roleLabels = {{ admin: '🛡 Administrador', tecnico: '🔧 Técnico', visor: '👁 Visor' }};
                 document.getElementById('sidebarRole').textContent = roleLabels[window.role] || window.role;
+
                 const adminMenu = [
                     {{ href: '/app/dashboard', label: '📊 Dashboard Ejecutivo' }},
                     {{ href: '/app/asignaciones', label: '🎯 Control de Asignaciones' }},
@@ -269,7 +189,6 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/unidades', label: '📸 Registro de Unidades' }},
                     {{ href: '/app/usuarios', label: '👥 Gestión de Usuarios' }},
                     {{ href: '/app/cluster', label: '⚡ Asignación por Cluster' }},
-                    {{ href: '/app/horarios', label: '🗓 Horarios Semanales' }},
                     {{ href: '/app/asistencia', label: '📍 Control de Asistencia' }},
                     {{ href: '/app/admin', label: '🛠 Panel de Administración' }},
                 ];
@@ -280,7 +199,6 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/inventario', label: '📦 Inventarios' }},
                     {{ href: '/app/unidades', label: '📸 Registro de Unidades' }},
                     {{ href: '/app/usuarios', label: '👥 Gestión de Usuarios' }},
-                    {{ href: '/app/horarios', label: '🗓 Horarios Semanales' }},
                     {{ href: '/app/asistencia', label: '📍 Control de Asistencia' }},
                 ];
                 const techMenu = [
@@ -297,16 +215,19 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 }});
                 document.getElementById('navMenu').innerHTML = navHtml;
             }});
+
             function toggleSidebar() {{
                 const sidebar = document.getElementById('sidebar');
                 const overlay = document.getElementById('overlay');
                 sidebar.classList.toggle('open');
                 overlay.classList.toggle('open');
             }}
+
             function logout() {{
                 localStorage.clear();
                 window.location.href = '/app';
             }}
+
             function actualizarReloj() {{
                 const ahora = new Date();
                 const opciones = {{ timeZone: 'America/Tijuana', hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }};
@@ -314,12 +235,15 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
             }}
             actualizarReloj();
             setInterval(actualizarReloj, 1000);
+
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
+            ws.onmessage = (event) => {{}};
         </script>
         {extra_scripts}
     </body>
     </html>
     """
-
 
 # ------------------------------------------------------------
 # LOGIN
@@ -382,9 +306,8 @@ async def login():
     </html>
     """
 
-
 # ------------------------------------------------------------
-# DASHBOARD
+# DASHBOARD (solo admin/visor) - TABLA DE ESTADÍSTICAS MEJORADA
 # ------------------------------------------------------------
 @router.get("/app/dashboard", response_class=HTMLResponse)
 async def dashboard():
@@ -396,7 +319,7 @@ async def dashboard():
         <div id="pieChart" style="background:white; border-radius:16px; padding:20px; box-shadow:0 4px 12px rgba(0,43,91,0.08); min-height:420px;"></div>
     </div>
     <div class="section-title">📋 Estatus de Proceso por Unidad</div>
-    <div id="statusTable" style="margin-bottom:32px;"></div>
+    <div id="statusTable" style="overflow-x:auto; margin-bottom:32px;"></div>
     <div class="section-title">📦 Lotes y Series por Unidad</div>
     <div id="lotesContainer" style="margin-bottom:32px;"></div>
     <div class="section-title admin-only">📂 Descarga de Evidencias por Unidad</div>
@@ -431,46 +354,22 @@ async def dashboard():
                     Plotly.newPlot('pieChart', [{ values: [conteos.completada, conteos.en_proceso, conteos.pendiente], labels: ['Completadas', 'En Proceso', 'Pendientes'], marker: { colors: ['#16a34a', '#d97706', '#dc2626'] }, hole: 0.55, type: 'pie' }], { title: 'Distribución Global', paper_bgcolor: 'transparent', font: { family: 'Inter, sans-serif' } });
                     const unidadesRes = await fetchAuth('/api/unidades/'); const unidades = await unidadesRes.json();
                     if (unidades.length) {
+                        // Tabla de estatus con formato de tabla
                         const completadasSet = new Set(asignaciones.filter(a => a.estado === 'completada').map(a => a.unidad + '||' + a.actividad_id));
-                        let tableHtml = `
-                            <div class="status-table-wrapper">
-                                <table class="status-table">
-                                    <thead>
-                                        <tr>
-                                            <th>LOTE</th>
-                                            <th>#Económico</th>
-                                            ${actividades.map(a => `<th>${a}</th>`).join('')}
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                        `;
-                        unidades.forEach((u, idx) => {
-                            const bgColor = idx % 2 === 0 ? 'white' : '#fafafa';
-                            tableHtml += `
-                                        <tr style="background: ${bgColor};">
-                                            <td class="lote-cell">${u.id_lote || '—'}</td>
-                                            <td class="unit-cell">${u.unit_number}</td>
-                            `;
+                        let headers = '</table><th>LOTE</th><th>#Económico</th>';
+                        actividades.forEach(a => headers += `<th>${a}</th>`);
+                        headers += '</tr>';
+                        let body = '';
+                        unidades.forEach(u => {
+                            body += `<tr><td>${u.id_lote || ''}</td><td>${u.unit_number}</td>`;
                             actividades.forEach(act => {
                                 const completada = completadasSet.has(u.unit_number + '||' + act);
-                                tableHtml += `
-                                            <td>
-                                                ${completada 
-                                                    ? '<span class="status-badge-complete">✓</span>' 
-                                                    : '<span class="status-badge-pending">—</span>'}
-                                            </td>
-                                `;
+                                body += `<td style="text-align:center; font-weight:bold;">${completada ? '✔' : '—'}</td>`;
                             });
-                            tableHtml += `
-                                        </tr>
-                            `;
+                            body += '</tr>';
                         });
-                        tableHtml += `
-                                    </tbody>
-                                </table>
-                            </div>
-                        `;
-                        document.getElementById('statusTable').innerHTML = tableHtml;
+                        document.getElementById('statusTable').innerHTML = `<table class="data-table" style="width:100%; border-collapse:collapse;">${headers}<tbody>${body}</tbody></table>`;
+                        // Lotes y series
                         const lotesMap = {};
                         unidades.forEach(u => {
                             const lote = u.id_lote || 'Sin lote';
@@ -483,9 +382,9 @@ async def dashboard():
                                 <div class="inv-info-bar" style="margin-bottom:0; cursor:pointer;" onclick="var d=this.nextElementSibling;d.style.display=d.style.display==='none'?'block':'none';">📦 Lote: ${lote} (${units.length} unidades) <span style="margin-left:auto;">▼</span></div>
                                 <div style="display:none; padding:16px; background:white; overflow-x:auto;">
                                     <table class="data-table" style="width:100%;">
-                                        <thead><tr><th>#Económico</th>${Object.values(camposSeries).map(s => `<th>${s}</th>`).join('')}</table></thead>
+                                        <thead><tr><th>#Económico</th>${Object.values(camposSeries).map(s => `<th>${s}</th>`).join('')}</tr></thead>
                                         <tbody>${units.map(u => `<tr><td>${u.unit_number}</td>${Object.keys(camposSeries).map(k => `<td>${u[k] || '—'}</td>`).join('')}</tr>`).join('')}</tbody>
-                                    </table>
+                                    ~
                                 </div>
                             </div>`;
                         }
@@ -497,13 +396,11 @@ async def dashboard():
             } catch (err) { console.error('Error al cargar dashboard:', err); document.getElementById('kpiContainer').innerHTML = '<p style="color:red;">Error al conectar con el servidor.</p>'; }
         }
         async function descargarEvidencias() { const unit = document.getElementById('unidadEv').value; if (!unit) return alert('Selecciona unidad'); const res = await fetchAuth(`/api/evidencias/download/${unit}`); if (!res.ok) return alert('Error al descargar'); const blob = await res.blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `evidencias_${unit}.zip`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
-        // FIX Bug 3: se cambió la URL al endpoint completo de 22 tablas en reporte_router.
-        async function descargarReporte() { const res = await fetchAuth('/api/reportes/exportar-maestro'); if (!res.ok) return alert('Error al generar reporte maestro'); const blob = await res.blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'Reporte_Maestro_Carrier_Transicold.xlsx'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+        async function descargarReporte() { const res = await fetchAuth('/api/dashboard/reporte-excel'); if (!res.ok) return alert('Error al generar reporte'); const blob = await res.blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'reporte_maestro.xlsx'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
         cargarDashboard();
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("📊 Panel de Rendimiento Operativo", contenido, "dashboard"))
-
 
 # ------------------------------------------------------------
 # ASIGNACIONES (admin)
@@ -530,26 +427,47 @@ async def asignaciones():
     <script>
         const fetchAuth = window.fetchAuth;
         const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series'];
+        document.getElementById('unidad').addEventListener('change', () => document.getElementById('msgAsignacion').innerHTML = '');
+        document.getElementById('tecnico').addEventListener('change', () => document.getElementById('msgAsignacion').innerHTML = '');
+        document.getElementById('actividad').addEventListener('change', () => document.getElementById('msgAsignacion').innerHTML = '');
+
         async function cargarSolicitudes() {
             const lista = document.getElementById('listaSolicitudes');
-            lista.innerHTML = '<p>Cargando...</p>';
+            lista.innerHTML = '<p style="color:var(--carrier-warn);">Cargando solicitudes...</p>';
             try {
                 const res = await fetchAuth('/api/asignaciones/?estado=solicitado');
-                if (!res.ok) throw new Error('Error');
-                const data = await res.json();
+                if (!res.ok) throw new Error('Error ' + res.status);
+                const solicitudes = await res.json();
                 let html = '';
-                if (!Array.isArray(data) || data.length === 0) { html = '<p>No hay solicitudes pendientes.</p>'; }
-                else { data.forEach(s => { html += `<div style="background:white;border-left:4px solid var(--carrier-warn);padding:12px 16px;margin-bottom:8px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;"><div><b>${s.actividad_id}</b> — Unidad: <b>${s.unidad}</b><br><small>Técnico: ${s.tecnico}</small></div><div style="display:flex;gap:8px;"><button class="btn-success" onclick="aprobar(${s.id})">✅ Aprobar</button><button class="btn-danger" onclick="rechazar(${s.id})">❌ Rechazar</button></div></div>`; }); }
+                if (!Array.isArray(solicitudes) || solicitudes.length === 0) {
+                    html = '<p>✅ Sin solicitudes pendientes.</p>';
+                } else {
+                    solicitudes.forEach(s => {
+                        html += `<div style="background:white; border-radius:12px; padding:16px; margin-bottom:12px; box-shadow:0 2px 8px rgba(0,0,0,0.05); display:flex; justify-content:space-between; align-items:center;">
+                            <div><b>${s.tecnico}</b> solicita <b>${s.actividad_id}</b> — Unidad: <b>${s.unidad}</b></div>
+                            <div>
+                                <button class="btn-success" onclick="aprobar(${s.id})">✅ Aprobar</button>
+                                <button class="btn-danger" onclick="rechazar(${s.id})">❌ Rechazar</button>
+                            </div>
+                        </div>`;
+                    });
+                }
                 lista.innerHTML = html;
-            } catch (err) { lista.innerHTML = '<p style="color:var(--carrier-danger);">Error al cargar solicitudes.</p>'; }
+            } catch (err) {
+                console.error(err);
+                lista.innerHTML = '<p style="color:var(--carrier-danger);">Error al cargar solicitudes. Intenta recargar.</p>';
+            }
+
             const [unidadesRes, tecnicosRes] = await Promise.all([fetchAuth('/api/unidades/'), fetchAuth('/api/usuarios/')]);
             const unidades = await unidadesRes.json(); const tecnicos = await tecnicosRes.json();
             document.getElementById('unidad').innerHTML = '<option value="">Unidad</option>' + (Array.isArray(unidades) ? unidades.map(u => `<option value="${u.unit_number}">${u.id_lote} - ${u.unit_number}</option>`).join('') : '');
             document.getElementById('tecnico').innerHTML = '<option value="">Técnico</option>' + (Array.isArray(tecnicos) ? tecnicos.filter(u => u.role === 'tecnico').map(u => `<option value="${u.username}">${u.username}</option>`).join('') : '');
             document.getElementById('actividad').innerHTML = '<option value="">Actividad</option>' + actividades.map(a => `<option value="${a}">${a}</option>`).join('');
         }
+
         async function aprobar(id) { await fetchAuth('/api/asignaciones/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ estado: 'pendiente' }) }); cargarSolicitudes(); }
         async function rechazar(id) { if (confirm('¿Eliminar solicitud?')) { await fetchAuth('/api/asignaciones/' + id, { method: 'DELETE' }); cargarSolicitudes(); } }
+
         document.getElementById('asignacionForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const unidad = document.getElementById('unidad').value, tecnico = document.getElementById('tecnico').value, actividad = document.getElementById('actividad').value;
@@ -562,7 +480,12 @@ async def asignaciones():
                 const todas = await res.json();
                 const activas = todas.filter(a => a.unidad === unidad && a.actividad_id === actividad && a.estado !== 'completada' && a.estado !== 'rechazada');
                 const completadas = todas.filter(a => a.unidad === unidad && a.actividad_id === actividad && a.estado === 'completada');
-                if (activas.length > 0 && !confirm(`Ya existe una tarea activa para esta combinación. ¿Deseas crear la orden de todos modos?`)) { msgDiv.innerHTML = ''; return; }
+                if (activas.length > 0) {
+                    if (!confirm(`Ya existe una tarea activa (${activas.map(a => a.tecnico).join(', ')}) para esta combinación. ¿Deseas crear la orden de todos modos?`)) {
+                        msgDiv.innerHTML = '';
+                        return;
+                    }
+                }
                 if (completadas.length > 0 && !confirm('Esta actividad ya fue completada anteriormente. ¿Deseas crear una nueva orden?')) { msgDiv.innerHTML = ''; return; }
                 await fetchAuth('/api/asignaciones/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ unidad, tecnico, actividad_id: actividad, estado: 'pendiente' }) });
                 msgDiv.innerHTML = '<p style="color:var(--carrier-success);">✅ Orden creada correctamente.</p>';
@@ -573,7 +496,6 @@ async def asignaciones():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("🎯 Control de Asignaciones", contenido, "asignaciones"))
-
 
 # ------------------------------------------------------------
 # TICKETS (admin)
@@ -611,10 +533,10 @@ async def tickets():
         async function marcarReporte(id) { await fetchAuth('/api/tickets/' + id + '/report', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reporte: 'Reporte enviado' }) }); cargarTickets(); }
         document.getElementById('ticketForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const unidad = document.getElementById('unidad').value;
-            const vin = document.getElementById('vin').value;
+            const unidad      = document.getElementById('unidad').value;
+            const vin         = document.getElementById('vin').value;
             const descripcion = document.getElementById('descripcion').value;
-            const tecnico = document.getElementById('tecnico').value;
+            const tecnico     = document.getElementById('tecnico').value;
             if (!unidad || !descripcion || !tecnico) return alert('Completa los campos obligatorios');
             await fetchAuth('/api/tickets/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ unit_number: unidad, vin_number: vin, descripcion, tecnico }) });
             alert('Ticket creado'); cargarTickets();
@@ -623,7 +545,6 @@ async def tickets():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("🎫 Gestión de Tickets", contenido, "tickets"))
-
 
 # ------------------------------------------------------------
 # INVENTARIO (admin)
@@ -652,7 +573,7 @@ async def inventario():
             document.getElementById('infoBar').innerHTML = `🗄 Inventario Principal &nbsp;·&nbsp; ${datos.length} registros &nbsp;·&nbsp; ${columnas.length} columnas`;
             renderTabla();
         }
-        function renderTabla() { let html = '<table class="data-table"><thead><tr><th>#</th>'; columnas.forEach(c => html += `<th>${c}</th>`); html += '<th>Acción</th></tr></thead><tbody>'; datos.forEach((fila, idx) => { html += `<tr><td style="text-align:center;">${idx+1}</td>`; columnas.forEach(c => html += `<td><input type="text" value="${fila[c] || ''}" onchange="datos[${idx}]['${c}'] = this.value" style="margin:0;"></td>`); html += `<td><button class="btn-danger" onclick="eliminarFila(${idx})">🗑</button></td>`; }); html += '</tbody></table>'; document.getElementById('inventarioTable').innerHTML = html; }
+        function renderTabla() { let html = '<table><thead><tr><th>#</th>'; columnas.forEach(c => html += `<th>${c}</th>`); html += '<th>Acción</th></tr></thead><tbody>'; datos.forEach((fila, idx) => { html += `<tr><td style="text-align:center;">${idx+1}</td>`; columnas.forEach(c => html += `<td><input type="text" value="${fila[c] || ''}" onchange="datos[${idx}]['${c}'] = this.value" style="margin:0;"></td>`); html += `<td><button class="btn-danger" onclick="eliminarFila(${idx})">🗑</button></td>`; }); html += '</tbody></table>'; document.getElementById('inventarioTable').innerHTML = html; }
         function agregarFila() { datos.push(Object.fromEntries(columnas.map(c => [c, '']))); renderTabla(); }
         function eliminarFila(idx) { if (confirm('¿Eliminar fila?')) { datos.splice(idx,1); renderTabla(); } }
         async function guardarInventario() { await fetchAuth('/api/inventario/datos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos) }); alert('Inventario guardado'); }
@@ -666,7 +587,6 @@ async def inventario():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("📦 Gestión de Inventarios", contenido, "inventario"))
-
 
 # ------------------------------------------------------------
 # REGISTRO DE UNIDADES (admin)
@@ -688,7 +608,7 @@ async def unidades():
     <div id="unidadesList"></div>
     <script>
         const fetchAuth = window.fetchAuth;
-        async function cargarUnidades() { const res = await fetchAuth('/api/unidades/'); const unidades = await res.json(); let html = '<table class="data-table"><thead><tr><th>#Económico</th><th>Lote</th><th>VIN</th><th>Reefer Serial</th><th>Modelo</th><th>Motor</th><th>Compresor</th></tr></thead><tbody>'; if (Array.isArray(unidades)) unidades.forEach(u => html += `<tr><td>${u.unit_number}</td><td>${u.id_lote||''}</td><td style="font-family:monospace;">${u.vin_number||''}</td><td>${u.reefer_serial||''}</td><td>${u.reefer_model||''}</td><td style="font-family:monospace;">${u.engine_serial||''}</td><td>${u.compressor_serial||''}</td>`); html += '</tbody></table>'; document.getElementById('unidadesList').innerHTML = html; }
+        async function cargarUnidades() { const res = await fetchAuth('/api/unidades/'); const unidades = await res.json(); let html = '<table><thead><tr><th>#Económico</th><th>Lote</th><th>VIN</th><th>Reefer Serial</th><th>Modelo</th><th>Motor</th><th>Compresor</th></tr></thead><tbody>'; if (Array.isArray(unidades)) unidades.forEach(u => html += `<tr><td>${u.unit_number}</td><td>${u.id_lote||''}</td><td style="font-family:monospace;">${u.vin_number||''}</td><td>${u.reefer_serial||''}</td><td>${u.reefer_model||''}</td><td style="font-family:monospace;">${u.engine_serial||''}</td><td>${u.compressor_serial||''}</td>`); html += '</tbody></table>'; document.getElementById('unidadesList').innerHTML = html; }
         document.getElementById('unidadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const data = {
@@ -713,156 +633,885 @@ async def unidades():
     """
     return HTMLResponse(content=pagina_con_menu("📸 Registro de Unidades", contenido, "unidades"))
 
-
 # ------------------------------------------------------------
-# GESTIÓN DE USUARIOS (admin)
+# GESTIÓN DE USUARIOS (admin) - se añadió opción "visor"
 # ------------------------------------------------------------
 @router.get("/app/usuarios", response_class=HTMLResponse)
 async def usuarios():
     contenido = """
     <script> if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; } </script>
+
     <div class="section-title">👥 Usuarios Registrados</div>
     <div id="usuariosList"></div>
+
     <div class="section-title admin-only" style="margin-top:28px;">➕ Crear Nuevo Usuario</div>
     <div class="admin-only" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px;">
         <input type="text" id="username" placeholder="Nombre de usuario" required>
         <input type="password" id="newUserPassword" placeholder="Contraseña" required>
-        <select id="role" required><option value="tecnico">Técnico</option><option value="admin">Administrador</option><option value="visor">Visor (solo lectura)</option></select>
+        <select id="role" required>
+            <option value="tecnico">Técnico</option>
+            <option value="admin">Administrador</option>
+            <option value="visor">Visor (solo lectura)</option>
+        </select>
         <button onclick="crearUsuario()" class="btn-primary" style="grid-column: span 3;">👤 Crear Usuario</button>
     </div>
+
     <script>
         const fetchAuth = window.fetchAuth;
+
         async function cargarUsuarios() {
-            const res = await fetchAuth('/api/usuarios/');
-            const usuarios = await res.json();
-            let html = '<table class="data-table"><thead><tr><th>Usuario</th><th>Rol</th><th style="text-align:center;">Acciones</th></tr></thead><tbody>';
-            if (Array.isArray(usuarios)) usuarios.forEach(u => {
-                const rolTexto = u.role === 'admin' ? '🛡 Administrador' : (u.role === 'tecnico' ? '🔧 Técnico' : '👁 Visor');
-                const acciones = window.role === 'admin' ? `<button class="btn-warning" onclick="abrirModalPassword(${u.id}, '${u.username}')" style="padding:6px 14px;font-size:0.82rem;margin-right:6px;">🔑 Cambiar Contraseña</button><button class="btn-danger" onclick="eliminarUsuario(${u.id}, '${u.username}')" style="padding:6px 14px;font-size:0.82rem;">🗑️ Eliminar</button>` : '—';
-                html += `<tr><td><b>${u.username}</b></td><td style="text-align:center;">${rolTexto}</td><td style="text-align:center;">${acciones}</td></tr>`;
-            });
-            html += '</tbody></table>';
-            document.getElementById('usuariosList').innerHTML = html;
+            try {
+                const res = await fetchAuth('/api/usuarios/');
+                const usuarios = await res.json();
+                let html = '<table><thead><tr><th>Usuario</th><th>Rol</th><th style="text-align:center;">Acciones</th></tr></thead><tbody>';
+                if (Array.isArray(usuarios)) {
+                    usuarios.forEach(u => {
+                        const rolTexto = u.role === 'admin' ? '🛡 Administrador' : (u.role === 'tecnico' ? '🔧 Técnico' : '👁 Visor');
+                        const acciones = window.role === 'admin' ? `
+                            <button class="btn-warning" onclick="abrirModalPassword(${u.id}, '${u.username}')" style="padding:6px 14px;font-size:0.82rem;margin-right:6px;">🔑 Cambiar Contraseña</button>
+                            <button class="btn-danger" onclick="eliminarUsuario(${u.id}, '${u.username}')" style="padding:6px 14px;font-size:0.82rem;">🗑️ Eliminar</button>
+                        ` : '—';
+                        html += `<tr><td><b>${u.username}</b></td><td>${rolTexto}</td><td style="text-align:center;">${acciones}</td></tr>`;
+                    });
+                }
+                html += '</tbody></table>';
+                document.getElementById('usuariosList').innerHTML = html;
+            } catch (err) {
+                document.getElementById('usuariosList').innerHTML = '<p style="color:red;">Error al cargar usuarios</p>';
+            }
         }
+
         function abrirModalPassword(userId, username) {
+            const prev = document.getElementById('modalPassword');
+            if (prev) prev.remove();
             const modal = document.createElement('div');
             modal.id = 'modalPassword';
             modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);display:flex;justify-content:center;align-items:center;z-index:500;';
-            modal.innerHTML = `<div style="background:white;border-radius:20px;padding:32px;width:90%;max-width:460px;"><h3>Cambiar Contraseña - ${username}</h3><input id="inputNuevaPwd" type="password" placeholder="Nueva contraseña"><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px;"><button onclick="document.getElementById('modalPassword').remove()">Cancelar</button><button onclick="guardarPassword(${userId})">Guardar</button></div></div>`;
+            modal.innerHTML = `
+                <div style="background:white;border-radius:20px;padding:32px;width:90%;max-width:460px;box-shadow:0 20px 60px rgba(0,43,91,0.25);animation:fadeInP 0.2s ease;">
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+                        <div style="background:#fef3c7;border-radius:12px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">🔑</div>
+                        <div>
+                            <h3 style="margin:0;color:var(--carrier-blue);font-size:1.1rem;font-weight:800;">Cambiar Contraseña</h3>
+                            <p style="margin:2px 0 0;font-size:0.82rem;color:#6b7280;">Usuario: <b>${username}</b></p>
+                        </div>
+                    </div>
+                    <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0;">
+                    <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">Nueva contraseña</label>
+                    <div style="position:relative;">
+                        <input id="inputNuevaPwd" type="password" placeholder="Escribe la nueva contraseña" style="width:100%;border:1.5px solid #d1d5db;border-radius:12px;padding:12px 44px 12px 12px;font-size:0.95rem;font-family:inherit;">
+                        <span onclick="togglePwd()" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:1.1rem;" title="Mostrar/ocultar">👁</span>
+                    </div>
+                    <p id="pwdError" style="color:var(--carrier-danger);font-size:0.82rem;min-height:18px;margin:4px 0 12px;"></p>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <button onclick="document.getElementById('modalPassword').remove()" style="background:#f1f5f9;color:#374151;border:none;border-radius:10px;padding:13px;font-weight:600;font-size:0.95rem;cursor:pointer;">✖ Cancelar</button>
+                        <button id="btnGuardarPwd" onclick="guardarPassword(${userId})" style="background:linear-gradient(135deg,var(--carrier-blue),var(--carrier-accent));color:white;border:none;border-radius:10px;padding:13px;font-weight:700;font-size:0.95rem;cursor:pointer;">💾 Guardar</button>
+                    </div>
+                </div>
+                <style>@keyframes fadeInP{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}</style>`;
             document.body.appendChild(modal);
+            setTimeout(() => document.getElementById('inputNuevaPwd').focus(), 100);
         }
+
+        function togglePwd() {
+            const input = document.getElementById('inputNuevaPwd');
+            input.type = input.type === 'password' ? 'text' : 'password';
+        }
+
         async function guardarPassword(userId) {
-            const pwd = document.getElementById('inputNuevaPwd').value;
-            if (!pwd || pwd.length < 4) return alert('Mínimo 4 caracteres');
-            await fetchAuth('/api/usuarios/' + userId + '/password', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ new_password: pwd }) });
-            document.getElementById('modalPassword').remove();
-            alert('Contraseña actualizada');
+            const pwd = document.getElementById('inputNuevaPwd').value.trim();
+            const errorEl = document.getElementById('pwdError');
+            if (!pwd || pwd.length < 4) { errorEl.textContent = 'Mínimo 4 caracteres.'; return; }
+            const btn = document.getElementById('btnGuardarPwd');
+            btn.textContent = 'Guardando...'; btn.disabled = true;
+            const res = await fetchAuth('/api/usuarios/' + userId + '/password', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ new_password: pwd })
+            });
+            if (res.ok) {
+                document.getElementById('modalPassword').remove();
+                const toast = document.createElement('div');
+                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#1F4E79;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
+                toast.textContent = '✅ Contraseña actualizada correctamente.';
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 3000);
+            } else {
+                const err = await res.json();
+                errorEl.textContent = err.detail || 'Error al guardar.';
+                btn.textContent = '💾 Guardar'; btn.disabled = false;
+            }
         }
+
         async function crearUsuario() {
             const username = document.getElementById('username').value.trim();
             const password = document.getElementById('newUserPassword').value;
-            const role = document.getElementById('role').value;
+            const role     = document.getElementById('role').value;
             if (!username || !password) return alert('Completa todos los campos');
-            await fetchAuth('/api/usuarios/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password, role }) });
-            document.getElementById('username').value = '';
-            document.getElementById('newUserPassword').value = '';
-            cargarUsuarios();
+            const res = await fetchAuth('/api/usuarios/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password, role })
+            });
+            if (res.ok) {
+                document.getElementById('username').value = '';
+                document.getElementById('newUserPassword').value = '';
+                cargarUsuarios();
+                const toast = document.createElement('div');
+                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
+                toast.textContent = '✅ Usuario creado exitosamente.';
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 3000);
+            } else {
+                const err = await res.json();
+                alert('Error: ' + (err.detail || 'No se pudo crear el usuario'));
+            }
         }
+
         async function eliminarUsuario(id, nombre) {
-            if (!confirm(`¿Eliminar al usuario "${nombre}"?`)) return;
-            await fetchAuth('/api/usuarios/' + id, { method: 'DELETE' });
-            cargarUsuarios();
+            if (!confirm(`¿Eliminar al usuario "${nombre}"? Esta acción no se puede deshacer.`)) return;
+            const res = await fetchAuth('/api/usuarios/' + id, { method: 'DELETE' });
+            if (res.ok) cargarUsuarios();
+            else alert('Error al eliminar usuario');
         }
+
         cargarUsuarios();
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("👥 Gestión de Usuarios", contenido, "usuarios"))
 
-
 # ------------------------------------------------------------
-# PANEL DE ADMINISTRACIÓN (admin)
+# PANEL DE ADMINISTRACIÓN (admin) — CRUD interactivo
 # ------------------------------------------------------------
 @router.get("/app/admin", response_class=HTMLResponse)
 async def admin():
     contenido = """
     <script> if (window.role !== 'admin') { window.location.href = '/app/mis-tareas'; } </script>
+
+    <!-- Tabler Icons CDN -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
     <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy: #0f2d6b;
+      --navy-mid: #1a3f8f;
+      --navy-btn: #1e4fc0;
+      --navy-light: #2e63d4;
+      --danger: #c0392b;
+      --danger-hover: #a93226;
+      --success: #1a7a4a;
+      --warn: #b7640a;
+      --text-on-navy: #e8f0ff;
+      --row-hover: #edf2fb;
+      --selected-bg: #d6e4fc;
+      --border: rgba(30,79,192,0.18);
+      --color-background-primary: #ffffff;
+      --color-background-secondary: #f4f6fb;
+      --color-text-primary: #1a2340;
+      --color-text-secondary: #6b7280;
+      --color-border-secondary: #d1d5db;
+      --color-border-tertiary: #e5e7eb;
+      --border-radius-md: 8px;
+      --border-radius-lg: 12px;
+      --font-sans: 'Inter', sans-serif;
+      --font-mono: 'Courier New', monospace;
+    }
     .panel { padding: 1rem 0; }
     .tabs { display: flex; gap: 8px; margin-bottom: 1.25rem; flex-wrap: wrap; }
-    .tab-btn { background: var(--navy); color: white; border: none; border-radius: 8px; padding: 9px 18px; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 7px; }
-    .tab-btn.active { background: #1e4fc0; outline: 2px solid #6fa3f7; }
+    .tab-btn {
+      background: var(--navy);
+      color: var(--text-on-navy);
+      border: none;
+      border-radius: var(--border-radius-md);
+      padding: 9px 18px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex; align-items: center; gap: 7px;
+      transition: background 0.15s;
+    }
+    .tab-btn:hover { background: var(--navy-light); }
+    .tab-btn.active { background: var(--navy-btn); outline: 2px solid #6fa3f7; outline-offset: 1px; }
+    .tab-btn i { font-size: 15px; }
     .section { display: none; }
     .section.active { display: block; }
+    .toolbar {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 10px; flex-wrap: wrap;
+    }
+    .toolbar input[type=text] {
+      flex: 1; min-width: 160px; max-width: 280px;
+      border: 0.5px solid var(--border);
+      border-radius: var(--border-radius-md);
+      padding: 7px 12px; font-size: 13px;
+      background: var(--color-background-primary);
+      color: var(--color-text-primary);
+      margin-bottom: 0;
+    }
+    .toolbar select {
+      border: 0.5px solid var(--border);
+      border-radius: var(--border-radius-md);
+      padding: 7px 10px; font-size: 13px;
+      background: var(--color-background-primary);
+      color: var(--color-text-primary);
+      margin-bottom: 0;
+    }
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 14px; border-radius: var(--border-radius-md);
+      font-size: 13px; font-weight: 500; cursor: pointer; border: none;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-navy { background: var(--navy-btn); color: #fff; }
+    .btn-navy:hover { background: var(--navy-light); }
+    .btn-danger-sm { background: var(--danger); color: #fff; }
+    .btn-danger-sm:hover { background: var(--danger-hover); }
+    .btn-ghost {
+      background: transparent; color: var(--color-text-secondary);
+      border: 0.5px solid var(--color-border-secondary);
+    }
+    .btn-ghost:hover { background: var(--color-background-secondary); }
+    .btn i { font-size: 14px; }
+    .bulk-bar {
+      display: none; align-items: center; gap: 10px;
+      background: #fff3cd; border: 0.5px solid #f5a623;
+      border-radius: var(--border-radius-md); padding: 8px 14px;
+      margin-bottom: 10px; font-size: 13px; color: #7a4e00;
+    }
+    .bulk-bar.visible { display: flex; }
+    .main-layout { display: flex; gap: 12px; align-items: flex-start; }
+    .table-wrap { flex: 1; min-width: 0; overflow: hidden; }
     .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .data-table th { background: #002B5B; color: white; padding: 9px 10px; text-align: left; }
-    .data-table td { padding: 9px 10px; border-bottom: 0.5px solid #e5e7eb; }
-    .editor-panel { width: 268px; background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem; display: none; margin-left: 12px; }
+    .data-table th {
+      background: var(--navy);
+      color: var(--text-on-navy);
+      padding: 9px 10px; text-align: left;
+      font-weight: 500; font-size: 12px; letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+    .data-table th:first-child { border-radius: var(--border-radius-md) 0 0 0; width: 32px; }
+    .data-table th:last-child { border-radius: 0 var(--border-radius-md) 0 0; }
+    .data-table td { padding: 9px 10px; border-bottom: 0.5px solid var(--color-border-tertiary); color: var(--color-text-primary); vertical-align: middle; }
+    .data-table tr:hover td { background: var(--row-hover); }
+    .data-table tr.selected td { background: var(--selected-bg); }
+    .data-table tr.editing td { background: #edf6ff; }
+    .admin-badge {
+      display: inline-block; padding: 2px 9px; border-radius: 999px;
+      font-size: 11px; font-weight: 500;
+    }
+    .badge-pending { background: #fff3cd; color: #7a4e00; }
+    .badge-done { background: #d4edda; color: #155724; }
+    .badge-req { background: #d1ecf1; color: #0c5460; }
+    .badge-cancel { background: #f8d7da; color: #721c24; }
+    .row-actions { display: flex; gap: 5px; }
+    .icon-btn {
+      background: none; border: none; cursor: pointer;
+      padding: 4px; border-radius: 5px; color: var(--color-text-secondary);
+      font-size: 15px; display: flex; align-items: center; justify-content: center;
+      transition: background 0.12s, color 0.12s;
+    }
+    .icon-btn:hover.edit { background: #dbeafe; color: var(--navy-btn); }
+    .icon-btn:hover.del { background: #fde8e8; color: var(--danger); }
+    .editor-panel {
+      width: 268px; min-width: 268px;
+      background: var(--color-background-primary);
+      border: 0.5px solid var(--color-border-secondary);
+      border-radius: var(--border-radius-lg);
+      padding: 1rem; font-size: 13px;
+      display: none;
+    }
     .editor-panel.visible { display: block; }
-    .sql-area { width: 100%; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; font-family: monospace; min-height: 110px; margin-bottom: 10px; }
+    .editor-panel h3 {
+      font-size: 14px; font-weight: 500;
+      color: var(--navy);
+      margin-bottom: 14px;
+      display: flex; align-items: center; gap: 7px; justify-content: space-between;
+    }
+    .editor-panel h3 span { display: flex; align-items: center; gap: 7px; }
+    .close-editor { background: none; border: none; cursor: pointer; color: var(--color-text-secondary); font-size: 16px; padding: 2px; border-radius: 4px; }
+    .close-editor:hover { background: var(--color-background-secondary); }
+    .field-group { margin-bottom: 11px; }
+    .field-group label { display: block; font-size: 11px; color: var(--color-text-secondary); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .field-group input, .field-group select, .field-group textarea {
+      width: 100%;
+      border: 0.5px solid var(--color-border-secondary);
+      border-radius: var(--border-radius-md);
+      padding: 7px 10px; font-size: 13px;
+      background: var(--color-background-primary);
+      color: var(--color-text-primary);
+      margin-bottom: 0;
+    }
+    .field-group textarea { resize: vertical; min-height: 60px; }
+    .editor-actions { display: flex; gap: 8px; margin-top: 14px; }
+    .editor-actions .btn { flex: 1; justify-content: center; }
+    .admin-divider { height: 0.5px; background: var(--color-border-tertiary); margin: 14px 0; }
+    .id-badge { font-size: 11px; background: var(--color-background-secondary); color: var(--color-text-secondary); padding: 2px 8px; border-radius: var(--border-radius-md); }
+    .sql-area {
+      width: 100%;
+      border: 0.5px solid var(--color-border-secondary);
+      border-radius: var(--border-radius-md);
+      padding: 12px; font-size: 13px;
+      font-family: var(--font-mono);
+      background: var(--color-background-secondary);
+      color: var(--color-text-primary);
+      min-height: 110px; resize: vertical;
+      margin-bottom: 10px;
+    }
+    .sql-result {
+      font-size: 12px; font-family: var(--font-mono);
+      background: var(--color-background-secondary);
+      border: 0.5px solid var(--color-border-tertiary);
+      border-radius: var(--border-radius-md);
+      padding: 10px 12px; max-height: 180px; overflow-y: auto;
+      color: var(--color-text-primary); white-space: pre-wrap;
+      display: none; margin-top: 10px;
+    }
+    .sql-result.visible { display: block; }
+    .sql-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .sql-presets button {
+      font-size: 11px; padding: 4px 10px;
+      background: var(--color-background-secondary);
+      border: 0.5px solid var(--color-border-secondary);
+      border-radius: var(--border-radius-md);
+      cursor: pointer; color: var(--color-text-secondary);
+      margin-bottom: 0;
+    }
+    .sql-presets button:hover { background: var(--navy); color: #fff; border-color: var(--navy); }
+    .admin-notice { font-size: 12px; color: var(--color-text-secondary); padding: 6px 10px; background: var(--color-background-secondary); border-radius: var(--border-radius-md); border-left: 3px solid var(--navy-light); margin-bottom: 10px; }
+    .pagination { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; color: var(--color-text-secondary); }
+    .pagination button {
+      background: var(--color-background-secondary);
+      border: 0.5px solid var(--color-border-secondary);
+      border-radius: var(--border-radius-md);
+      padding: 4px 10px; font-size: 12px; cursor: pointer;
+      margin-bottom: 0;
+    }
+    .pagination button:hover { background: var(--navy); color: #fff; border-color: var(--navy); }
+    .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
     </style>
+
     <div class="panel">
-        <div class="tabs">
-            <button class="tab-btn active" onclick="showTab('actividades')"><i class="ti ti-activity"></i> Actividades</button>
-            <button class="tab-btn" onclick="showTab('usuarios')"><i class="ti ti-users"></i> Usuarios</button>
-            <button class="tab-btn" onclick="showTab('unidades')"><i class="ti ti-truck"></i> Unidades</button>
-            <button class="tab-btn" onclick="showTab('sql')"><i class="ti ti-terminal-2"></i> SQL Directo</button>
+      <div class="tabs">
+        <button class="tab-btn active" onclick="showTab('actividades')" id="tab-actividades">
+          <i class="ti ti-activity"></i> Actividades
+        </button>
+        <button class="tab-btn" onclick="showTab('usuarios')" id="tab-usuarios">
+          <i class="ti ti-users"></i> Usuarios
+        </button>
+        <button class="tab-btn" onclick="showTab('unidades')" id="tab-unidades">
+          <i class="ti ti-truck"></i> Unidades
+        </button>
+        <button class="tab-btn" onclick="showTab('sql')" id="tab-sql">
+          <i class="ti ti-terminal-2"></i> SQL Directo
+        </button>
+      </div>
+
+      <!-- ── ACTIVIDADES ── -->
+      <div id="sec-actividades" class="section active">
+        <div class="toolbar">
+          <input type="text" id="search-act" placeholder="Buscar por ID, vehículo, técnico…" oninput="filterTable('act')" />
+          <select id="filter-estado" onchange="filterTable('act')">
+            <option value="">Todos los estados</option>
+            <option value="pendiente">Pendiente</option>
+            <option value="en_proceso">En Proceso</option>
+            <option value="completada">Completada</option>
+            <option value="solicitado">Solicitado</option>
+            <option value="cancelado">Cancelado</option>
+          </select>
+          <button class="btn btn-navy" onclick="recargarActividades()">
+            <i class="ti ti-refresh"></i> Recargar
+          </button>
         </div>
-        <div id="sec-actividades" class="section active"><div id="actividadesContent">Cargando...</div></div>
-        <div id="sec-usuarios" class="section"><div id="usuariosContent">Cargando...</div></div>
-        <div id="sec-unidades" class="section"><div id="unidadesContent">Cargando...</div></div>
-        <div id="sec-sql" class="section">
-            <textarea class="sql-area" id="sql-input">SELECT * FROM asignaciones LIMIT 10;</textarea>
-            <button class="btn-primary" onclick="ejecutarSQL()">Ejecutar</button>
-            <div id="sql-result" style="margin-top:10px; padding:10px; background:#f3f4f6; border-radius:8px; font-family:monospace; white-space:pre-wrap;"></div>
+        <div class="bulk-bar" id="bulk-act">
+          <i class="ti ti-checkbox"></i>
+          <span id="bulk-count-act">0</span> seleccionados
+          <button class="btn btn-danger-sm" style="margin-left:auto" onclick="eliminarSeleccionados('act')">
+            <i class="ti ti-trash"></i> Eliminar seleccionados
+          </button>
         </div>
+        <div class="main-layout">
+          <div class="table-wrap">
+            <table class="data-table" id="table-act">
+              <thead>
+                <tr>
+                  <th><input type="checkbox" id="check-all-act" onchange="toggleAll('act')" /></th>
+                  <th>ID</th><th>Unidad</th><th>Actividad</th><th>Técnico</th><th>Estado</th><th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-act"></tbody>
+            </table>
+            <div class="pagination" id="pag-act"></div>
+          </div>
+          <div class="editor-panel" id="editor-act">
+            <h3>
+              <span><i class="ti ti-edit"></i> Editar registro</span>
+              <button class="close-editor" onclick="cerrarEditor('act')"><i class="ti ti-x"></i></button>
+            </h3>
+            <div id="editor-id-act" class="id-badge" style="margin-bottom:12px"></div>
+            <div class="field-group"><label>Unidad</label><input type="text" id="ef-vehiculo" /></div>
+            <div class="field-group"><label>Técnico</label><input type="text" id="ef-tecnico" /></div>
+            <div class="field-group"><label>Estado</label>
+              <select id="ef-estado">
+                <option value="pendiente">Pendiente</option>
+                <option value="en_proceso">En Proceso</option>
+                <option value="solicitado">Solicitado</option>
+                <option value="completada">Completada</option>
+                <option value="cancelado">Cancelado</option>
+              </select>
+            </div>
+            <div class="admin-divider"></div>
+            <div class="editor-actions">
+              <button class="btn btn-navy" onclick="guardarEditor('act')"><i class="ti ti-device-floppy"></i> Guardar</button>
+              <button class="btn btn-ghost" onclick="cerrarEditor('act')">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── USUARIOS ── -->
+      <div id="sec-usuarios" class="section">
+        <div class="toolbar">
+          <input type="text" id="search-usr" placeholder="Buscar usuario…" oninput="filterTable('usr')" />
+          <select id="filter-rol" onchange="filterTable('usr')">
+            <option value="">Todos los roles</option>
+            <option value="admin">Administrador</option>
+            <option value="tecnico">Técnico</option>
+            <option value="visor">Visor</option>
+          </select>
+          <button class="btn btn-navy" onclick="recargarUsuarios()">
+            <i class="ti ti-refresh"></i> Recargar
+          </button>
+          <button class="btn btn-navy" onclick="nuevoUsuario()">
+            <i class="ti ti-plus"></i> Nuevo
+          </button>
+        </div>
+        <div class="bulk-bar" id="bulk-usr">
+          <i class="ti ti-checkbox"></i>
+          <span id="bulk-count-usr">0</span> seleccionados
+          <button class="btn btn-danger-sm" style="margin-left:auto" onclick="eliminarSeleccionados('usr')">
+            <i class="ti ti-trash"></i> Eliminar seleccionados
+          </button>
+        </div>
+        <div class="main-layout">
+          <div class="table-wrap">
+            <table class="data-table" id="table-usr">
+              <thead>
+                <tr>
+                  <th><input type="checkbox" id="check-all-usr" onchange="toggleAll('usr')" /></th>
+                  <th>ID</th><th>Usuario</th><th>Rol</th><th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-usr"></tbody>
+            </table>
+            <div class="pagination" id="pag-usr"></div>
+          </div>
+          <div class="editor-panel" id="editor-usr">
+            <h3>
+              <span><i class="ti ti-user-edit"></i> Editar usuario</span>
+              <button class="close-editor" onclick="cerrarEditor('usr')"><i class="ti ti-x"></i></button>
+            </h3>
+            <div id="editor-id-usr" class="id-badge" style="margin-bottom:12px"></div>
+            <div class="field-group"><label>Usuario</label><input type="text" id="uf-nombre" /></div>
+            <div class="field-group"><label>Rol</label>
+              <select id="uf-rol">
+                <option value="admin">Administrador</option>
+                <option value="tecnico">Técnico</option>
+                <option value="visor">Visor (solo lectura)</option>
+              </select>
+            </div>
+            <div class="field-group"><label>Contraseña nueva</label><input type="password" id="uf-pass" placeholder="Dejar en blanco = sin cambios" /></div>
+            <div class="admin-divider"></div>
+            <div class="editor-actions">
+              <button class="btn btn-navy" onclick="guardarEditor('usr')"><i class="ti ti-device-floppy"></i> Guardar</button>
+              <button class="btn btn-ghost" onclick="cerrarEditor('usr')">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── UNIDADES ── -->
+      <div id="sec-unidades" class="section">
+        <div class="toolbar">
+          <input type="text" id="search-uni" placeholder="Buscar unidad…" oninput="filterTable('uni')" />
+          <button class="btn btn-navy" onclick="recargarUnidades()">
+            <i class="ti ti-refresh"></i> Recargar
+          </button>
+        </div>
+        <div class="bulk-bar" id="bulk-uni">
+          <i class="ti ti-checkbox"></i>
+          <span id="bulk-count-uni">0</span> seleccionados
+          <button class="btn btn-danger-sm" style="margin-left:auto" onclick="eliminarSeleccionados('uni')">
+            <i class="ti ti-trash"></i> Eliminar seleccionados
+          </button>
+        </div>
+        <div class="main-layout">
+          <div class="table-wrap">
+            <table class="data-table" id="table-uni">
+              <thead>
+                <tr>
+                  <th><input type="checkbox" id="check-all-uni" onchange="toggleAll('uni')" /></th>
+                  <th>ID</th><th>#Económico</th><th>Lote</th><th>VIN</th><th>Modelo</th><th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-uni"></tbody>
+            </table>
+            <div class="pagination" id="pag-uni"></div>
+          </div>
+          <div class="editor-panel" id="editor-uni">
+            <h3>
+              <span><i class="ti ti-truck"></i> Editar unidad</span>
+              <button class="close-editor" onclick="cerrarEditor('uni')"><i class="ti ti-x"></i></button>
+            </h3>
+            <div id="editor-id-uni" class="id-badge" style="margin-bottom:12px"></div>
+            <div class="field-group"><label>#Económico</label><input type="text" id="nf-placa" /></div>
+            <div class="field-group"><label>Lote</label><input type="text" id="nf-lote" /></div>
+            <div class="field-group"><label>VIN</label><input type="text" id="nf-vin" /></div>
+            <div class="field-group"><label>Modelo Reefer</label><input type="text" id="nf-modelo" /></div>
+            <div class="admin-divider"></div>
+            <div class="editor-actions">
+              <button class="btn btn-navy" onclick="guardarEditor('uni')"><i class="ti ti-device-floppy"></i> Guardar</button>
+              <button class="btn btn-ghost" onclick="cerrarEditor('uni')">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── SQL ── -->
+      <div id="sec-sql" class="section">
+        <div class="admin-notice"><i class="ti ti-info-circle"></i> Ejecuta consultas directas. Los cambios son permanentes.</div>
+        <div class="sql-presets">
+          <button onclick="setSQL('SELECT * FROM asignaciones;')">asignaciones</button>
+          <button onclick="setSQL('SELECT * FROM usuarios;')">usuarios</button>
+          <button onclick="setSQL('SELECT * FROM unidades;')">unidades</button>
+          <button onclick="setSQL('SELECT * FROM tickets;')">tickets</button>
+          <button onclick="setSQL('SELECT * FROM inventarios;')">inventarios</button>
+          <button onclick="setSQL(&quot;DELETE FROM asignaciones WHERE estado = 'cancelado';&quot;)">limpiar cancelados</button>
+        </div>
+        <textarea class="sql-area" id="sql-input" spellcheck="false">SELECT * FROM asignaciones;</textarea>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button class="btn btn-navy" onclick="ejecutarSQL()"><i class="ti ti-player-play"></i> Ejecutar</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('sql-input').value=''"><i class="ti ti-eraser"></i> Limpiar</button>
+        </div>
+        <div class="sql-result" id="sql-result"></div>
+      </div>
     </div>
+
     <script>
-        const fetchAuth = window.fetchAuth;
-        function showTab(t) {
-            ['actividades','usuarios','unidades','sql'].forEach(s=>{
-                document.getElementById('sec-'+s).classList.toggle('active',s===t);
-                document.querySelector(`.tab-btn:contains(${s})`).classList.toggle('active',s===t);
+    const fetchAuth = window.fetchAuth;
+    const PER_PAGE = 8;
+    const DATA   = { act: [], usr: [], uni: [] };
+    const filtered = { act: [], usr: [], uni: [] };
+    const pages  = { act: 1, usr: 1, uni: 1 };
+    const editing = { act: null, usr: null, uni: null };
+    const selected = { act: new Set(), usr: new Set(), uni: new Set() };
+
+    // ── Carga desde API ──────────────────────────────────────
+    async function recargarActividades() {
+        const estado = document.getElementById('filter-estado').value;
+        const url = estado ? `/api/asignaciones/?estado=${estado}` : '/api/asignaciones/';
+        const res = await fetchAuth(url);
+        DATA.act = await res.json();
+        filterTable('act');
+    }
+
+    async function recargarUsuarios() {
+        const res = await fetchAuth('/api/usuarios/');
+        DATA.usr = await res.json();
+        filterTable('usr');
+    }
+
+    async function recargarUnidades() {
+        const res = await fetchAuth('/api/unidades/');
+        DATA.uni = await res.json();
+        filterTable('uni');
+    }
+
+    // ── Badges ──────────────────────────────────────────────
+    function badgeEstado(e) {
+        const m = {
+            pendiente:'badge-pending', en_proceso:'badge-req',
+            completada:'badge-done', solicitado:'badge-req',
+            cancelado:'badge-cancel', activo:'badge-done',
+            inactivo:'badge-cancel', mantenimiento:'badge-pending',
+            admin:'badge-req', tecnico:'badge-pending', visor:'badge-done'
+        };
+        return `<span class="admin-badge ${m[e]||''}">${e}</span>`;
+    }
+
+    // ── Render tablas ────────────────────────────────────────
+    function renderAct() {
+        const pg = pages.act; const rows = filtered.act;
+        const slice = rows.slice((pg-1)*PER_PAGE, pg*PER_PAGE);
+        document.getElementById('tbody-act').innerHTML = slice.map(r => `
+            <tr id="row-act-${r.id}" class="${editing.act===r.id?'editing':''} ${selected.act.has(r.id)?'selected':''}">
+              <td><input type="checkbox" onchange="toggleRow('act',${r.id},this)" ${selected.act.has(r.id)?'checked':''}></td>
+              <td><span style="font-family:monospace;font-size:12px;color:#6b7280">${r.id}</span></td>
+              <td style="font-weight:500">${r.unidad||''}</td>
+              <td>${r.actividad_id||''}</td>
+              <td>${r.tecnico||''}</td>
+              <td>${badgeEstado(r.estado||'')}</td>
+              <td><div class="row-actions">
+                <button class="icon-btn edit" onclick="editarFilaAct(${r.id})" title="Editar"><i class="ti ti-edit"></i></button>
+                <button class="icon-btn del" onclick="eliminarFilaAct(${r.id})" title="Eliminar"><i class="ti ti-trash"></i></button>
+              </div></td>
+            </tr>`).join('');
+        renderPag('act', rows.length);
+    }
+
+    function renderUsr() {
+        const pg = pages.usr; const rows = filtered.usr;
+        const slice = rows.slice((pg-1)*PER_PAGE, pg*PER_PAGE);
+        document.getElementById('tbody-usr').innerHTML = slice.map(r => `
+            <tr id="row-usr-${r.id}" class="${editing.usr===r.id?'editing':''} ${selected.usr.has(r.id)?'selected':''}">
+              <td><input type="checkbox" onchange="toggleRow('usr',${r.id},this)" ${selected.usr.has(r.id)?'checked':''}></td>
+              <td style="font-family:monospace;font-size:12px;color:#6b7280">${r.id}</td>
+              <td style="font-weight:500">${r.username||''}</td>
+              <td>${badgeEstado(r.role||'')}</td>
+              <td><div class="row-actions">
+                <button class="icon-btn edit" onclick="editarFilaUsr(${r.id})" title="Editar"><i class="ti ti-edit"></i></button>
+                <button class="icon-btn del" onclick="eliminarFilaUsr(${r.id})" title="Eliminar"><i class="ti ti-trash"></i></button>
+              </div></td>
+            </tr>`).join('');
+        renderPag('usr', rows.length);
+    }
+
+    function renderUni() {
+        const pg = pages.uni; const rows = filtered.uni;
+        const slice = rows.slice((pg-1)*PER_PAGE, pg*PER_PAGE);
+        document.getElementById('tbody-uni').innerHTML = slice.map(r => `
+            <tr id="row-uni-${r.id}" class="${editing.uni===r.id?'editing':''} ${selected.uni.has(r.id)?'selected':''}">
+              <td><input type="checkbox" onchange="toggleRow('uni',${r.id},this)" ${selected.uni.has(r.id)?'checked':''}></td>
+              <td style="font-family:monospace;font-size:12px;color:#6b7280">${r.id}</td>
+              <td style="font-weight:500;font-family:monospace">${r.unit_number||''}</td>
+              <td>${r.id_lote||''}</td>
+              <td style="font-size:12px;color:#6b7280">${r.vin_number||'—'}</td>
+              <td>${r.reefer_model||'—'}</td>
+              <td><div class="row-actions">
+                <button class="icon-btn edit" onclick="editarFilaUni(${r.id})" title="Editar"><i class="ti ti-edit"></i></button>
+                <button class="icon-btn del" onclick="eliminarFilaUni(${r.id})" title="Eliminar"><i class="ti ti-trash"></i></button>
+              </div></td>
+            </tr>`).join('');
+        renderPag('uni', rows.length);
+    }
+
+    function renderPag(t, total) {
+        const pg = pages[t]; const tot = Math.ceil(total/PER_PAGE)||1;
+        document.getElementById('pag-'+t).innerHTML = `
+            <button onclick="changePage('${t}',-1)" ${pg<=1?'disabled':''}>&#8249;</button>
+            <span>Pág ${pg} de ${tot} &nbsp;·&nbsp; ${total} registros</span>
+            <button onclick="changePage('${t}',1)" ${pg>=tot?'disabled':''}>&#8250;</button>`;
+    }
+
+    function changePage(t,d){ pages[t]+=d; render(t); }
+    function render(t){ if(t==='act')renderAct(); else if(t==='usr')renderUsr(); else renderUni(); }
+
+    // ── Filtros ──────────────────────────────────────────────
+    function filterTable(t) {
+        if(t==='act'){
+            const q=(document.getElementById('search-act').value||'').toLowerCase();
+            const es=document.getElementById('filter-estado').value;
+            filtered.act=DATA.act.filter(r=>{
+                const match=!q||((r.unidad||'')+(r.tecnico||'')+(r.actividad_id||'')+String(r.id)).toLowerCase().includes(q);
+                return match&&(!es||r.estado===es);
+            }); pages.act=1; renderAct();
+        } else if(t==='usr'){
+            const q=(document.getElementById('search-usr').value||'').toLowerCase();
+            const rl=document.getElementById('filter-rol').value;
+            filtered.usr=DATA.usr.filter(r=>{
+                const match=!q||(r.username||'').toLowerCase().includes(q);
+                return match&&(!rl||r.role===rl);
+            }); pages.usr=1; renderUsr();
+        } else {
+            const q=(document.getElementById('search-uni').value||'').toLowerCase();
+            filtered.uni=DATA.uni.filter(r=>!q||((r.unit_number||'')+(r.id_lote||'')).toLowerCase().includes(q));
+            pages.uni=1; renderUni();
+        }
+    }
+
+    // ── Pestañas ─────────────────────────────────────────────
+    function showTab(t) {
+        ['actividades','usuarios','unidades','sql'].forEach(s=>{
+            document.getElementById('sec-'+s).classList.toggle('active',s===t);
+            document.getElementById('tab-'+s).classList.toggle('active',s===t);
+        });
+    }
+
+    // ── Editar Actividades ───────────────────────────────────
+    function editarFilaAct(id) {
+        editing.act=id;
+        const r=DATA.act.find(x=>x.id===id); if(!r) return;
+        document.getElementById('editor-act').classList.add('visible');
+        document.getElementById('editor-id-act').textContent='ID: '+id;
+        document.getElementById('ef-vehiculo').value=r.unidad||'';
+        document.getElementById('ef-tecnico').value=r.tecnico||'';
+        document.getElementById('ef-estado').value=r.estado||'pendiente';
+        renderAct();
+    }
+
+    async function guardarEditor(t) {
+        if(t==='act'){
+            const id=editing.act;
+            const estado=document.getElementById('ef-estado').value;
+            await fetchAuth('/api/asignaciones/'+id, {
+                method:'PUT', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({estado})
             });
+            cerrarEditor('act'); recargarActividades();
+        } else if(t==='usr'){
+            const id=editing.usr;
+            const username=document.getElementById('uf-nombre').value;
+            const role=document.getElementById('uf-rol').value;
+            const pass=document.getElementById('uf-pass').value;
+            await fetchAuth('/api/usuarios/'+id, {
+                method:'PUT', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({username, role})
+            });
+            if(pass) await fetchAuth('/api/usuarios/'+id+'/password', {
+                method:'PUT', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({new_password:pass})
+            });
+            cerrarEditor('usr'); recargarUsuarios();
+        } else {
+            const id=editing.uni;
+            const unit_number=document.getElementById('nf-placa').value;
+            const id_lote=document.getElementById('nf-lote').value;
+            const vin_number=document.getElementById('nf-vin').value;
+            const reefer_model=document.getElementById('nf-modelo').value;
+            await fetchAuth('/api/unidades/'+id, {
+                method:'PUT', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({unit_number, id_lote, vin_number, reefer_model})
+            });
+            cerrarEditor('uni'); recargarUnidades();
         }
-        async function ejecutarSQL() {
-            const sql = document.getElementById('sql-input').value;
-            const res = await fetchAuth('/api/admin/execute-sql', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({sql}) });
-            const data = await res.json();
-            document.getElementById('sql-result').innerHTML = JSON.stringify(data, null, 2);
-        }
-        async function cargarActividades() {
-            const res = await fetchAuth('/api/asignaciones/');
-            const data = await res.json();
-            let html = '<table class="data-table"><thead><tr><th>ID</th><th>Unidad</th><th>Actividad</th><th>Técnico</th><th>Estado</th></tr></thead><tbody>';
-            data.forEach(r => html += `<tr><td>${r.id}</td><td>${r.unidad}</td><td>${r.actividad_id}</td><td>${r.tecnico}</td><td>${r.estado}</td></tr>`);
-            html += '</tbody></table>';
-            document.getElementById('actividadesContent').innerHTML = html;
-        }
-        async function cargarUsuariosAdmin() {
-            const res = await fetchAuth('/api/usuarios/');
-            const data = await res.json();
-            let html = '<table class="data-table"><thead><tr><th>ID</th><th>Usuario</th><th>Rol</th></tr></thead><tbody>';
-            data.forEach(r => html += `<tr><td>${r.id}</td><td>${r.username}</td><td>${r.role}</td></tr>`);
-            html += '</tbody></table>';
-            document.getElementById('usuariosContent').innerHTML = html;
-        }
-        async function cargarUnidadesAdmin() {
-            const res = await fetchAuth('/api/unidades/');
-            const data = await res.json();
-            let html = '<table class="data-table"><thead><tr><th>ID</th><th>#Económico</th><th>Lote</th><th>VIN</th></tr></thead><tbody>';
-            data.forEach(r => html += `<tr><td>${r.id}</td><td>${r.unit_number}</td><td>${r.id_lote}</td><td>${r.vin_number}</td></tr>`);
-            html += '</tbody><tr>';
-            document.getElementById('unidadesContent').innerHTML = html;
-        }
-        cargarActividades(); cargarUsuariosAdmin(); cargarUnidadesAdmin();
+    }
+
+    function cerrarEditor(t){
+        editing[t]=null;
+        document.getElementById('editor-'+t).classList.remove('visible');
+        render(t);
+    }
+
+    // ── Editar Usuarios ──────────────────────────────────────
+    function editarFilaUsr(id) {
+        editing.usr=id;
+        const r=DATA.usr.find(x=>x.id===id); if(!r) return;
+        document.getElementById('editor-usr').classList.add('visible');
+        document.getElementById('editor-id-usr').textContent='ID: '+id;
+        document.getElementById('uf-nombre').value=r.username||'';
+        document.getElementById('uf-rol').value=r.role||'tecnico';
+        document.getElementById('uf-pass').value='';
+        renderUsr();
+    }
+
+    async function nuevoUsuario() {
+        const username=prompt('Nombre de usuario:'); if(!username) return;
+        const password=prompt('Contraseña:'); if(!password) return;
+        const role=prompt('Rol (admin/tecnico/visor):','tecnico'); if(!role) return;
+        const res=await fetchAuth('/api/usuarios/', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({username, password, role})
+        });
+        if(res.ok){ recargarUsuarios(); } else { alert('Error al crear usuario'); }
+    }
+
+    async function eliminarFilaUsr(id) {
+        const r=DATA.usr.find(x=>x.id===id);
+        if(!confirm('¿Eliminar usuario "'+( r?.username||id)+'"?')) return;
+        await fetchAuth('/api/usuarios/'+id, {method:'DELETE'});
+        recargarUsuarios();
+    }
+
+    // ── Editar Unidades ──────────────────────────────────────
+    function editarFilaUni(id) {
+        editing.uni=id;
+        const r=DATA.uni.find(x=>x.id===id); if(!r) return;
+        document.getElementById('editor-uni').classList.add('visible');
+        document.getElementById('editor-id-uni').textContent='#: '+r.unit_number;
+        document.getElementById('nf-placa').value=r.unit_number||'';
+        document.getElementById('nf-lote').value=r.id_lote||'';
+        document.getElementById('nf-vin').value=r.vin_number||'';
+        document.getElementById('nf-modelo').value=r.reefer_model||'';
+        renderUni();
+    }
+
+    async function eliminarFilaUni(id) {
+        const r=DATA.uni.find(x=>x.id===id);
+        if(!confirm('¿Eliminar unidad "'+(r?.unit_number||id)+'"?')) return;
+        await fetchAuth('/api/unidades/'+id, {method:'DELETE'});
+        recargarUnidades();
+    }
+
+    // ── Eliminar Actividades ─────────────────────────────────
+    async function eliminarFilaAct(id) {
+        if(!confirm('¿Eliminar actividad '+id+'?')) return;
+        await fetchAuth('/api/asignaciones/'+id, {method:'DELETE'});
+        recargarActividades();
+    }
+
+    // ── Selección múltiple ───────────────────────────────────
+    function toggleRow(t,id,cb){
+        if(cb.checked) selected[t].add(id); else selected[t].delete(id);
+        updateBulk(t); render(t);
+    }
+
+    function toggleAll(t){
+        const cb=document.getElementById('check-all-'+t);
+        filtered[t].forEach(r=>{ if(cb.checked) selected[t].add(r.id); else selected[t].delete(r.id); });
+        updateBulk(t); render(t);
+    }
+
+    function updateBulk(t){
+        const bar=document.getElementById('bulk-'+t);
+        const n=selected[t].size;
+        bar.classList.toggle('visible',n>0);
+        document.getElementById('bulk-count-'+t).textContent=n;
+    }
+
+    async function eliminarSeleccionados(t) {
+        const n=selected[t].size;
+        if(!confirm('¿Eliminar '+n+' registros seleccionados?')) return;
+        const endpoint = t==='act' ? '/api/asignaciones/' : t==='usr' ? '/api/usuarios/' : '/api/unidades/';
+        for(const id of selected[t]) await fetchAuth(endpoint+id, {method:'DELETE'});
+        selected[t].clear();
+        if(t==='act') recargarActividades();
+        else if(t==='usr') recargarUsuarios();
+        else recargarUnidades();
+        updateBulk(t);
+    }
+
+    // ── SQL ──────────────────────────────────────────────────
+    function setSQL(q){ document.getElementById('sql-input').value=q; }
+    async function ejecutarSQL(){
+        const sql=document.getElementById('sql-input').value.trim();
+        const res=document.getElementById('sql-result');
+        res.classList.add('visible');
+        if(!sql){ res.textContent='Error: consulta vacía.'; return; }
+        res.textContent='Ejecutando…';
+        try {
+            const r=await fetchAuth('/api/admin/execute-sql', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({sql})
+            });
+            const data=await r.json();
+            if(data.error){ res.textContent='Error: '+data.error; return; }
+            if(Array.isArray(data)&&data.length){
+                const keys=Object.keys(data[0]);
+                res.textContent=[keys.join(' | '),'-'.repeat(60),...data.map(row=>keys.map(k=>String(row[k]??'')).join(' | '))].join('\\n');
+            } else { res.textContent='Consulta ejecutada. '+JSON.stringify(data); }
+        } catch(e){ res.textContent='Error: '+e.message; }
+    }
+
+    // ── Init ─────────────────────────────────────────────────
+    recargarActividades();
+    recargarUsuarios();
+    recargarUnidades();
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("🛠 Panel de Administración", contenido, "admin"))
 
-
 # ------------------------------------------------------------
-# MIS TAREAS
+# MIS TAREAS (modales con botones grandes y scroll)
 # ------------------------------------------------------------
 @router.get("/app/mis-tareas", response_class=HTMLResponse)
 async def mis_tareas():
@@ -871,16 +1520,29 @@ async def mis_tareas():
     <div id="tareasList"></div>
     <script>
         const fetchAuth = window.fetchAuth, username = window.username;
-        function mostrarModal(html) { const modal = document.createElement('div'); modal.className = 'modal'; modal.style.display = 'flex'; modal.innerHTML = html; document.body.appendChild(modal); return modal; }
-        function cerrarModal() { const modal = document.querySelector('.modal'); if (modal) document.body.removeChild(modal); }
+
+        function mostrarModal(html) {
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.style.display = 'flex';
+            modal.innerHTML = html;
+            document.body.appendChild(modal);
+            return modal;
+        }
+        function cerrarModal() {
+            const modal = document.querySelector('.modal');
+            if (modal) document.body.removeChild(modal);
+        }
+
         async function cargarTareas() {
             const res = await fetchAuth('/api/asignaciones/?tecnico=' + username);
             if (!res.ok) { document.getElementById('tareasList').innerHTML = '<p style="color:red;">Error al cargar tareas.</p>'; return; }
             const tareas = await res.json();
             const activas = Array.isArray(tareas) ? tareas.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso') : [];
             let html = '';
-            if (activas.length === 0) { html = '<p>✅ No tienes tareas activas.</p>'; }
-            else {
+            if (activas.length === 0) {
+                html = '<p>✅ No tienes tareas activas.</p>';
+            } else {
                 activas.forEach(t => {
                     let btn = '';
                     if (t.estado === 'pendiente') btn = `<button class="btn-primary" onclick="iniciarTarea(${t.id})">▶️ Iniciar Actividad</button>`;
@@ -895,38 +1557,111 @@ async def mis_tareas():
             }
             document.getElementById('tareasList').innerHTML = html;
         }
+
         async function iniciarTarea(id) { const res = await fetchAuth('/api/asignaciones/' + id + '/iniciar', { method: 'PATCH' }); if (res.ok) cargarTareas(); else alert('Error al iniciar la tarea'); }
         async function completarTarea(id) {
-            const comentario = prompt('Comentario del trabajo realizado:');
-            if (!comentario) return alert('El comentario es obligatorio');
-            const res = await fetchAuth('/api/asignaciones/' + id + '/finalizar', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ comentario }) });
-            if (res.ok) cargarTareas(); else alert('Error al finalizar');
+            const prev = document.getElementById('modalFinalizar');
+            if (prev) prev.remove();
+
+            const modal = document.createElement('div');
+            modal.id = 'modalFinalizar';
+            modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);display:flex;justify-content:center;align-items:center;z-index:500;';
+            modal.innerHTML = `
+                <div style="background:white;border-radius:20px;padding:32px;width:90%;max-width:520px;box-shadow:0 20px 60px rgba(0,43,91,0.25);animation:fadeInM 0.2s ease;">
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+                        <div style="background:#f0fdf4;border-radius:12px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">✅</div>
+                        <div>
+                            <h3 style="margin:0;color:var(--carrier-blue);font-size:1.2rem;font-weight:800;">Finalizar Actividad</h3>
+                            <p style="margin:2px 0 0;font-size:0.82rem;color:#6b7280;">Agrega un comentario antes de cerrar esta tarea.</p>
+                        </div>
+                    </div>
+                    <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0;">
+                    <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">📝 Comentario del técnico</label>
+                    <textarea id="comentarioTexto" rows="4" placeholder="Describe brevemente el trabajo realizado, observaciones, etc." style="width:100%;border:1.5px solid #d1d5db;border-radius:12px;padding:12px;font-size:0.95rem;resize:vertical;font-family:inherit;transition:border-color 0.2s;"></textarea>
+                    <p id="comentarioError" style="color:var(--carrier-danger);font-size:0.82rem;min-height:18px;margin:4px 0 12px;"></p>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <button onclick="document.getElementById('modalFinalizar').remove()" style="background:#f1f5f9;color:#374151;border:none;border-radius:10px;padding:13px;font-weight:600;font-size:0.95rem;cursor:pointer;">✖ Cancelar</button>
+                        <button id="btnConfirmarFinalizar" onclick="confirmarFinalizar(${id})" style="background:linear-gradient(135deg,#16a34a,#15803d);color:white;border:none;border-radius:10px;padding:13px;font-weight:700;font-size:0.95rem;cursor:pointer;">✅ Confirmar y Finalizar</button>
+                    </div>
+                </div>
+                <style>@keyframes fadeInM{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}</style>`;
+            document.body.appendChild(modal);
+            setTimeout(() => document.getElementById('comentarioTexto').focus(), 100);
         }
+
+        async function confirmarFinalizar(id) {
+            const comentario = document.getElementById('comentarioTexto').value.trim();
+            const errorEl   = document.getElementById('comentarioError');
+            if (!comentario) { errorEl.textContent = 'El comentario no puede estar vacío.'; return; }
+            const btn = document.getElementById('btnConfirmarFinalizar');
+            btn.textContent = 'Guardando...'; btn.disabled = true;
+            const res = await fetchAuth('/api/asignaciones/' + id + '/finalizar', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ comentario }) });
+            if (res.ok) {
+                document.getElementById('modalFinalizar').remove();
+                const toast = document.createElement('div');
+                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
+                toast.textContent = '✅ Actividad finalizada correctamente.';
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 3000);
+                cargarTareas();
+            } else {
+                const err = await res.json();
+                errorEl.textContent = err.detail || 'No se pudo finalizar. Intenta de nuevo.';
+                btn.textContent = '✅ Confirmar y Finalizar'; btn.disabled = false;
+            }
+        }
+
+        // ────────── EVIDENCIA ──────────
         async function subirEvidencia(tareaId, unidad) {
             const cntRes = await fetchAuth(`/api/evidencias/count?unit_number=${unidad}&tecnico=${username}`); const cnt = await cntRes.json();
             const totalPrev = cnt.total || 0; const restantes = 100 - totalPrev;
             if (restantes <= 0) return alert('Límite de 100 fotos alcanzado');
             const modal = mostrarModal(`<div class="modal-content"><h3>📸 Subir Evidencia – ${unidad}</h3><p>Guardadas: <b>${totalPrev}</b> · Disponibles: <b>${restantes}</b></p><input type="file" id="fotosInput" multiple accept="image/*"><div id="previewFotos" style="display:flex; flex-wrap:wrap; gap:8px; margin:12px 0;"></div><button class="btn-primary" id="btnGuardarFotos">💾 Guardar Fotos</button><button class="btn-danger" onclick="cerrarModal()">Cancelar</button></div>`);
-            document.getElementById('fotosInput').addEventListener('change', e => { const files = Array.from(e.target.files).slice(0, restantes); const previewDiv = document.getElementById('previewFotos'); previewDiv.innerHTML = ''; files.forEach(f => { const r = new FileReader(); r.onload = ev => { const img = document.createElement('img'); img.src = ev.target.result; img.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:8px;'; previewDiv.appendChild(img); }; r.readAsDataURL(f); }); });
-            document.getElementById('btnGuardarFotos').onclick = async () => { const input = document.getElementById('fotosInput'); if (!input.files.length) return alert('Selecciona fotos'); const fd = new FormData(); fd.append('unidad', unidad); fd.append('tecnico', username); for (let f of input.files) fd.append('files', f); await fetchAuth('/api/evidencias/upload', { method: 'POST', body: fd }); alert('Fotos guardadas'); cerrarModal(); };
+            document.getElementById('fotosInput').addEventListener('change', e => {
+                const files = Array.from(e.target.files).slice(0, restantes), previewDiv = document.getElementById('previewFotos'); previewDiv.innerHTML = '';
+                files.forEach(f => { const r = new FileReader(); r.onload = ev => { const img = document.createElement('img'); img.src = ev.target.result; img.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:8px;'; previewDiv.appendChild(img); }; r.readAsDataURL(f); });
+            });
+            document.getElementById('btnGuardarFotos').onclick = async () => {
+                const input = document.getElementById('fotosInput'); if (!input.files.length) return alert('Selecciona fotos');
+                const fd = new FormData(); fd.append('unidad', unidad); fd.append('tecnico', username); for (let f of input.files) fd.append('files', f);
+                await fetchAuth('/api/evidencias/upload', { method: 'POST', body: fd }); alert('Fotos guardadas'); cerrarModal();
+            };
         }
+
+        // ────────── VALORES ──────────
         async function tomarValores(tareaId) {
             const camposRes = await fetchAuth('/api/toma-valores/campos'); const campos = await camposRes.json();
             let camposHTML = campos.length ? campos.map((c,i) => `<input type="text" id="campo_${i}" placeholder="${c.campo_nombre}">`).join('') : '<p>No hay campos configurados.</p>';
             const modal = mostrarModal(`<div class="modal-content"><h3>📊 Toma de Valores</h3><div id="camposValores">${camposHTML}</div><button class="btn-primary" id="btnGuardarValores">💾 Guardar Valores</button><button class="btn-danger" onclick="cerrarModal()">Cancelar</button></div>`);
-            document.getElementById('btnGuardarValores').onclick = async () => { const valores = {}; campos.forEach((c,i) => valores[c.campo_nombre] = document.getElementById('campo_'+i).value); await fetchAuth('/api/toma-valores/guardar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ asignacion_id: tareaId, valores }) }); alert('Valores guardados'); cerrarModal(); };
+            document.getElementById('btnGuardarValores').onclick = async () => {
+                const valores = {}; campos.forEach((c,i) => valores[c.campo_nombre] = document.getElementById('campo_'+i).value);
+                await fetchAuth('/api/toma-valores/guardar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ asignacion_id: tareaId, valores }) }); alert('Valores guardados'); cerrarModal();
+            };
         }
+
+        // ────────── SERIES ──────────
         async function tomarSeries(tareaId) {
-            const camposSeries = [{ key: 'vin_number', label: 'VIN Number' },{ key: 'reefer_serial', label: 'Serie del Reefer' },{ key: 'reefer_model', label: 'Modelo del Reefer' },{ key: 'evaporator_serial_mjs11', label: 'Evaporador MJS11' },{ key: 'evaporator_serial_mjd22', label: 'Evaporador MJD22' },{ key: 'engine_serial', label: 'Motor' },{ key: 'compressor_serial', label: 'Compresor' },{ key: 'generator_serial', label: 'Generador' },{ key: 'battery_charger_serial', label: 'Cargador de Batería' }];
+            const camposSeries = [
+                { key: 'vin_number', label: 'VIN Number' },{ key: 'reefer_serial', label: 'Serie del Reefer' },{ key: 'reefer_model', label: 'Modelo del Reefer' },
+                { key: 'evaporator_serial_mjs11', label: 'Evaporador MJS11' },{ key: 'evaporator_serial_mjd22', label: 'Evaporador MJD22' },
+                { key: 'engine_serial', label: 'Motor' },{ key: 'compressor_serial', label: 'Compresor' },{ key: 'generator_serial', label: 'Generador' },
+                { key: 'battery_charger_serial', label: 'Cargador de Batería' }
+            ];
             let inputs = camposSeries.map((c,i) => `<input type="text" id="serie_${i}" placeholder="${c.label}"><input type="hidden" id="serie_key_${i}" value="${c.key}">`).join('');
             const modal = mostrarModal(`<div class="modal-content"><h3>🔢 Toma de Series</h3><div id="camposSeries">${inputs}</div><button class="btn-primary" id="btnGuardarSeries">💾 Guardar Series</button><button class="btn-danger" onclick="cerrarModal()">Cancelar</button></div>`);
-            document.getElementById('btnGuardarSeries').onclick = async () => { const tareasRes = await fetchAuth('/api/asignaciones/?tecnico=' + username + '&estado=en_proceso'); const tareas = await tareasRes.json(); const tarea = Array.isArray(tareas) ? tareas.find(t => t.id == tareaId) : null; if (!tarea) return alert('Tarea no encontrada'); const keys = [...document.querySelectorAll('[id^="serie_key_"]')].map(el => el.value); const values = { unit_number: tarea.unidad }; keys.forEach((key,i) => values[key] = document.getElementById('serie_'+i).value); await fetchAuth('/api/unidades/series/update', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) }); cerrarModal(); cargarTareas(); alert('Series guardadas'); };
+            document.getElementById('btnGuardarSeries').onclick = async () => {
+                const tareasRes = await fetchAuth('/api/asignaciones/?tecnico=' + username + '&estado=en_proceso'); const tareas = await tareasRes.json();
+                const tarea = Array.isArray(tareas) ? tareas.find(t => t.id == tareaId) : null; if (!tarea) return alert('Tarea no encontrada');
+                const keys = [...document.querySelectorAll('[id^="serie_key_"]')].map(el => el.value); const values = { unit_number: tarea.unidad };
+                keys.forEach((key,i) => values[key] = document.getElementById('serie_'+i).value);
+                const resSeries = await fetchAuth('/api/unidades/series/update', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) }); if (resSeries.ok) { cerrarModal(); cargarTareas(); const t = document.createElement('div'); t.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;z-index:600;'; t.textContent = '✅ Series guardadas correctamente.'; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); } else { alert('Error al guardar las series.'); }
+            };
         }
+
         cargarTareas();
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("🎯 Mis Tareas", contenido, "mis-tareas"))
-
 
 # ------------------------------------------------------------
 # NUEVA SOLICITUD
@@ -944,6 +1679,8 @@ async def solicitud():
     <div id="historialSolicitudes" style="margin-top:16px;"></div>
     <script>
         const fetchAuth = window.fetchAuth, username = window.username;
+        document.getElementById('unidad').addEventListener('change', () => document.getElementById('msgSolicitud').innerHTML = '');
+        document.getElementById('actividad').addEventListener('change', () => document.getElementById('msgSolicitud').innerHTML = '');
         async function cargarOpciones() {
             const unidadesRes = await fetchAuth('/api/unidades/'); const unidades = await unidadesRes.json();
             document.getElementById('unidad').innerHTML = '<option value="">Unidad</option>' + (Array.isArray(unidades) ? unidades.map(u => `<option value="${u.unit_number}">${u.unit_number} (${u.id_lote})</option>`).join('') : '');
@@ -960,7 +1697,7 @@ async def solicitud():
             const res = await fetchAuth('/api/asignaciones/?estado=solicitado,pendiente,en_proceso');
             if (!res.ok) { msgDiv.innerHTML = '<p style="color:var(--carrier-danger);">Error al verificar.</p>'; return; }
             const todas = await res.json(); const activa = todas.find(a => a.unidad === unidad && a.actividad_id === actividad);
-            if (activa) { msgDiv.innerHTML = `<p style="color:var(--carrier-danger);">Ya existe una tarea activa para esta combinación (técnico: ${activa.tecnico}).</p>`; return; }
+            if (activa) { msgDiv.innerHTML = `<p style="color:var(--carrier-danger);">Ya existe una tarea activa para esta combinación (técnico: ${activa.tecnico}). Solo un administrador puede autorizarla.</p>`; return; }
             const crearRes = await fetchAuth('/api/asignaciones/solicitar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ unidad, actividad_id: actividad, tecnico: username }) });
             if (!crearRes.ok) { const err = await crearRes.json(); msgDiv.innerHTML = `<p style="color:var(--carrier-danger);">${err.detail || 'Error al enviar solicitud'}</p>`; return; }
             msgDiv.innerHTML = '<p style="color:var(--carrier-success);">Solicitud enviada correctamente.</p>'; cargarOpciones();
@@ -969,7 +1706,6 @@ async def solicitud():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("🔔 Nueva Solicitud", contenido, "solicitud"))
-
 
 # ------------------------------------------------------------
 # MIS TICKETS
@@ -980,78 +1716,262 @@ async def mis_tickets():
     <div id="ticketsList"></div>
     <script>
         const fetchAuth = window.fetchAuth;
+
         async function cargarTickets() {
             const res = await fetchAuth('/api/tickets/');
             const tickets = await res.json();
             let html = '';
-            if (tickets.length) tickets.forEach(t => {
-                const estado = t.atendido ? (t.reporte_enviado ? '🟢 Completado' : '🟡 Atendido (sin reporte)') : '🔴 No atendido';
-                const color = t.atendido ? (t.reporte_enviado ? 'var(--carrier-success)' : 'var(--carrier-warn)') : 'var(--carrier-danger)';
-                let acciones = '';
-                if (!t.atendido) acciones = `<button class="btn-warning" onclick="atenderTicket(${t.id})">✅ Marcar como atendido</button>`;
-                else if (!t.reporte_enviado) acciones = `<button class="btn-primary" onclick="enviarReporte(${t.id})">📤 Enviar reporte final</button>`;
-                html += `<div style="border-left:6px solid ${color}; background:white; padding:16px; margin-bottom:12px;"><span style="font-size:1.5rem; font-weight:800;">#${t.ticket_num}</span><span class="badge" style="background:${color}; color:white;">${estado}</span><p><b>Unidad:</b> ${t.unit_number} | <b>VIN:</b> ${t.vin_number || 'N/D'}</p><p><b>Descripción:</b> ${t.descripcion}</p>${acciones}</div>`;
-            });
+            if (tickets.length) {
+                tickets.forEach(t => {
+                    const estado = t.atendido
+                        ? (t.reporte_enviado ? '🟢 Completado' : '🟡 Atendido (sin reporte)')
+                        : '🔴 No atendido';
+                    const color = t.atendido
+                        ? (t.reporte_enviado ? 'var(--carrier-success)' : 'var(--carrier-warn)')
+                        : 'var(--carrier-danger)';
+
+                    let acciones = '';
+                    if (!t.atendido) {
+                        acciones = `<button class="btn-warning" onclick="atenderTicket(${t.id})" style="margin-top:10px; width:auto; padding:10px 18px;">✅ Marcar como atendido</button>`;
+                    } else if (!t.reporte_enviado) {
+                        acciones = `<button class="btn-primary" onclick="enviarReporte(${t.id})" style="margin-top:10px; width:auto; padding:10px 18px;">📤 Enviar reporte final</button>`;
+                    }
+
+                    html += `
+                        <div style="border-left:6px solid ${color}; background:white; padding:16px; margin-bottom:12px; border-radius:0 12px 12px 0; box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+                            <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px;">
+                                <div>
+                                    <span style="font-size:1.5rem; font-weight:800; color:var(--carrier-blue);">#${t.ticket_num}</span>
+                                    <span class="badge" style="background:${color}; color:white; margin-left:8px;">${estado}</span>
+                                    <p style="margin:8px 0 4px;"><b>Unidad:</b> ${t.unit_number} | <b>VIN:</b> ${t.vin_number || 'N/D'}</p>
+                                    <p style="margin:4px 0;"><b>Descripción:</b> ${t.descripcion}</p>
+                                    <small style="color:#6b7280;">Creado: ${t.fecha_creacion}</small>
+                                </div>
+                                <div style="display:flex; align-items:center;">${acciones}</div>
+                            </div>
+                        </div>`;
+                });
+            }
             if (!html) html = '<p>🎫 No tienes tickets.</p>';
             document.getElementById('ticketsList').innerHTML = html;
         }
-        async function atenderTicket(id) { if (!confirm('¿Marcar este ticket como atendido?')) return; await fetchAuth('/api/tickets/' + id + '/atender', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ atendido: true }) }); cargarTickets(); }
-        async function enviarReporte(ticketId) { const reporte = prompt('Describe el trabajo realizado:'); if (!reporte) return alert('El reporte es obligatorio'); await fetchAuth('/api/tickets/' + ticketId + '/report', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reporte }) }); cargarTickets(); }
+
+        async function atenderTicket(id) {
+            if (!confirm('¿Marcar este ticket como atendido?')) return;
+            const res = await fetchAuth('/api/tickets/' + id + '/atender', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ atendido: true }) });
+            if (res.ok) { cargarTickets(); }
+            else { alert('Error al actualizar el ticket'); }
+        }
+
+        async function enviarReporte(ticketId) {
+            const prev = document.getElementById('modalReporte');
+            if (prev) prev.remove();
+
+            const modal = document.createElement('div');
+            modal.id = 'modalReporte';
+            modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);display:flex;justify-content:center;align-items:center;z-index:500;';
+            modal.innerHTML = `
+                <div style="background:white;border-radius:20px;padding:32px;width:90%;max-width:520px;box-shadow:0 20px 60px rgba(0,43,91,0.25);animation:fadeIn 0.2s ease;">
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+                        <div style="background:var(--carrier-light);border-radius:12px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">📋</div>
+                        <div>
+                            <h3 style="margin:0;color:var(--carrier-blue);font-size:1.2rem;font-weight:800;">Reporte Final del Ticket</h3>
+                            <p style="margin:2px 0 0;font-size:0.82rem;color:#6b7280;">Este reporte quedará registrado y cerrará el ticket en verde.</p>
+                        </div>
+                    </div>
+                    <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0;">
+                    <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">📝 Descripción del trabajo realizado</label>
+                    <textarea id="reporteTexto" rows="5" placeholder="Describe detalladamente las acciones realizadas, piezas cambiadas, diagnóstico, etc." style="width:100%;border:1.5px solid #d1d5db;border-radius:12px;padding:12px;font-size:0.95rem;resize:vertical;font-family:inherit;transition:border-color 0.2s;"></textarea>
+                    <p id="reporteError" style="color:var(--carrier-danger);font-size:0.82rem;min-height:18px;margin:4px 0 12px;"></p>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px;">
+                        <button onclick="document.getElementById('modalReporte').remove()" style="background:#f1f5f9;color:#374151;border:none;border-radius:10px;padding:13px;font-weight:600;font-size:0.95rem;cursor:pointer;">✖ Cancelar</button>
+                        <button id="btnEnviarReporte" onclick="confirmarReporte(${ticketId})" style="background:linear-gradient(135deg,var(--carrier-blue),var(--carrier-accent));color:white;border:none;border-radius:10px;padding:13px;font-weight:700;font-size:0.95rem;cursor:pointer;">📤 Enviar y Cerrar Ticket</button>
+                    </div>
+                </div>
+                <style>@keyframes fadeIn{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}</style>`;
+            document.body.appendChild(modal);
+            setTimeout(() => document.getElementById('reporteTexto').focus(), 100);
+        }
+
+        async function confirmarReporte(id) {
+            const reporte = document.getElementById('reporteTexto').value.trim();
+            const errorEl = document.getElementById('reporteError');
+            if (!reporte) { errorEl.textContent = 'El reporte no puede estar vacío.'; return; }
+            const btn = document.getElementById('btnEnviarReporte');
+            btn.textContent = 'Enviando...'; btn.disabled = true;
+            const res = await fetchAuth('/api/tickets/' + id + '/report', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reporte }) });
+            if (res.ok) {
+                document.getElementById('modalReporte').remove();
+                const toast = document.createElement('div');
+                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
+                toast.textContent = '✅ Reporte enviado. Ticket completado.';
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 3000);
+                cargarTickets();
+            } else {
+                errorEl.textContent = 'Error al enviar el reporte. Intenta de nuevo.';
+                btn.textContent = '📤 Enviar y Cerrar Ticket'; btn.disabled = false;
+            }
+        }
+
         cargarTickets();
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("🎫 Mis Tickets", contenido, "mis-tickets"))
 
-
 # ------------------------------------------------------------
-# PANEL DE ASIGNACIÓN POR CLUSTER
+# PANEL DE ASIGNACIÓN POR CLUSTER (CORREGIDO, SIN DEPENDENCIAS)
 # ------------------------------------------------------------
 @router.get("/app/cluster", response_class=HTMLResponse)
 async def panel_cluster():
     contenido = """
-    <div id="resumenCluster" style="display:none; background:#f3f4f6; border-radius:12px; padding:16px; margin-bottom:20px;"></div>
-    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px;">
-        <div style="background:white; border-radius:12px; padding:16px;">
-            <div style="font-weight:500; margin-bottom:12px;">🔧 Técnicos</div>
-            <div id="listaTecnicos"></div>
+    <div id="resumenCluster" style="display:none; background:var(--color-background-secondary); border-radius:var(--border-radius-lg); padding:16px; margin-bottom:20px;"></div>
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; align-items:start;">
+        <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:16px;">
+            <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">🔧 Técnicos</div>
+            <div style="margin-bottom:8px; display:flex; gap:6px;">
+                <button onclick="seleccionarTodos('tecnicos')" style="font-size:11px;padding:4px 10px;">Todos</button>
+                <button onclick="limpiarTodos('tecnicos')" style="font-size:11px;padding:4px 10px;">Ninguno</button>
+            </div>
+            <div id="listaTecnicos" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
         </div>
-        <div style="background:white; border-radius:12px; padding:16px;">
-            <div style="font-weight:500; margin-bottom:12px;">🎯 Actividades</div>
-            <div id="listaActividades"></div>
+        <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:16px;">
+            <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">🎯 Actividades</div>
+            <div style="margin-bottom:8px; display:flex; gap:6px;">
+                <button onclick="seleccionarTodos('actividades')" style="font-size:11px;padding:4px 10px;">Todas</button>
+                <button onclick="limpiarTodos('actividades')" style="font-size:11px;padding:4px 10px;">Ninguna</button>
+            </div>
+            <div id="listaActividades" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
         </div>
-        <div style="background:white; border-radius:12px; padding:16px;">
-            <div style="font-weight:500; margin-bottom:12px;">🚛 Unidades</div>
-            <div id="listaUnidades"></div>
+        <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:16px;">
+            <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">🚛 Unidades</div>
+            <div style="margin-bottom:8px; display:flex; gap:6px;">
+                <button onclick="seleccionarTodos('unidades')" style="font-size:11px;padding:4px 10px;">Todas</button>
+                <button onclick="limpiarTodos('unidades')" style="font-size:11px;padding:4px 10px;">Ninguna</button>
+            </div>
+            <div id="filtroLote" style="margin-bottom:8px;"></div>
+            <div id="listaUnidades" style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
         </div>
     </div>
-    <div style="margin-top:20px; background:white; border-radius:12px; padding:20px;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div id="contadorResumen">Selecciona técnicos, actividades y unidades</div>
-            <button id="btnAsignar" class="btn-primary" onclick="ejecutarAsignacion()" style="width:auto;">⚡ Asignar Cluster</button>
+    <div style="margin-top:20px; background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+            <div id="contadorResumen" style="font-size:13px; color:var(--color-text-secondary);">Selecciona técnicos, actividades y unidades</div>
+            <button id="btnAsignar" onclick="ejecutarAsignacion()" style="padding:12px 32px; font-size:0.95rem; font-weight:600; background:linear-gradient(135deg,var(--carrier-blue),var(--carrier-accent)); color:white; border:none; border-radius:10px; cursor:pointer;">⚡ Asignar Cluster</button>
         </div>
     </div>
     <script>
         const fetchAuth = window.fetchAuth;
         let todosTecnicos = [], todasActividades = [], todasUnidades = [];
-        function getSeleccionados(tipo) { return [...document.querySelectorAll(`input[data-tipo="${tipo}"]:checked`)].map(c => c.value); }
-        function actualizarContador() { const t = getSeleccionados('tecnicos').length; const a = getSeleccionados('actividades').length; const u = getSeleccionados('unidades').length; const total = t * a * u; const el = document.getElementById('contadorResumen'); if (total === 0) el.innerHTML = 'Selecciona técnicos, actividades y unidades'; else el.innerHTML = `<b>${t}</b> técnico(s) × <b>${a}</b> actividad(es) × <b>${u}</b> unidad(es) = <b style="color:var(--carrier-blue);">${total} asignaciones</b>`; }
+        let lotes = [];
+
+        function checkItem(tipo, valor) {
+            return `<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;cursor:pointer;border:0.5px solid var(--color-border-tertiary);font-size:13px;color:var(--color-text-primary);transition:background 0.15s;" onmouseover="this.style.background='var(--color-background-secondary)'" onmouseout="this.style.background='transparent'">
+                <input type="checkbox" data-tipo="${tipo}" data-valor="${encodeURIComponent(valor)}" onchange="actualizarContador()" style="width:15px;height:15px;cursor:pointer;">
+                ${valor}
+            </label>`;
+        }
+
+        function seleccionarTodos(tipo) {
+            document.querySelectorAll(`input[data-tipo="${tipo}"]`).forEach(c => c.checked = true);
+            actualizarContador();
+        }
+        function limpiarTodos(tipo) {
+            document.querySelectorAll(`input[data-tipo="${tipo}"]`).forEach(c => c.checked = false);
+            actualizarContador();
+        }
+
+        function getSeleccionados(tipo) {
+            return [...document.querySelectorAll(`input[data-tipo="${tipo}"]:checked`)].map(c => decodeURIComponent(c.dataset.valor));
+        }
+
+        function actualizarContador() {
+            const t = getSeleccionados('tecnicos').length;
+            const a = getSeleccionados('actividades').length;
+            const u = getSeleccionados('unidades').length;
+            const total = t * a * u;
+            const el = document.getElementById('contadorResumen');
+            if (total === 0) {
+                el.innerHTML = 'Selecciona técnicos, actividades y unidades';
+                el.style.color = 'var(--color-text-secondary)';
+            } else {
+                el.innerHTML = `<b>${t}</b> técnico(s) × <b>${a}</b> actividad(es) × <b>${u}</b> unidad(es) = <b style="color:var(--carrier-blue);">${total} asignaciones</b>`;
+                el.style.color = 'var(--color-text-primary)';
+            }
+        }
+
+        function filtrarPorLote(lote) {
+            const items = document.querySelectorAll('[data-lote]');
+            items.forEach(i => {
+                i.style.display = (!lote || i.dataset.lote === lote) ? 'flex' : 'none';
+            });
+        }
+
         async function cargarDatos() {
-            const [resTec, resAct, resUni] = await Promise.all([fetchAuth('/api/cluster/tecnicos'), fetchAuth('/api/cluster/actividades'), fetchAuth('/api/cluster/unidades')]);
-            todosTecnicos = await resTec.json(); todasActividades = await resAct.json(); todasUnidades = await resUni.json();
-            document.getElementById('listaTecnicos').innerHTML = todosTecnicos.map(t => `<label><input type="checkbox" data-tipo="tecnicos" value="${t.username}" onchange="actualizarContador()"> ${t.username}</label><br>`).join('');
-            document.getElementById('listaActividades').innerHTML = todasActividades.map(a => `<label><input type="checkbox" data-tipo="actividades" value="${a.nombre}" onchange="actualizarContador()"> ${a.nombre}</label><br>`).join('');
-            document.getElementById('listaUnidades').innerHTML = todasUnidades.map(u => `<label><input type="checkbox" data-tipo="unidades" value="${u.unit_number}" onchange="actualizarContador()"> ${u.unit_number} (${u.id_lote})</label><br>`).join('');
+            const [resTec, resAct, resUni] = await Promise.all([
+                fetchAuth('/api/cluster/tecnicos'),
+                fetchAuth('/api/cluster/actividades'),
+                fetchAuth('/api/cluster/unidades')
+            ]);
+            todosTecnicos  = await resTec.json();
+            todasActividades = await resAct.json();
+            todasUnidades  = await resUni.json();
+
+            document.getElementById('listaTecnicos').innerHTML = todosTecnicos.map(t => checkItem('tecnicos', t.username)).join('');
+            document.getElementById('listaActividades').innerHTML = todasActividades.map(a => checkItem('actividades', a.nombre)).join('');
+
+            lotes = [...new Set(todasUnidades.map(u => u.id_lote).filter(Boolean))].sort();
+            let filtroHtml = '<select onchange="filtrarPorLote(this.value)" style="width:100%;margin-bottom:6px;font-size:12px;padding:5px;"><option value="">— Todos los lotes —</option>';
+            lotes.forEach(l => filtroHtml += `<option value="${l}">${l}</option>`);
+            filtroHtml += '</select>';
+            document.getElementById('filtroLote').innerHTML = filtroHtml;
+
+            document.getElementById('listaUnidades').innerHTML = todasUnidades.map(u =>
+                `<label data-lote="${u.id_lote || ''}" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;cursor:pointer;border:0.5px solid var(--color-border-tertiary);font-size:13px;color:var(--color-text-primary);transition:background 0.15s;" onmouseover="this.style.background='var(--color-background-secondary)'" onmouseout="this.style.background='transparent'">
+                    <input type="checkbox" data-tipo="unidades" data-valor="${encodeURIComponent(u.unit_number)}" onchange="actualizarContador()" style="width:15px;height:15px;cursor:pointer;">
+                    <span>${u.unit_number}</span><span style="font-size:11px;color:var(--color-text-secondary);margin-left:auto;">${u.id_lote || ''}</span>
+                </label>`
+            ).join('');
         }
+
         async function ejecutarAsignacion() {
-            const tecnicos = getSeleccionados('tecnicos'), actividades = getSeleccionados('actividades'), unidades = getSeleccionados('unidades');
-            if (!tecnicos.length || !actividades.length || !unidades.length) return alert('Selecciona al menos uno de cada tipo');
-            if (!confirm(`¿Crear ${tecnicos.length * actividades.length * unidades.length} asignaciones?`)) return;
-            const btn = document.getElementById('btnAsignar'); btn.textContent = 'Asignando...'; btn.disabled = true;
-            const res = await fetchAuth('/api/cluster/asignar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tecnicos, actividades, unidades }) });
-            const data = await res.json(); btn.textContent = '⚡ Asignar Cluster'; btn.disabled = false;
-            const resumen = document.getElementById('resumenCluster'); resumen.style.display = 'block'; resumen.innerHTML = res.ok ? `<div style="color:green;">✅ ${data.mensaje}</div>` : `<div style="color:red;">❌ Error: ${data.detail}</div>`;
-            if (res.ok) alert(`✅ ${data.creadas} asignaciones creadas`);
+            const tecnicos   = getSeleccionados('tecnicos');
+            const actividades = getSeleccionados('actividades');
+            const unidades   = getSeleccionados('unidades');
+            if (!tecnicos.length || !actividades.length || !unidades.length) {
+                return alert('Selecciona al menos un técnico, una actividad y una unidad.');
+            }
+            const total = tecnicos.length * actividades.length * unidades.length;
+            if (!confirm(`¿Crear ${total} asignaciones? Esta acción no se puede deshacer.`)) return;
+
+            const btn = document.getElementById('btnAsignar');
+            btn.textContent = 'Asignando...'; btn.disabled = true;
+
+            const res = await fetchAuth('/api/cluster/asignar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tecnicos, actividades, unidades })
+            });
+            const data = await res.json();
+
+            btn.textContent = '⚡ Asignar Cluster'; btn.disabled = false;
+
+            const resumen = document.getElementById('resumenCluster');
+            resumen.style.display = 'block';
+            resumen.innerHTML = res.ok
+                ? `<div style="color:var(--color-text-success);font-weight:500;">✅ ${data.mensaje}</div>`
+                : `<div style="color:var(--color-text-danger);font-weight:500;">❌ Error: ${data.detail || 'No se pudo completar'}</div>`;
+
+            if (res.ok) {
+                const toast = document.createElement('div');
+                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
+                toast.textContent = `✅ ${data.creadas} asignaciones creadas correctamente.`;
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 4000);
+                limpiarTodos('tecnicos'); limpiarTodos('actividades'); limpiarTodos('unidades');
+                actualizarContador();
+            }
         }
+
         cargarDatos();
     </script>
     """
@@ -1059,668 +1979,382 @@ async def panel_cluster():
 
 
 # ------------------------------------------------------------
-# ASISTENCIA – ADMIN (v2 — diseño profesional)
+# ASISTENCIA – PANEL ADMIN: genera QR con geocoordenadas fijas
 # ------------------------------------------------------------
 @router.get("/app/asistencia", response_class=HTMLResponse)
 async def asistencia_admin():
     contenido = """
     <script>if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; }</script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
-    <style>
-      .asis-wrap { font-family: 'DM Sans', system-ui, sans-serif; }
-      .asis-grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap:14px; margin-bottom:20px; }
-      .asis-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:28px; }
-      .asis-card { background: white; border: 0.5px solid #e0ddd5; border-radius: 14px; padding: 1.125rem 1.25rem; }
-      .asis-card-title { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #aaa; margin-bottom: 14px; display: flex; align-items: center; gap: 7px; }
-      .asis-card-title i { font-size: 14px; color: #004B87; }
-      .asis-field label { display: block; font-size: 11px; font-weight: 600; color: #888; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.05em; }
-      .asis-field input[type="number"], .asis-field input[type="date"] {
-        width: 100%; padding: 10px 12px; border: 0.5px solid #ddd; border-radius: 9px;
-        font-family: 'DM Mono', monospace; font-size: 13px; color: #111;
-        background: #fafaf8; transition: border-color 0.15s;
-        margin-bottom: 0;
-      }
-      .asis-field input:focus { outline: none; border-color: #004B87; background: white; }
-      .asis-btn { display: inline-flex; align-items: center; gap: 7px; padding: 11px 18px; border-radius: 9px; font-family: 'DM Sans', system-ui, sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; }
-      .asis-btn-primary { background: #004B87; color: white; }
-      .asis-btn-primary:hover { background: #003d70; }
-      .asis-btn-secondary { background: white; color: #444; border: 0.5px solid #ccc; }
-      .asis-btn-secondary:hover { background: #f7f6f2; }
-      .asis-btn-warning { background: #FAEEDA; color: #854F0B; border: 0.5px solid #FAC775; }
-      .asis-btn-warning:hover { background: #f5e4c0; }
-      .asis-btn-success { background: #EAF3DE; color: #3B6D11; border: 0.5px solid #C0DD97; }
-      .asis-btn-success:hover { background: #d8eccc; }
-      .asis-btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 24px; }
-      .asis-qr-section { display: none; }
-      .asis-qr-canvas-wrap { background: white; border: 0.5px solid #e0ddd5; border-radius: 14px; padding: 1.5rem; text-align: center; }
-      .asis-qr-meta { background: #F7F6F2; border-radius: 12px; padding: 1rem 1.25rem; }
-      .asis-qr-meta-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 0.5px solid #e8e5dd; font-size: 13px; }
-      .asis-qr-meta-row:last-child { border-bottom: none; }
-      .asis-qr-meta-label { color: #888; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
-      .asis-qr-meta-val { font-family: 'DM Mono', monospace; font-weight: 500; color: #111; }
-      .asis-table-wrap { overflow-x: auto; border-radius: 12px; border: 0.5px solid #e0ddd5; }
-      .asis-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-      .asis-table thead th { background: #004B87; color: white; padding: 11px 14px; text-align: left; font-weight: 600; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
-      .asis-table thead th:first-child { border-radius: 12px 0 0 0; }
-      .asis-table thead th:last-child  { border-radius: 0 12px 0 0; }
-      .asis-table tbody td { padding: 11px 14px; border-bottom: 0.5px solid #f0ede5; color: #333; }
-      .asis-table tbody tr:last-child td { border-bottom: none; }
-      .asis-table tbody tr:hover td { background: #fafaf7; }
-      .asis-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; border: 0.5px solid; }
-      .asis-badge-ok  { background: #EAF3DE; color: #3B6D11; border-color: #C0DD97; }
-      .asis-badge-err { background: #FCEBEB; color: #A32D2D; border-color: #F09595; }
-      .asis-empty { text-align: center; padding: 2.5rem; color: #aaa; font-size: 13px; }
-      .asis-filter-row { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
-      .asis-filter-row input { margin-bottom: 0; }
-      .asis-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); padding: 13px 24px; border-radius: 50px; font-size: 13px; font-weight: 600; z-index: 9999; display: none; }
-      @media (max-width: 640px) { .asis-grid-3 { grid-template-columns: 1fr; } .asis-grid-2 { grid-template-columns: 1fr; } }
-    </style>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 
-    <div class="asis-wrap">
-
-      <!-- KPIs de hoy -->
-      <div id="asisKpis" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;"></div>
-
-      <!-- Configuración de geocerca -->
-      <div class="asis-card" style="margin-bottom:20px;">
-        <div class="asis-card-title"><i class="ti ti-map-pin"></i> Configuración de geocerca</div>
-        <div class="asis-grid-3">
-          <div class="asis-field"><label>Latitud fija</label><input type="number" id="latFija" step="0.000001" value="32.5027"></div>
-          <div class="asis-field"><label>Longitud fija</label><input type="number" id="lonFija" step="0.000001" value="-117.0037"></div>
-          <div class="asis-field"><label>Radio permitido (m)</label><input type="number" id="radioMetros" value="200" min="10" max="5000"></div>
-        </div>
-        <div class="asis-btn-row" style="margin-bottom:0;">
-          <button class="asis-btn asis-btn-primary" onclick="guardarConfiguracion()"><i class="ti ti-device-floppy"></i> Guardar</button>
-          <button class="asis-btn asis-btn-primary" onclick="generarQR()"><i class="ti ti-qrcode"></i> Generar QR</button>
-          <button class="asis-btn asis-btn-warning" onclick="usarUbicacionActual()"><i class="ti ti-current-location"></i> Usar mi ubicación</button>
-        </div>
-      </div>
-
-      <!-- QR section -->
-      <div id="qrSection" class="asis-qr-section" style="margin-bottom:24px;">
-        <div class="asis-grid-2">
-          <div class="asis-qr-canvas-wrap">
-            <div id="qrCanvas" style="display:inline-block;margin-bottom:12px;"></div>
-            <p style="font-size:12px;color:#3B6D11;font-weight:600;margin-bottom:4px;"><i class="ti ti-circle-check" style="font-size:14px;vertical-align:-2px;"></i> QR permanente — sin expiración</p>
-            <p style="font-size:11px;color:#aaa;">Se regenera solo al cambiar configuración</p>
-            <button class="asis-btn asis-btn-secondary" onclick="generarQR()" style="margin-top:12px;"><i class="ti ti-refresh"></i> Regenerar</button>
-          </div>
-          <div>
-            <div class="asis-qr-meta" style="margin-bottom:12px;">
-              <div class="asis-qr-meta-row"><span class="asis-qr-meta-label">Latitud</span><span class="asis-qr-meta-val" id="qrLatLabel">—</span></div>
-              <div class="asis-qr-meta-row"><span class="asis-qr-meta-label">Longitud</span><span class="asis-qr-meta-val" id="qrLonLabel">—</span></div>
-              <div class="asis-qr-meta-row"><span class="asis-qr-meta-label">Radio</span><span class="asis-qr-meta-val"><span id="qrRadioLabel">—</span> m</span></div>
-            </div>
-            <div id="mapaLink"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Tabla de registros -->
-      <div class="asis-card">
-        <div class="asis-card-title"><i class="ti ti-table"></i> Registros de asistencia</div>
-        <div class="asis-filter-row">
-          <div class="asis-field" style="flex:0 0 auto;"><label>Fecha</label><input type="date" id="fechaFiltro" onchange="cargarRegistros()"></div>
-          <button class="asis-btn asis-btn-secondary" onclick="cargarRegistros()" style="margin-top:16px;"><i class="ti ti-refresh"></i> Actualizar</button>
-          <button class="asis-btn asis-btn-success" onclick="exportarCSV()" style="margin-top:16px;"><i class="ti ti-download"></i> Exportar CSV</button>
-        </div>
-        <div class="asis-table-wrap">
-          <div id="tablaAsistencia"></div>
-        </div>
-      </div>
-
+    <!-- Configuración de geoposición fija -->
+    <div class="evidencia-info" style="margin-bottom:20px;">
+        <b>📍 Geoposición fija del QR</b><br>
+        <span style="font-size:0.85rem;">Define las coordenadas del lugar de trabajo. El técnico deberá estar dentro del radio permitido al escanear.</span>
     </div>
 
-    <div class="asis-toast" id="asisToast"></div>
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:20px;">
+        <div>
+            <label style="font-size:0.82rem; font-weight:600; color:#374151;">Latitud fija</label>
+            <input type="number" id="latFija" step="0.000001" value="32.5027" placeholder="Ej: 32.5027">
+        </div>
+        <div>
+            <label style="font-size:0.82rem; font-weight:600; color:#374151;">Longitud fija</label>
+            <input type="number" id="lonFija" step="0.000001" value="-117.0037" placeholder="Ej: -117.0037">
+        </div>
+        <div>
+            <label style="font-size:0.82rem; font-weight:600; color:#374151;">Radio permitido (metros)</label>
+            <input type="number" id="radioMetros" value="200" min="10" max="5000">
+        </div>
+    </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <div style="display:flex; gap:12px; margin-bottom:28px; flex-wrap:wrap;">
+        <button class="btn-primary" style="width:auto; padding:12px 24px;" onclick="generarQR()">🔄 Generar QR de Asistencia</button>
+        <button class="btn-warning" style="width:auto; padding:12px 24px;" onclick="usarUbicacionActual()">📡 Usar mi ubicación actual</button>
+    </div>
+
+    <!-- QR generado -->
+    <div id="qrSection" style="display:none; margin-bottom:32px;">
+        <div class="section-title">📲 QR para Escanear</div>
+        <div style="display:flex; gap:32px; align-items:flex-start; flex-wrap:wrap;">
+            <div style="background:white; padding:24px; border-radius:16px; box-shadow:0 4px 20px rgba(0,43,91,0.1); text-align:center;">
+                <div id="qrCanvas"></div>
+                <p style="font-size:0.78rem; color:#6b7280; margin-top:12px;">Válido por <b id="qrTimer">05:00</b></p>
+                <button class="btn-primary" style="width:auto; padding:10px 20px; font-size:0.85rem; margin-top:8px;" onclick="generarQR()">🔁 Regenerar</button>
+            </div>
+            <div style="flex:1; min-width:220px;">
+                <div class="inv-info-bar" style="margin-bottom:12px;">📍 Punto de asistencia configurado</div>
+                <p style="font-size:0.9rem;"><b>Lat:</b> <span id="qrLatLabel"></span></p>
+                <p style="font-size:0.9rem;"><b>Lon:</b> <span id="qrLonLabel"></span></p>
+                <p style="font-size:0.9rem;"><b>Radio:</b> <span id="qrRadioLabel"></span> m</p>
+                <div id="mapaLink" style="margin-top:8px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Historial de registros de asistencia -->
+    <div class="section-title">📋 Registros de Asistencia del Día</div>
+    <div style="display:flex; gap:12px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
+        <input type="date" id="fechaFiltro" style="width:auto; margin-bottom:0;" onchange="cargarRegistros()">
+        <button class="btn-primary" style="width:auto; padding:10px 20px; font-size:0.85rem;" onclick="cargarRegistros()">🔄 Actualizar</button>
+        <button class="btn-success" style="width:auto; padding:10px 20px; font-size:0.85rem;" onclick="exportarCSV()">📥 Exportar CSV</button>
+    </div>
+    <div id="tablaAsistencia" style="overflow-x:auto;"></div>
+
     <script>
-      const fetchAuth = window.fetchAuth;
+        let qrInterval = null;
+        let timerInterval = null;
+        let segundosRestantes = 0;
 
-      function toast(msg, tipo) {
-        const el = document.getElementById('asisToast');
-        el.textContent = msg;
-        el.style.background = tipo === 'ok' ? '#004B87' : tipo === 'err' ? '#A32D2D' : '#854F0B';
-        el.style.color = 'white';
-        el.style.display = 'block';
-        setTimeout(() => { el.style.display = 'none'; }, 3000);
-      }
+        // Poner fecha de hoy por defecto
+        document.getElementById('fechaFiltro').value = new Date().toISOString().slice(0, 10);
+        cargarRegistros();
 
-      document.getElementById('fechaFiltro').value = new Date().toLocaleDateString('sv-SE', {timeZone:'America/Tijuana'});
+        function usarUbicacionActual() {
+            if (!navigator.geolocation) return alert('Tu navegador no soporta geolocalización.');
+            navigator.geolocation.getCurrentPosition(pos => {
+                document.getElementById('latFija').value = pos.coords.latitude.toFixed(6);
+                document.getElementById('lonFija').value = pos.coords.longitude.toFixed(6);
+                alert('✅ Coordenadas actualizadas con tu posición actual.');
+            }, () => alert('No se pudo obtener la ubicación.'));
+        }
 
-      async function cargarKpis() {
-        try {
-          const fecha = document.getElementById('fechaFiltro').value;
-          const res = await fetchAuth('/api/asistencia/registros' + (fecha ? '?fecha=' + fecha : ''));
-          if (!res.ok) return;
-          const data = await res.json();
-          const total = data.length;
-          const aprobados = data.filter(r => r.aprobado).length;
-          const rechazados = total - aprobados;
-          const tecnicos = new Set(data.map(r => r.username)).size;
-          const kpis = [
-            { val: total,      lbl: 'Registros',  color: '#004B87' },
-            { val: aprobados,  lbl: 'Aprobados',  color: '#3B6D11' },
-            { val: rechazados, lbl: 'Rechazados', color: '#A32D2D' },
-            { val: tecnicos,   lbl: 'Técnicos',   color: '#854F0B' },
-          ];
-          document.getElementById('asisKpis').innerHTML = kpis.map(k =>
-            '<div style="background:white;border:0.5px solid #e0ddd5;border-radius:12px;padding:14px 16px;border-top:3px solid ' + k.color + ';">' +
-            '<div style="font-size:26px;font-weight:600;color:' + k.color + ';font-family:DM Mono,monospace;">' + k.val + '</div>' +
-            '<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#aaa;margin-top:3px;">' + k.lbl + '</div>' +
-            '</div>'
-          ).join('');
-        } catch(e) {}
-      }
+        function generarQR() {
+            const lat = parseFloat(document.getElementById('latFija').value);
+            const lon = parseFloat(document.getElementById('lonFija').value);
+            const radio = parseInt(document.getElementById('radioMetros').value);
+            if (isNaN(lat) || isNaN(lon) || isNaN(radio)) return alert('Completa todos los campos de configuración.');
 
-      async function cargarConfiguracion() {
-        try {
-          const res = await fetchAuth('/api/asistencia/configuracion');
-          if (!res.ok) return;
-          const data = await res.json();
-          const cfg = data && data.config ? data.config : data;
-          if (cfg) {
-            if (cfg.lat_fija   !== undefined) document.getElementById('latFija').value    = cfg.lat_fija;
-            if (cfg.lon_fija   !== undefined) document.getElementById('lonFija').value    = cfg.lon_fija;
-            if (cfg.radio_metros !== undefined) document.getElementById('radioMetros').value = cfg.radio_metros;
-          }
-        } catch(e) {}
-      }
+            const token = btoa(`asistencia:${lat}:${lon}:${radio}:${Date.now()}`);
+            const url = `${window.location.origin}/app/checkin?token=${encodeURIComponent(token)}&lat=${lat}&lon=${lon}&radio=${radio}`;
 
-      async function guardarConfiguracion() {
-        const config = {
-          lat_fija:     parseFloat(document.getElementById('latFija').value),
-          lon_fija:     parseFloat(document.getElementById('lonFija').value),
-          radio_metros: parseInt(document.getElementById('radioMetros').value)
-        };
-        const res = await fetchAuth('/api/asistencia/configuracion', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(config) });
-        toast(res.ok ? '✅ Configuración guardada' : '❌ Error al guardar', res.ok ? 'ok' : 'err');
-      }
-
-      function usarUbicacionActual() {
-        if (!navigator.geolocation) return toast('GPS no soportado en este dispositivo', 'warn');
-        navigator.geolocation.getCurrentPosition(pos => {
-          document.getElementById('latFija').value = pos.coords.latitude.toFixed(6);
-          document.getElementById('lonFija').value = pos.coords.longitude.toFixed(6);
-          toast('📍 Coordenadas actualizadas desde tu GPS', 'ok');
-        }, () => toast('No se pudo obtener la ubicación', 'err'));
-      }
-
-      async function generarQR() {
-        const lat   = parseFloat(document.getElementById('latFija').value);
-        const lon   = parseFloat(document.getElementById('lonFija').value);
-        const radio = parseInt(document.getElementById('radioMetros').value);
-        if (isNaN(lat) || isNaN(lon) || isNaN(radio)) { toast('Completa todos los campos de configuración', 'warn'); return; }
-        try {
-          await guardarConfiguracion();
-          const res = await fetchAuth('/api/asistencia/generar-qr');
-          const data = await res.json();
-          const qrContainer = document.getElementById('qrCanvas');
-          qrContainer.innerHTML = '';
-          if (typeof QRCode === 'undefined') {
-            await new Promise((resolve, reject) => {
-              const s = document.createElement('script');
-              s.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
-              s.onload = resolve; s.onerror = reject;
-              document.head.appendChild(s);
+            document.getElementById('qrCanvas').innerHTML = '';
+            new QRCode(document.getElementById('qrCanvas'), {
+                text: url,
+                width: 220,
+                height: 220,
+                colorDark: '#002B5B',
+                colorLight: '#ffffff',
+                correctLevel: QRCode.CorrectLevel.H
             });
-          }
-          new QRCode(qrContainer, { text: data.qr_url, width: 200, height: 200, colorDark: '#002B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.L });
-          document.getElementById('qrLatLabel').textContent   = data.config.lat_fija;
-          document.getElementById('qrLonLabel').textContent   = data.config.lon_fija;
-          document.getElementById('qrRadioLabel').textContent = data.config.radio_metros;
-          document.getElementById('mapaLink').innerHTML =
-            '<a href="https://www.google.com/maps?q=' + data.config.lat_fija + ',' + data.config.lon_fija + '" target="_blank" ' +
-            'style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#004B87;font-weight:600;">' +
-            '<i class="ti ti-map-2" style="font-size:15px;"></i> Ver punto en Google Maps</a>';
-          document.getElementById('qrSection').style.display = 'block';
-        } catch(e) { toast('Error al generar el QR: ' + (e.message || ''), 'err'); }
-      }
 
-      async function cargarRegistros() {
-        const fecha = document.getElementById('fechaFiltro').value;
-        const tabla = document.getElementById('tablaAsistencia');
-        tabla.innerHTML = '<div class="asis-empty"><i class="ti ti-loader" style="font-size:22px;"></i><br>Cargando...</div>';
-        try {
-          const res = await fetchAuth('/api/asistencia/registros' + (fecha ? '?fecha=' + fecha : ''));
-          if (!res.ok) { tabla.innerHTML = '<div class="asis-empty">Error al cargar registros.</div>'; return; }
-          const data = await res.json();
-          if (!data.length) { tabla.innerHTML = '<div class="asis-empty"><i class="ti ti-calendar-off" style="font-size:28px;display:block;margin-bottom:8px;"></i>Sin registros para esta fecha.</div>'; return; }
-          let html = '<table class="asis-table"><thead><tr><th>Técnico</th><th>Fecha</th><th>Hora check-in</th><th>Tipo</th><th>Distancia</th><th>Estado</th></tr></thead><tbody>';
-          data.forEach(r => {
-            const ok     = r.aprobado;
-            const badge  = ok
-              ? '<span class="asis-badge asis-badge-ok"><i class="ti ti-circle-check"></i> Aprobado</span>'
-              : '<span class="asis-badge asis-badge-err"><i class="ti ti-map-pin-off"></i> Rechazado</span>';
-            const dist   = r.distancia_metros ? Math.round(r.distancia_metros).toLocaleString('es-MX') + ' m' : '—';
-            const tipo   = r.tipo ? (r.tipo === 'salida' ? 'Salida' : 'Entrada') : '—';
-            html += '<tr>' +
-              '<td><b>' + r.username + '</b></td>' +
-              '<td style="font-family:monospace;">' + r.fecha + '</td>' +
-              '<td style="font-family:monospace;">' + (r.hora_checkin || r.hora || '—') + '</td>' +
-              '<td>' + tipo + '</td>' +
-              '<td style="font-family:monospace;">' + dist + '</td>' +
-              '<td>' + badge + '</td>' +
-              '</tr>';
-          });
-          html += '</tbody></table>';
-          tabla.innerHTML = html;
-          cargarKpis();
-        } catch(e) { tabla.innerHTML = '<div class="asis-empty">Error de conexión.</div>'; }
-      }
+            document.getElementById('qrLatLabel').textContent = lat;
+            document.getElementById('qrLonLabel').textContent = lon;
+            document.getElementById('qrRadioLabel').textContent = radio;
+            document.getElementById('mapaLink').innerHTML = `<a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" style="color:#0057A8; font-size:0.85rem;">🗺 Ver en Google Maps</a>`;
+            document.getElementById('qrSection').style.display = 'block';
 
-      function exportarCSV() {
-        const fecha = document.getElementById('fechaFiltro').value;
-        fetchAuth('/api/asistencia/registros' + (fecha ? '?fecha=' + fecha : '')).then(r => r.json()).then(data => {
-          if (!data.length) return toast('Sin datos para exportar', 'warn');
-          const headers = ['Técnico','Fecha','Hora Check-in','Tipo','Distancia (m)','Aprobado'];
-          const rows = data.map(r => [r.username, r.fecha, r.hora_checkin || r.hora || '', r.tipo || '', r.distancia_metros ? Math.round(r.distancia_metros) : '', r.aprobado ? 'Sí' : 'No']);
-          const csv = [headers, ...rows].map(r => r.join(',')).join('\\n');
-          const blob = new Blob([csv], { type: 'text/csv' });
-          const url  = URL.createObjectURL(blob);
-          const a    = document.createElement('a');
-          a.href = url; a.download = 'asistencia_' + (fecha || 'all') + '.csv'; a.click();
-          setTimeout(() => URL.revokeObjectURL(url), 1000);
-          toast('✅ CSV exportado', 'ok');
-        });
-      }
+            // Timer de 5 minutos
+            if (timerInterval) clearInterval(timerInterval);
+            segundosRestantes = 300;
+            actualizarTimer();
+            timerInterval = setInterval(() => {
+                segundosRestantes--;
+                actualizarTimer();
+                if (segundosRestantes <= 0) {
+                    clearInterval(timerInterval);
+                    document.getElementById('qrCanvas').innerHTML = '<p style="color:#dc2626; font-weight:600;">⏱ QR expirado. Regenera.</p>';
+                }
+            }, 1000);
+        }
 
-      cargarConfiguracion();
-      cargarRegistros();
+        function actualizarTimer() {
+            const m = String(Math.floor(segundosRestantes / 60)).padStart(2, '0');
+            const s = String(segundosRestantes % 60).padStart(2, '0');
+            const el = document.getElementById('qrTimer');
+            if (el) el.textContent = m + ':' + s;
+        }
+
+        async function cargarRegistros() {
+            const fecha = document.getElementById('fechaFiltro').value;
+            try {
+                const res = await fetchAuth(`/api/asistencia/registros?fecha=${fecha}`);
+                if (!res.ok) { document.getElementById('tablaAsistencia').innerHTML = '<p style="color:#6b7280;">Sin registros para esta fecha.</p>'; return; }
+                const data = await res.json();
+                if (!data.length) { document.getElementById('tablaAsistencia').innerHTML = '<p style="color:#6b7280; padding:12px;">No hay registros para esta fecha.</p>'; return; }
+                let html = `<table><thead><tr>
+                    <th>#</th><th>Técnico</th><th>Hora Entrada</th><th>Latitud</th><th>Longitud</th><th>Distancia</th><th>Estado</th>
+                </tr></thead><tbody>`;
+                data.forEach((r, i) => {
+                    const estadoBadge = r.dentro_radio
+                        ? '<span class="badge" style="background:#dcfce7; color:#16a34a;">✅ Dentro</span>'
+                        : '<span class="badge" style="background:#fee2e2; color:#dc2626;">❌ Fuera</span>';
+                    html += `<tr>
+                        <td>${i+1}</td>
+                        <td><b>${r.username}</b></td>
+                        <td>${r.hora}</td>
+                        <td>${r.lat_tecnico}</td>
+                        <td>${r.lon_tecnico}</td>
+                        <td>${r.distancia_m} m</td>
+                        <td>${estadoBadge}</td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+                document.getElementById('tablaAsistencia').innerHTML = html;
+            } catch (e) {
+                document.getElementById('tablaAsistencia').innerHTML = '<p style="color:#dc2626;">Error al cargar registros.</p>';
+            }
+        }
+
+        function exportarCSV() {
+            const tabla = document.querySelector('#tablaAsistencia table');
+            if (!tabla) return alert('No hay datos para exportar.');
+            let csv = '';
+            tabla.querySelectorAll('tr').forEach(row => {
+                const cols = [...row.querySelectorAll('th, td')].map(c => '"' + c.innerText.replace(/"/g, '""') + '"');
+                csv += cols.join(',') + '\\n';
+            });
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `asistencia_${document.getElementById('fechaFiltro').value}.csv`;
+            a.click();
+        }
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("📍 Control de Asistencia", contenido, "asistencia"))
 
 
+# ------------------------------------------------------------
+# CHECKIN – PÁGINA DEL TÉCNICO: escanea QR y registra ubicación
+# ------------------------------------------------------------
 @router.get("/app/checkin", response_class=HTMLResponse)
 async def checkin_tecnico():
-    html = get_checkin_template()
-    init_script = """
+    contenido = """
+    <script>if (window.role !== 'tecnico') { window.location.href = '/app/dashboard'; }</script>
+
+    <div style="max-width:480px; margin:0 auto;">
+
+        <!-- Estado inicial -->
+        <div id="estadoInicial">
+            <div class="evidencia-info" style="margin-bottom:20px; text-align:center;">
+                <div style="font-size:3rem; margin-bottom:8px;">📍</div>
+                <b style="font-size:1.1rem;">Registro de Asistencia</b><br>
+                <span style="font-size:0.88rem;">Escanea el código QR para registrar tu entrada.</span>
+            </div>
+
+            <!-- Cámara para escanear QR -->
+            <div style="background:white; border-radius:16px; padding:20px; box-shadow:0 4px 16px rgba(0,43,91,0.1); margin-bottom:20px; text-align:center;">
+                <div class="section-title" style="margin-top:0;">📷 Escanear QR</div>
+                <video id="qrVideo" style="width:100%; border-radius:10px; max-height:280px; background:#000;" autoplay playsinline></video>
+                <canvas id="qrCanvasHidden" style="display:none;"></canvas>
+                <p id="scanStatus" style="font-size:0.85rem; color:#6b7280; margin-top:8px;">Iniciando cámara...</p>
+                <button class="btn-primary" style="margin-top:10px;" onclick="iniciarCamara()">🔄 Activar Cámara</button>
+            </div>
+
+            <!-- O bien, si ya viene con token en URL -->
+            <div id="tokenUrlSection" style="display:none; background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px; padding:16px; margin-bottom:20px; text-align:center;">
+                <p style="font-size:0.9rem; margin-bottom:12px;">✅ QR detectado desde enlace</p>
+                <button class="btn-primary" onclick="procesarDesdeURL()">📍 Registrar mi Asistencia</button>
+            </div>
+        </div>
+
+        <!-- Estado de procesamiento -->
+        <div id="estadoProcesando" style="display:none; text-align:center; padding:40px 20px;">
+            <div style="font-size:3rem; margin-bottom:12px;">⏳</div>
+            <p style="font-weight:600; color:#374151;">Obteniendo tu ubicación...</p>
+            <p style="font-size:0.85rem; color:#6b7280;">Asegúrate de tener el GPS activado.</p>
+        </div>
+
+        <!-- Resultado -->
+        <div id="estadoResultado" style="display:none; text-align:center; padding:20px;">
+        </div>
+
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
     <script>
-    // window.username ya está seteado por pagina_con_menu <head>
-    // El IIFE del template ya definió cargarHorario() y cargarRegistros()
-    // setTimeout(50ms) garantiza que el IIFE terminó antes de llamarlos
-    window.__ct_username = window.username || localStorage.getItem('username') || '';
+        let streamCamera = null;
+        let scanLoop = null;
+        let qrParams = null;
 
-    if (typeof window.fetchAuth === 'function') {
-        window.fetchAuth('/api/asistencia/configuracion').then(r => r.json()).then(data => {
-            const cfg = data && data.config ? data.config : data;
-            window.__ct_radio = cfg && cfg.radio_metros ? cfg.radio_metros : 200;
-        }).catch(() => { window.__ct_radio = 200; });
-    }
-
-    // Llamar cuando el DOM esté listo y window.__ct_username ya esté seteado
-    function _ctInit() {
-        if (typeof window.cargarHorario  === 'function') window.cargarHorario();
-        if (typeof window.cargarRegistros === 'function') window.cargarRegistros();
-    }
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', _ctInit);
-    } else {
-        setTimeout(_ctInit, 100);
-    }
-
-    // ── Variables de estado del modal ─────────────────────────────────────────
-    var _qrTipo      = 'entrada';
-    var _qrFotoB64   = null;
-    var _gpsCoords   = null;
-    var _gpsWatcher  = null;
-
-    // ── GPS silencioso en segundo plano ───────────────────────────────────────
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-            function(pos) {
-                _gpsCoords = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy };
-                var tag = document.getElementById('ct-gps-tag');
-                var el  = document.getElementById('ct-gps-precision');
-                if (el) el.textContent = '±' + Math.round(pos.coords.accuracy) + 'm';
-                if (tag) tag.className = 'ct-tag ' + (pos.coords.accuracy <= 50 ? 'gps-ok' : pos.coords.accuracy <= 100 ? 'gps-warn' : 'gps-bad');
-            },
-            function() {},
-            { enableHighAccuracy: true, timeout: 10000 }
-        );
-    }
-
-    // ── Abrir modal (paso 1: tomar foto del QR) ───────────────────────────────
-    // ── Escáner QR en tiempo real ──────────────────────────────────────────────
-    var _qrStream    = null;
-    var _qrScanLoop  = null;
-
-    window.abrirModalQR = function(tipo) {
-        _qrTipo    = tipo || 'entrada';
-        _qrFotoB64 = null;
-        document.getElementById('ct-modal-overlay').classList.add('open');
-        _mostrarPaso('paso1');
-        _iniciarEscanerQR();
-    };
-
-    window.cerrarModalQR = function() {
-        _detenerEscanerQR();
-        document.getElementById('ct-modal-overlay').classList.remove('open');
-        _qrFotoB64 = null;
-    };
-
-    function _mostrarPaso(paso) {
-        ['paso1','paso2','paso3'].forEach(function(p) {
-            var el = document.getElementById('ct-' + p);
-            if (el) el.style.display = (p === paso) ? 'block' : 'none';
-        });
-        // Actualizar progress dots
-        var pasoNum = parseInt(paso.replace('paso',''));
-        ['dot1','dot2','dot3'].forEach(function(d, i) {
-            var dot = document.getElementById(d);
-            if (!dot) return;
-            var n = i + 1;
-            dot.className = 'ct-step-dot' + (n === pasoNum ? ' active' : n < pasoNum ? ' done' : '');
-        });
-        // Actualizar título/subtítulo del modal
-        var titles = { paso1: ['Escanear QR', 'Apunta la cámara al código QR'], paso2: ['Tomar selfie', 'Verifica tu identidad con una foto'], paso3: ['Confirmar registro', 'Revisa los datos y confirma'] };
-        var t = titles[paso];
-        var tEl = document.getElementById('ct-modal-title');
-        var sEl = document.getElementById('ct-modal-subtitle');
-        if (tEl && t) tEl.textContent = t[0];
-        if (sEl && t) sEl.textContent = t[1];
-    }
-
-    function _iniciarEscanerQR() {
-        var video = document.getElementById('ct-qr-video');
-        var status = document.getElementById('ct-qr-status');
-        if (!video) return;
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            if (status) status.textContent = '❌ Tu navegador no soporta cámara en tiempo real';
-            return;
-        }
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
-        .then(function(stream) {
-            _qrStream = stream;
-            video.srcObject = stream;
-            video.play();
-            video.addEventListener('loadedmetadata', function() {
-                _qrScanLoop = setInterval(_escanearFrame, 350);
-            }, { once: true });
-        })
-        .catch(function(err) {
-            if (status) status.textContent = '❌ No se pudo acceder a la cámara: ' + err.message;
-        });
-    }
-
-    function _detenerEscanerQR() {
-        if (_qrScanLoop) { clearInterval(_qrScanLoop); _qrScanLoop = null; }
-        if (_qrStream)   { _qrStream.getTracks().forEach(function(t){ t.stop(); }); _qrStream = null; }
-        var video = document.getElementById('ct-qr-video');
-        if (video) { video.srcObject = null; }
-    }
-
-    function _escanearFrame() {
-        var video  = document.getElementById('ct-qr-video');
-        var canvas = document.getElementById('ct-qr-canvas');
-        if (!video || !canvas || video.readyState < 2) return;
-        canvas.width  = video.videoWidth;
-        canvas.height = video.videoHeight;
-        var ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        var code = null;
-        try { code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' }); } catch(e) {}
-        if (code && (code.data.includes('checkin') || code.data.includes('carrier') || code.data.includes('cleverapps'))) {
-            _detenerEscanerQR();
-            var qrEl = document.getElementById('ct-qr-result');
-            if (qrEl) { qrEl.textContent = '✅ QR válido detectado'; qrEl.style.display = 'block'; qrEl.style.background='#EAF3DE'; qrEl.style.color='#3B6D11'; }
-            _mostrarPaso('paso2');
-        }
-    }
-
-    // ── Selfie de confirmación ─────────────────────────────────────────────────
-    window.ct_lanzarFotoConfirmacion = function() {
-        document.getElementById('ct-input-selfie').click();
-    };
-
-    window.ct_onSelfieSeleccionada = function(input) {
-        var file = input.files[0];
-        if (!file) return;
-        var reader = new FileReader();
-        reader.onload = function(e) {
-            _qrFotoB64 = e.target.result;
-            var preview = document.getElementById('ct-preview-img');
-            if (preview) { preview.src = _qrFotoB64; preview.style.display = 'block'; }
-            // Llenar campos del paso 3
-            var tipoEl = document.getElementById('ct-paso3-tipo');
-            if (tipoEl) tipoEl.textContent = _qrTipo === 'salida' ? '🔴 Salida' : '🟢 Entrada';
-            var horaEl = document.getElementById('ct-paso3-hora');
-            if (horaEl) horaEl.textContent = new Intl.DateTimeFormat('es-MX', { timeZone:'America/Tijuana', hour:'2-digit', minute:'2-digit', hour12:false }).format(new Date());
-            var gpsEl = document.getElementById('ct-paso3-gps');
-            if (gpsEl) gpsEl.textContent = _gpsCoords ? ('±' + Math.round(_gpsCoords.accuracy || 0) + 'm') : 'Obteniendo...';
-            var userEl = document.getElementById('ct-paso3-user');
-            if (userEl) userEl.textContent = window.__ct_username || '—';
-            _mostrarPaso('paso3');
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    function(pos) {
-                        _gpsCoords = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy };
-                        if (gpsEl) gpsEl.textContent = '±' + Math.round(pos.coords.accuracy) + 'm';
-                    },
-                    function() {},
-                    { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-                );
-            }
-        };
-        reader.readAsDataURL(file);
-    };
-
-        window.ct_confirmarRegistro = async function() {
-        var btn = document.getElementById('ct-btn-confirmar');
-        if (btn) { btn.disabled = true; btn.textContent = 'Obteniendo GPS...'; }
-
-        // Siempre pide coordenadas frescas justo antes de enviar
-        await new Promise(function(resolve) {
-            if (!navigator.geolocation) { resolve(); return; }
-            navigator.geolocation.getCurrentPosition(
-                function(pos) {
-                    _gpsCoords = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy };
-                    var gpsEl = document.getElementById('ct-paso3-gps');
-                    if (gpsEl) gpsEl.textContent = '±' + Math.round(pos.coords.accuracy) + 'm';
-                    resolve();
-                },
-                function() { resolve(); },
-                { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-            );
-        });
-
-        if (btn) { btn.textContent = 'Enviando...'; }
-
-        if (!_gpsCoords) {
-            if (typeof ctToast === 'function') ctToast('⚠️ Esperando GPS. Activa el permiso de ubicación.', 'red');
-            if (btn) { btn.disabled = false; btn.textContent = '✅ Confirmar registro'; }
-            return;
-        }
-
-        try {
-            var res = await window.fetchAuth('/api/asistencia/registrar', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    tipo:        _qrTipo,
-                    lat:         _gpsCoords.lat,
-                    lon:         _gpsCoords.lon,
-                    accuracy:    _gpsCoords.accuracy,
-                    foto_base64: _qrFotoB64
-                })
-            });
-            var data = await res.json();
-            cerrarModalQR();
-            if (data.aprobado) {
-                if (typeof ctToast === 'function') ctToast('✅ ' + (_qrTipo === 'entrada' ? 'Entrada' : 'Salida') + ' registrada a las ' + data.hora, 'green');
+        // Revisar si ya vienen parámetros en la URL
+        window.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('lat') && params.has('lon') && params.has('radio')) {
+                qrParams = {
+                    lat: parseFloat(params.get('lat')),
+                    lon: parseFloat(params.get('lon')),
+                    radio: parseInt(params.get('radio'))
+                };
+                document.getElementById('tokenUrlSection').style.display = 'block';
             } else {
-                if (typeof ctToast === 'function') ctToast('⚠️ Fuera del perímetro. ' + (data.mensaje || ''), 'red');
+                iniciarCamara();
             }
-            if (typeof cargarHorarioHoy  === 'function') cargarHorarioHoy();
-            if (typeof cargarMisHorarios === 'function') cargarMisHorarios();
-            if (typeof cargarRegistros   === 'function') cargarRegistros();
-        } catch(e) {
-            if (typeof ctToast === 'function') ctToast('Error: ' + e.message, 'red');
-        }
-        if (btn) { btn.disabled = false; btn.textContent = '✅ Confirmar registro'; }
-    };
-    </script>
-    """
+        });
 
-    html = html.replace('</body>', init_script + '</body>')
-    return HTMLResponse(content=pagina_con_menu("📍 Registrar Asistencia", html, "checkin"))
-
-
-# ------------------------------------------------------------
-# HORARIOS – ADMIN
-# ------------------------------------------------------------
-@router.get("/app/horarios", response_class=HTMLResponse)
-async def horarios_admin():
-    contenido = """
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
-    <script>if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; }</script>
-    <div style="display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap;">
-        <div><label>Semana (Lunes)</label><input type="date" id="semanaInicio" onchange="cargarHorarios()"></div>
-        <button class="btn-primary" onclick="guardarHorarios()">💾 Guardar</button>
-        <button class="btn-warning" onclick="exportarExcel()">📥 Exportar Excel</button>
-        <label class="btn-primary" style="background:#0057A8; cursor:pointer;">📤 Importar Excel <input type="file" accept=".xlsx,.csv" style="display:none;" onchange="importarExcel(this)"></label>
-        <button class="btn-success" onclick="abrirModalNombres()">✏️ Editar Nombres</button>
-    </div>
-    <div class="evidencia-info" style="margin-bottom:16px;">📋 Configura ENTRADA y SALIDA por día. Exporta plantilla, llénala en Excel e importa.</div>
-    <div style="overflow-x:auto;" id="tablaHorarios"></div>
-    <div class="section-title">📊 Resumen de Asistencia de la Semana</div>
-    <div id="resumenAsistencia"></div>
-    <div id="modalNombres" class="modal"><div class="modal-content"><h3>✏️ Editar Nombres</h3><div id="listaNombres"></div><div style="display:flex; gap:10px; margin-top:16px;"><button class="btn-primary" onclick="guardarNombres()">💾 Guardar</button><button class="btn-danger" onclick="document.getElementById('modalNombres').style.display='none'">Cancelar</button></div></div></div>
-    <script>
-        const fetchAuth = window.fetchAuth;
-        const DIAS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
-        let tecnicosData = [], nombresMap = {};
-        const ahoraTJ = new Date(new Date().toLocaleString('en-US', {timeZone:'America/Tijuana'}));
-        const diffLunes = ahoraTJ.getDay() === 0 ? -6 : 1 - ahoraTJ.getDay();
-        const lunes = new Date(ahoraTJ); lunes.setDate(ahoraTJ.getDate() + diffLunes);
-        document.getElementById('semanaInicio').value = lunes.toLocaleDateString('sv-SE', {timeZone:'America/Tijuana'});
-        function getNombre(u) { return nombresMap[u] || u; }
-        function fechasDeSemana(l) { const f = []; const b = new Date(l+'T12:00:00'); for(let i=0;i<6;i++){ const d=new Date(b); d.setDate(b.getDate()+i); f.push(d.toISOString().slice(0,10)); } return f; }
-        async function cargarHorarios() {
-            const semana = document.getElementById('semanaInicio').value; if(!semana) return;
-            const fechas = fechasDeSemana(semana);
-            let horariosGuardados = {};
-            try { const res = await fetchAuth('/api/horarios/?semana='+semana); if(res.ok){ const data=await res.json(); data.forEach(h=>{ horariosGuardados[h.username+'_'+h.fecha]=h; }); } } catch(e){}
-            let html = '<table class="data-table"><thead><tr><th rowspan="2">Técnico</th>';
-            fechas.forEach((f,i)=>{ const [,mes,dia]=f.split('-'); html+=`<th colspan="2">${DIAS[i]}<br><span style="font-size:0.75rem;">${dia}/${mes}</span></th>`; });
-            html+='</thead><tbody>';
-            const usuariosRes = await fetchAuth('/api/usuarios/'); const usuarios = await usuariosRes.json();
-            tecnicosData = usuarios.filter(u=>u.role==='tecnico');
-            // nombresMap se mantiene en memoria de la sesión
-            tecnicosData.forEach(t=>{ if(!nombresMap[t.username]) nombresMap[t.username]=t.username; });
-            tecnicosData.forEach(tec=>{
-                html+=`<tr><td style="background:#f8fafc;"><b>${getNombre(tec.username)}</b><br><span style="font-size:0.72rem;">${tec.username}</span></td>`;
-                fechas.forEach(fecha=>{
-                    const key=tec.username+'_'+fecha; const h=horariosGuardados[key]||{};
-                    html+=`<td><input type="time" id="e_${tec.username}_${fecha}" value="${h.hora_entrada||''}" style="width:100px;"></td><td><input type="time" id="s_${tec.username}_${fecha}" value="${h.hora_salida||''}" style="width:100px;"></td>`;
+        function iniciarCamara() {
+            document.getElementById('scanStatus').textContent = 'Solicitando acceso a la cámara...';
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+                .then(stream => {
+                    streamCamera = stream;
+                    const video = document.getElementById('qrVideo');
+                    video.srcObject = stream;
+                    video.play();
+                    document.getElementById('scanStatus').textContent = '🔍 Apunta al código QR...';
+                    scanLoop = setInterval(() => escanearFrame(), 400);
+                })
+                .catch(() => {
+                    document.getElementById('scanStatus').textContent = '⚠️ No se pudo acceder a la cámara. Usa el enlace directo del QR.';
                 });
-                html+='</tr>';
-            });
-            html+='</tbody></table>';
-            document.getElementById('tablaHorarios').innerHTML = html;
-            cargarResumenAsistencia(semana, fechas);
         }
-        async function guardarHorarios() {
-            const semana = document.getElementById('semanaInicio').value; const fechas = fechasDeSemana(semana);
-            const registros = [];
-            tecnicosData.forEach(tec=>{ fechas.forEach(fecha=>{ registros.push({ username: tec.username, fecha, semana, hora_entrada: document.getElementById('e_'+tec.username+'_'+fecha)?.value||'', hora_salida: document.getElementById('s_'+tec.username+'_'+fecha)?.value||'' }); }); });
-            const res = await fetchAuth('/api/horarios/', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ registros }) });
-            if(res.ok){ const t=document.createElement('div'); t.style.cssText='position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;'; t.textContent='✅ Horarios guardados'; document.body.appendChild(t); setTimeout(()=>t.remove(),3000); }
-            else alert('Error al guardar');
-        }
-        function exportarExcel() {
-            const semana = document.getElementById('semanaInicio').value; const fechas = fechasDeSemana(semana);
-            const encabezado = ['Técnico (username)', 'Nombre Completo']; fechas.forEach((f,i)=>{ encabezado.push(DIAS[i]+' Entrada', DIAS[i]+' Salida'); });
-            const filas = [encabezado];
-            tecnicosData.forEach(tec=>{
-                const fila = [tec.username, getNombre(tec.username)];
-                fechas.forEach(fecha=>{ fila.push(document.getElementById('e_'+tec.username+'_'+fecha)?.value||'', document.getElementById('s_'+tec.username+'_'+fecha)?.value||''); });
-                filas.push(fila);
-            });
-            const ws = XLSX.utils.aoa_to_sheet(filas); ws['!cols']=encabezado.map((h,i)=>({ wch: i<2?22:14 }));
-            const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Horarios');
-            XLSX.writeFile(wb, 'horarios_semana_'+semana+'.xlsx');
-        }
-        function importarExcel(input) {
-            const file = input.files[0]; if(!file) return;
-            const semana = document.getElementById('semanaInicio').value; const fechas = fechasDeSemana(semana);
-            const reader = new FileReader();
-            reader.onload = e => {
+
+        function escanearFrame() {
+            const video = document.getElementById('qrVideo');
+            const canvas = document.getElementById('qrCanvasHidden');
+            if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height);
+            if (code) {
+                clearInterval(scanLoop);
+                if (streamCamera) streamCamera.getTracks().forEach(t => t.stop());
                 try {
-                    const wb = XLSX.read(e.target.result, { type:'array' });
-                    const ws = wb.Sheets[wb.SheetNames[0]];
-                    const filas = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
-                    if(filas.length<2) return alert('Archivo vacío');
-                    const headers = filas[0].map(h=>String(h).trim());
-                    const idxUser = headers.findIndex(h=>h.toLowerCase().includes('username'));
-                    if(idxUser===-1) return alert('No se encontró columna "Técnico (username)"');
-                    let importados=0;
-                    function limpiarHora(v) {
-                        const s = String(v||'').trim();
-                        if(!s || s.toLowerCase()==='descansa') return '';
-                        if(!isNaN(s) && s.indexOf(':')===-1) {
-                            const totalMin = Math.round(parseFloat(s) * 1440);
-                            const hh = String(Math.floor(totalMin/60)).padStart(2,'0');
-                            const mm = String(totalMin%60).padStart(2,'0');
-                            return hh+':'+mm;
-                        }
-                        return s.length >= 5 ? s.slice(0,5) : s;
-                    }
-                    filas.slice(1).forEach(fila=>{
-                        const username = String(fila[idxUser]||'').trim();
-                        if(!username) return;
-                        fechas.forEach((fecha,i)=>{
-                            const idxE = headers.findIndex(h=>h.includes(DIAS[i]) && h.toLowerCase().includes('entrada'));
-                            const idxS = headers.findIndex(h=>h.includes(DIAS[i]) && h.toLowerCase().includes('salida'));
-                            const eEl = document.getElementById('e_'+username+'_'+fecha);
-                            const sEl = document.getElementById('s_'+username+'_'+fecha);
-                            if(eEl && idxE!==-1) eEl.value = limpiarHora(fila[idxE]);
-                            if(sEl && idxS!==-1) sEl.value = limpiarHora(fila[idxS]);
-                        });
-                        importados++;
-                    });
-                    input.value='';
-                    const t=document.createElement('div'); t.style.cssText='position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#0057A8;color:white;padding:14px 28px;border-radius:50px;'; t.textContent=`📤 ${importados} técnicos importados`; document.body.appendChild(t); setTimeout(()=>t.remove(),4000);
-                } catch(err){ alert('Error: '+err.message); }
-            };
-            reader.readAsArrayBuffer(file);
+                    const url = new URL(code.data);
+                    const p = url.searchParams;
+                    qrParams = {
+                        lat: parseFloat(p.get('lat')),
+                        lon: parseFloat(p.get('lon')),
+                        radio: parseInt(p.get('radio'))
+                    };
+                    if (isNaN(qrParams.lat) || isNaN(qrParams.lon)) throw new Error('QR inválido');
+                    document.getElementById('scanStatus').textContent = '✅ QR leído correctamente';
+                    procesarCheckin();
+                } catch {
+                    document.getElementById('scanStatus').textContent = '❌ QR no reconocido. Intenta de nuevo.';
+                    scanLoop = setInterval(() => escanearFrame(), 400);
+                }
+            }
         }
-        function abrirModalNombres() {
-            let html=''; tecnicosData.forEach(tec=>{ html+=`<div><span>${tec.username}</span><input type="text" id="nombre_${tec.username}" value="${getNombre(tec.username)}"></div>`; });
-            document.getElementById('listaNombres').innerHTML = html;
-            document.getElementById('modalNombres').style.display = 'flex';
+
+        function procesarDesdeURL() {
+            if (!qrParams) return alert('No se detectaron parámetros del QR.');
+            procesarCheckin();
         }
-        function guardarNombres() {
-            tecnicosData.forEach(tec=>{ const val = document.getElementById('nombre_'+tec.username)?.value.trim(); if(val) nombresMap[tec.username]=val; });
-            cargarHorarios();
-            document.getElementById('modalNombres').style.display='none';
-            cargarHorarios();
+
+        function procesarCheckin() {
+            document.getElementById('estadoInicial').style.display = 'none';
+            document.getElementById('estadoProcesando').style.display = 'block';
+
+            if (!navigator.geolocation) {
+                mostrarResultado(false, 'Tu navegador no soporta geolocalización.');
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(
+                pos => {
+                    const latTec = pos.coords.latitude;
+                    const lonTec = pos.coords.longitude;
+                    const distancia = calcularDistancia(latTec, lonTec, qrParams.lat, qrParams.lon);
+                    const dentroRadio = distancia <= qrParams.radio;
+                    enviarRegistro(latTec, lonTec, distancia, dentroRadio);
+                },
+                err => {
+                    mostrarResultado(false, 'No se pudo obtener tu ubicación GPS. Activa la localización e intenta de nuevo.');
+                },
+                { enableHighAccuracy: true, timeout: 10000 }
+            );
         }
-        async function cargarResumenAsistencia(semana, fechas) {
+
+        async function enviarRegistro(latTec, lonTec, distancia, dentroRadio) {
             try {
-                const res = await fetchAuth('/api/horarios/resumen?semana='+semana);
-                if(!res.ok){ document.getElementById('resumenAsistencia').innerHTML='<p>Sin datos</p>'; return; }
-                const data = await res.json();
-                if(!data.length){ document.getElementById('resumenAsistencia').innerHTML='<p>Sin check-ins</p>'; return; }
-                let html='<table class="data-table"><thead><tr><th>Técnico</th>';
-                fechas.forEach((f,i)=>{ const [,mes,dia]=f.split('-'); html+=`<th>${DIAS[i]}<br><span style="font-size:0.75rem;">${dia}/${mes}</span></th>`; });
-                html+='</thead><tbody>';
-                const porTecnico={}; data.forEach(r=>{ if(!porTecnico[r.username]) porTecnico[r.username]={}; porTecnico[r.username][r.fecha]=r; });
-                Object.entries(porTecnico).forEach(([username, dias])=>{
-                    html+=`<tr><td style="background:#f8fafc;"><b>${getNombre(username)}</b><br><span style="font-size:0.72rem;">${username}</span></td>`;
-                    fechas.forEach(fecha=>{ const r=dias[fecha]; html+=`<td>${r ? (r.retardo_min>0 ? `<span class="badge" style="background:#fef3c7;">⏱ +${r.retardo_min} min</span>` : `<span class="badge" style="background:#dcfce7;">✅ ${r.hora_checkin}</span>`) : '—'}</td>`; });
-                    html+='</tr>';
+                const res = await fetchAuth('/api/asistencia/registrar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        lat_fija: qrParams.lat,
+                        lon_fija: qrParams.lon,
+                        radio: qrParams.radio,
+                        lat_tecnico: latTec,
+                        lon_tecnico: lonTec,
+                        distancia_m: Math.round(distancia),
+                        dentro_radio: dentroRadio
+                    })
                 });
-                html+='</tbody></table>';
-                document.getElementById('resumenAsistencia').innerHTML = html;
-            } catch(e){ document.getElementById('resumenAsistencia').innerHTML='<p>Error</p>'; }
+                const data = await res.json();
+                mostrarResultado(dentroRadio, data.mensaje || (dentroRadio ? 'Asistencia registrada.' : 'Estás fuera del área permitida.'), latTec, lonTec, Math.round(distancia));
+            } catch {
+                mostrarResultado(false, 'Error al conectar con el servidor. Verifica tu conexión.');
+            }
         }
-        cargarHorarios();
+
+        function mostrarResultado(exito, mensaje, lat, lon, distancia) {
+            document.getElementById('estadoProcesando').style.display = 'none';
+            const el = document.getElementById('estadoResultado');
+            el.style.display = 'block';
+            const ahora = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+            const iconoGrande = exito ? '✅' : '❌';
+            const color = exito ? '#16a34a' : '#dc2626';
+            const bg = exito ? '#dcfce7' : '#fee2e2';
+            const border = exito ? '#86efac' : '#fca5a5';
+            el.innerHTML = `
+                <div style="background:${bg}; border:2px solid ${border}; border-radius:20px; padding:32px 24px;">
+                    <div style="font-size:4rem; margin-bottom:12px;">${iconoGrande}</div>
+                    <h2 style="color:${color}; font-size:1.4rem; margin-bottom:8px;">${exito ? '¡Asistencia Registrada!' : 'No se pudo registrar'}</h2>
+                    <p style="color:#374151; font-size:0.95rem; margin-bottom:16px;">${mensaje}</p>
+                    ${lat ? `<div style="background:white; border-radius:12px; padding:12px; font-size:0.85rem; color:#374151; margin-bottom:16px; text-align:left;">
+                        <p>🕐 <b>Hora:</b> ${ahora}</p>
+                        <p>👤 <b>Técnico:</b> ${window.username}</p>
+                        <p>📍 <b>Tu ubicación:</b> ${lat.toFixed(5)}, ${lon.toFixed(5)}</p>
+                        <p>📏 <b>Distancia al punto:</b> ${distancia} m</p>
+                    </div>` : ''}
+                    <button class="btn-primary" onclick="window.location.href='/app/mis-tareas'">🏠 Ir a Mis Tareas</button>
+                </div>`;
+        }
+
+        // Haversine: distancia en metros entre dos coordenadas
+        function calcularDistancia(lat1, lon1, lat2, lon2) {
+            const R = 6371000;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon/2) * Math.sin(dLon/2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
     </script>
     """
-    return HTMLResponse(content=pagina_con_menu("🗓 Horarios Semanales", contenido, "horarios"))
+    return HTMLResponse(content=pagina_con_menu("📍 Registrar Asistencia", contenido, "checkin"))
