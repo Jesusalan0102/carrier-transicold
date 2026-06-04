@@ -236,9 +236,12 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
             actualizarReloj();
             setInterval(actualizarReloj, 1000);
 
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
-            ws.onmessage = (event) => {{}};
+            try {{
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
+                ws.onmessage = (event) => {{}};
+                ws.onerror = () => {{}};
+            }} catch(e) {{}}
         </script>
         {extra_scripts}
     </body>
@@ -2345,7 +2348,7 @@ async def asistencia_admin():
             let csv = '';
             tabla.querySelectorAll('tr').forEach(row => {
                 const cols = [...row.querySelectorAll('th,td')].map(c => '"'+c.innerText.replace(/"/g,'""')+'"');
-                csv += cols.join(',') + '\n';
+                csv += cols.join(',') + String.fromCharCode(10);
             });
             const blob = new Blob([csv], {type:'text/csv'});
             const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
