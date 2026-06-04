@@ -313,98 +313,166 @@ async def login():
 async def dashboard():
     contenido = """
     <script> if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; } </script>
-    <div id="kpiContainer" style="display:grid; grid-template-columns: repeat(5, 1fr); gap:16px; margin-bottom:32px;"></div>
-    <div style="display:grid; grid-template-columns: 2fr 1fr; gap:24px; margin-bottom:32px;">
-        <div id="barChart" style="background:white; border-radius:16px; padding:20px; box-shadow:0 4px 12px rgba(0,43,91,0.08); min-height:420px;"></div>
-        <div id="pieChart" style="background:white; border-radius:16px; padding:20px; box-shadow:0 4px 12px rgba(0,43,91,0.08); min-height:420px;"></div>
+    <style>
+        .status-tbl { width:100%; border-collapse:collapse; background:white; border-radius:12px; overflow:hidden; box-shadow:0 4px 12px rgba(0,43,91,0.08); font-size:0.78rem; }
+        .status-tbl th { background:#002B5B; color:white; padding:8px 10px; text-align:center; font-weight:600; white-space:nowrap; border-right:1px solid #1a4a8a; }
+        .status-tbl th:first-child, .status-tbl th:nth-child(2) { text-align:left; }
+        .status-tbl td { padding:7px 10px; border-bottom:1px solid #f0f2f5; border-right:1px solid #f0f2f5; text-align:center; }
+        .status-tbl td:first-child { font-weight:700; color:#002B5B; background:#f8fafc; text-align:left; }
+        .status-tbl td:nth-child(2) { font-family:monospace; font-weight:600; text-align:left; }
+        .status-tbl tbody tr:hover td { background:#eef4ff; }
+        .status-tbl .check { color:#16a34a; font-size:1rem; }
+        .status-tbl .dash { color:#d1d5db; }
+        .lotes-wrap { border:1px solid #e5e7eb; border-radius:12px; overflow:hidden; margin-bottom:12px; }
+        .lote-hdr { background:linear-gradient(90deg,#002B5B,#0057A8); color:white; padding:14px 20px; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:space-between; }
+        .lote-body { display:none; padding:16px; overflow-x:auto; background:white; }
+        .kpi-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:16px; margin-bottom:32px; }
+        @media(max-width:900px){ .kpi-grid{grid-template-columns:repeat(2,1fr);} }
+    </style>
+
+    <div class="kpi-grid" id="kpiContainer"></div>
+
+    <div style="display:grid; grid-template-columns:2fr 1fr; gap:24px; margin-bottom:32px;">
+        <div id="barChart" style="background:white; border-radius:16px; padding:20px; box-shadow:0 4px 12px rgba(0,43,91,0.08); min-height:380px;"></div>
+        <div id="pieChart" style="background:white; border-radius:16px; padding:20px; box-shadow:0 4px 12px rgba(0,43,91,0.08); min-height:380px;"></div>
     </div>
+
     <div class="section-title">📋 Estatus de Proceso por Unidad</div>
-    <div id="statusTable" style="overflow-x:auto; margin-bottom:32px;"></div>
+    <div id="statusTable" style="overflow-x:auto; margin-bottom:32px; border-radius:12px;"></div>
+
     <div class="section-title">📦 Lotes y Series por Unidad</div>
     <div id="lotesContainer" style="margin-bottom:32px;"></div>
-    <div class="section-title admin-only">📂 Descarga de Evidencias por Unidad</div>
-    <div class="admin-only" style="display:flex; gap:16px; align-items:center; margin-bottom:16px;">
-        <select id="unidadEv" style="width:auto; flex:1;"><option value="">Selecciona unidad</option></select>
-        <button class="btn-primary" onclick="descargarEvidencias()">📥 Descargar ZIP</button>
+
+    <div class="section-title admin-only">📂 Descarga de Evidencias</div>
+    <div class="admin-only" style="display:flex; gap:16px; align-items:center; margin-bottom:16px; flex-wrap:wrap;">
+        <select id="unidadEv" style="width:auto; flex:1; margin-bottom:0;"><option value="">Selecciona unidad</option></select>
+        <button class="btn-primary" style="width:auto; padding:12px 24px;" onclick="descargarEvidencias()">📥 Descargar ZIP</button>
     </div>
-    <div class="section-title admin-only">📥 Reportes y Descargas</div>
-    <button class="btn-primary admin-only" onclick="descargarReporte()">📊 Descargar Reporte Maestro Excel</button>
+
+    <div class="section-title admin-only">📥 Reportes</div>
+    <button class="btn-primary admin-only" style="width:auto; padding:12px 28px;" onclick="descargarReporte()">📊 Descargar Reporte Maestro Excel</button>
+
     <script>
-        if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; }
-        const fetchAuth = window.fetchAuth;
         const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series'];
-        const camposSeries = {"vin_number":"VIN Number","reefer_serial":"Serie del Reefer","reefer_model":"Modelo del Reefer","evaporator_serial_mjs11":"Evaporador MJS11","evaporator_serial_mjd22":"Evaporador MJD22","engine_serial":"Motor","compressor_serial":"Compresor","generator_serial":"Generador","battery_charger_serial":"Cargador de Batería"};
+        const camposSeries = {vin_number:'VIN Number',reefer_serial:'Serie Reefer',reefer_model:'Modelo Reefer',evaporator_serial_mjs11:'Evap. MJS11',evaporator_serial_mjd22:'Evap. MJD22',engine_serial:'Motor',compressor_serial:'Compresor',generator_serial:'Generador',battery_charger_serial:'Cargador Bat.'};
+
         async function cargarDashboard() {
             try {
                 const kpisRes = await fetchAuth('/api/dashboard/kpis');
                 const kpis = await kpisRes.json();
-                const kpiData = [ { value: kpis.total_unidades, label: 'Total Unidades', cls: '' }, { value: kpis.completadas, label: 'Completadas', cls: 'green' }, { value: kpis.en_proceso, label: 'En Proceso', cls: 'amber' }, { value: kpis.pendientes, label: 'Pendientes', cls: 'red' }, { value: kpis.avance + '%', label: 'Avance Global', cls: 'purple' } ];
-                document.getElementById('kpiContainer').innerHTML = kpiData.map(kpi => `<div class="kpi-wrap ${kpi.cls}"><div class="kpi-num">${kpi.value !== undefined ? kpi.value : '—'}</div><div class="kpi-lbl">${kpi.label}</div></div>`).join('');
-                const [statsRes, usuariosRes] = await Promise.all([fetchAuth('/api/dashboard/stats_tecnicos'), fetchAuth('/api/usuarios/')]);
-                const statsRaw = await statsRes.json(); const usuariosAll = await usuariosRes.json();
-                const tecnicosSet = new Set(usuariosAll.filter(u => u.role === 'tecnico').map(u => u.username));
-                const stats = statsRaw.filter(s => tecnicosSet.has(s.tecnico));
+                const kpiData = [
+                    {value: kpis.total_unidades, label: 'Total Unidades', cls: ''},
+                    {value: kpis.completadas,    label: 'Completadas',    cls: 'green'},
+                    {value: kpis.en_proceso,     label: 'En Proceso',     cls: 'amber'},
+                    {value: kpis.pendientes,     label: 'Pendientes',     cls: 'red'},
+                    {value: (kpis.avance||0)+'%',label: 'Avance Global',  cls: 'purple'},
+                ];
+                document.getElementById('kpiContainer').innerHTML = kpiData.map(k =>
+                    `<div class="kpi-wrap ${k.cls}"><div class="kpi-num">${k.value ?? '—'}</div><div class="kpi-lbl">${k.label}</div></div>`
+                ).join('');
+
+                const [statsRes, usuariosRes] = await Promise.all([
+                    fetchAuth('/api/dashboard/stats_tecnicos'),
+                    fetchAuth('/api/usuarios/')
+                ]);
+                const statsRaw = await statsRes.json();
+                const usuariosAll = await usuariosRes.json();
+                const tecSet = new Set(usuariosAll.filter(u => u.role === 'tecnico').map(u => u.username));
+                const stats = statsRaw.filter(s => tecSet.has(s.tecnico));
+
                 if (stats.length > 0) {
-                    const barData = [{x: stats.map(s => s.tecnico), y: stats.map(s => s.completadas), type: 'bar', name: 'Completadas', marker: { color: '#16a34a' }},{x: stats.map(s => s.tecnico), y: stats.map(s => s.en_curso), type: 'bar', name: 'En Curso', marker: { color: '#d97706' }},{x: stats.map(s => s.tecnico), y: stats.map(s => s.pendientes), type: 'bar', name: 'Pendientes', marker: { color: '#dc2626' }}];
-                    Plotly.newPlot('barChart', barData, { title: 'Carga de Trabajo por Técnico', barmode: 'group', paper_bgcolor: 'transparent', plot_bgcolor: 'transparent', font: { family: 'Inter, sans-serif' } });
+                    Plotly.newPlot('barChart', [
+                        {x: stats.map(s=>s.tecnico), y: stats.map(s=>s.completadas), type:'bar', name:'Completadas', marker:{color:'#16a34a'}},
+                        {x: stats.map(s=>s.tecnico), y: stats.map(s=>s.en_curso),    type:'bar', name:'En Curso',    marker:{color:'#d97706'}},
+                        {x: stats.map(s=>s.tecnico), y: stats.map(s=>s.pendientes),  type:'bar', name:'Pendientes',  marker:{color:'#dc2626'}},
+                    ], {title:'Carga por Técnico', barmode:'group', paper_bgcolor:'transparent', plot_bgcolor:'transparent', font:{family:'Inter,sans-serif'}, margin:{t:40,b:80}});
                 }
-                const asigRes = await fetchAuth('/api/asignaciones/'); const asignaciones = await asigRes.json();
+
+                const asigRes = await fetchAuth('/api/asignaciones/');
+                const asignaciones = await asigRes.json();
                 if (asignaciones.length) {
-                    const conteos = { completada: 0, en_proceso: 0, pendiente: 0 }; asignaciones.forEach(a => conteos[a.estado] = (conteos[a.estado] || 0) + 1);
-                    Plotly.newPlot('pieChart', [{ values: [conteos.completada, conteos.en_proceso, conteos.pendiente], labels: ['Completadas', 'En Proceso', 'Pendientes'], marker: { colors: ['#16a34a', '#d97706', '#dc2626'] }, hole: 0.55, type: 'pie' }], { title: 'Distribución Global', paper_bgcolor: 'transparent', font: { family: 'Inter, sans-serif' } });
-                    const unidadesRes = await fetchAuth('/api/unidades/'); const unidades = await unidadesRes.json();
+                    const cnt = {completada:0, en_proceso:0, pendiente:0};
+                    asignaciones.forEach(a => { cnt[a.estado] = (cnt[a.estado]||0)+1; });
+                    Plotly.newPlot('pieChart', [{
+                        values:[cnt.completada,cnt.en_proceso,cnt.pendiente],
+                        labels:['Completadas','En Proceso','Pendientes'],
+                        marker:{colors:['#16a34a','#d97706','#dc2626']},
+                        hole:0.55, type:'pie'
+                    }], {title:'Distribución Global', paper_bgcolor:'transparent', font:{family:'Inter,sans-serif'}, margin:{t:40}});
+
+                    const unidadesRes = await fetchAuth('/api/unidades/');
+                    const unidades = await unidadesRes.json();
                     if (unidades.length) {
-                        // Tabla de estatus con formato de tabla
-                        const completadasSet = new Set(asignaciones.filter(a => a.estado === 'completada').map(a => a.unidad + '||' + a.actividad_id));
-                        let headers = '</table><th>LOTE</th><th>#Económico</th>';
-                        actividades.forEach(a => headers += `<th>${a}</th>`);
-                        headers += '</tr>';
-                        let body = '';
+                        // Tabla de estatus – CSS correcta
+                        const compSet = new Set(asignaciones.filter(a=>a.estado==='completada').map(a=>a.unidad+'||'+a.actividad_id));
+                        let tbl = '<table class="status-tbl"><thead><tr><th>LOTE</th><th>#Económico</th>';
+                        actividades.forEach(a => { tbl += `<th>${a}</th>`; });
+                        tbl += '</tr></thead><tbody>';
                         unidades.forEach(u => {
-                            body += `<tr><td>${u.id_lote || ''}</td><td>${u.unit_number}</td>`;
+                            tbl += `<tr><td>${u.id_lote||''}</td><td>${u.unit_number}</td>`;
                             actividades.forEach(act => {
-                                const completada = completadasSet.has(u.unit_number + '||' + act);
-                                body += `<td style="text-align:center; font-weight:bold;">${completada ? '✔' : '—'}</td>`;
+                                const ok = compSet.has(u.unit_number+'||'+act);
+                                tbl += ok ? '<td><span class="check">✔</span></td>' : '<td><span class="dash">—</span></td>';
                             });
-                            body += '</tr>';
+                            tbl += '</tr>';
                         });
-                        document.getElementById('statusTable').innerHTML = `<table class="data-table" style="width:100%; border-collapse:collapse;">${headers}<tbody>${body}</tbody></table>`;
+                        tbl += '</tbody></table>';
+                        document.getElementById('statusTable').innerHTML = tbl;
+
                         // Lotes y series
                         const lotesMap = {};
-                        unidades.forEach(u => {
-                            const lote = u.id_lote || 'Sin lote';
-                            if (!lotesMap[lote]) lotesMap[lote] = [];
-                            lotesMap[lote].push(u);
-                        });
+                        unidades.forEach(u => { const l=u.id_lote||'Sin lote'; if(!lotesMap[l]) lotesMap[l]=[]; lotesMap[l].push(u); });
                         let lotesHtml = '';
                         for (const [lote, units] of Object.entries(lotesMap)) {
-                            lotesHtml += `<div style="margin-bottom:16px; border:1px solid #e0e0e0; border-radius:12px; overflow:hidden;">
-                                <div class="inv-info-bar" style="margin-bottom:0; cursor:pointer;" onclick="var d=this.nextElementSibling;d.style.display=d.style.display==='none'?'block':'none';">📦 Lote: ${lote} (${units.length} unidades) <span style="margin-left:auto;">▼</span></div>
-                                <div style="display:none; padding:16px; background:white; overflow-x:auto;">
-                                    <table class="data-table" style="width:100%;">
-                                        <thead><tr><th>#Económico</th>${Object.values(camposSeries).map(s => `<th>${s}</th>`).join('')}</tr></thead>
-                                        <tbody>${units.map(u => `<tr><td>${u.unit_number}</td>${Object.keys(camposSeries).map(k => `<td>${u[k] || '—'}</td>`).join('')}</tr>`).join('')}</tbody>
-                                    ~
+                            const bodyId = 'lote_'+lote.replace(/[^a-zA-Z0-9]/g,'_');
+                            lotesHtml += `<div class="lotes-wrap">
+                                <div class="lote-hdr" onclick="var d=document.getElementById('${bodyId}');d.style.display=d.style.display==='block'?'none':'block';">
+                                    📦 Lote: ${lote} &nbsp;<span style="opacity:.7;font-size:.8rem;">${units.length} unidades</span><span>▼</span>
+                                </div>
+                                <div id="${bodyId}" class="lote-body">
+                                    <table style="width:100%;border-collapse:collapse;font-size:.8rem;">
+                                        <thead><tr><th style="background:#002B5B;color:white;padding:8px 10px;text-align:left;">#Económico</th>
+                                        ${Object.values(camposSeries).map(s=>`<th style="background:#002B5B;color:white;padding:8px 10px;text-align:left;">${s}</th>`).join('')}</tr></thead>
+                                        <tbody>${units.map(u=>`<tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:7px 10px;font-weight:600;">${u.unit_number}</td>${Object.keys(camposSeries).map(k=>`<td style="padding:7px 10px;">${u[k]||'—'}</td>`).join('')}</tr>`).join('')}</tbody>
+                                    </table>
                                 </div>
                             </div>`;
                         }
                         document.getElementById('lotesContainer').innerHTML = lotesHtml;
-                        const unidadEvEl = document.getElementById('unidadEv');
-                        if (unidadEvEl) unidadEvEl.innerHTML = '<option value="">Selecciona unidad</option>' + unidades.map(u => `<option value="${u.unit_number}">${u.unit_number} – ${u.id_lote || ''}</option>`).join('');
+
+                        const sel = document.getElementById('unidadEv');
+                        if (sel) sel.innerHTML = '<option value="">Selecciona unidad</option>' + unidades.map(u=>`<option value="${u.unit_number}">${u.unit_number} – ${u.id_lote||''}</option>`).join('');
                     }
                 }
-            } catch (err) { console.error('Error al cargar dashboard:', err); document.getElementById('kpiContainer').innerHTML = '<p style="color:red;">Error al conectar con el servidor.</p>'; }
+            } catch(err) {
+                console.error('Dashboard error:', err);
+                document.getElementById('kpiContainer').innerHTML = '<p style="color:red;grid-column:1/-1;">Error al conectar con el servidor.</p>';
+            }
         }
-        async function descargarEvidencias() { const unit = document.getElementById('unidadEv').value; if (!unit) return alert('Selecciona unidad'); const res = await fetchAuth(`/api/evidencias/download/${unit}`); if (!res.ok) return alert('Error al descargar'); const blob = await res.blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `evidencias_${unit}.zip`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
-        async function descargarReporte() { const res = await fetchAuth('/api/dashboard/reporte-excel'); if (!res.ok) return alert('Error al generar reporte'); const blob = await res.blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'reporte_maestro.xlsx'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+
+        async function descargarEvidencias() {
+            const unit = document.getElementById('unidadEv').value;
+            if (!unit) return alert('Selecciona una unidad');
+            const res = await fetchAuth(`/api/evidencias/download/${unit}`);
+            if (!res.ok) return alert('Error al descargar evidencias');
+            const blob = await res.blob(); const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href=url; a.download=`evidencias_${unit}.zip`; a.click();
+            setTimeout(()=>URL.revokeObjectURL(url),1000);
+        }
+
+        async function descargarReporte() {
+            const res = await fetchAuth('/api/reportes/exportar-maestro');
+            if (!res.ok) return alert('Error al generar reporte');
+            const blob = await res.blob(); const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href=url; a.download='reporte_maestro.xlsx'; a.click();
+            setTimeout(()=>URL.revokeObjectURL(url),1000);
+        }
+
         cargarDashboard();
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("📊 Panel de Rendimiento Operativo", contenido, "dashboard"))
 
-# ------------------------------------------------------------
-# ASIGNACIONES (admin)
-# ------------------------------------------------------------
 @router.get("/app/asignaciones", response_class=HTMLResponse)
 async def asignaciones():
     contenido = """
@@ -1986,76 +2054,115 @@ async def asistencia_admin():
     contenido = """
     <script>if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; }</script>
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <style>
+        .tab-btn { background:white; border:1.5px solid #e5e7eb; border-radius:10px; padding:10px 24px; font-weight:600; font-size:.9rem; color:#6b7280; cursor:pointer; transition:.2s; }
+        .tab-btn.active { background:#002B5B; color:white; border-color:#002B5B; }
+        .tab-panel { display:none; }
+        .tab-panel.active { display:block; }
+        .horario-tbl { width:100%; border-collapse:collapse; background:white; border-radius:12px; overflow:hidden; box-shadow:0 2px 12px rgba(0,43,91,0.08); font-size:.85rem; }
+        .horario-tbl th { background:#002B5B; color:white; padding:10px 12px; text-align:center; white-space:nowrap; }
+        .horario-tbl th:first-child { text-align:left; }
+        .horario-tbl td { padding:8px 12px; border-bottom:1px solid #f0f2f5; text-align:center; }
+        .horario-tbl td:first-child { font-weight:600; text-align:left; }
+        .horario-tbl input[type=time] { border:1px solid #d1d5db; border-radius:6px; padding:4px 8px; font-size:.82rem; width:90px; margin-bottom:0; }
+        .est-completo  { background:#dcfce7; color:#16a34a; padding:3px 10px; border-radius:12px; font-size:.78rem; font-weight:600; }
+        .est-retardo   { background:#fef3c7; color:#d97706; padding:3px 10px; border-radius:12px; font-size:.78rem; font-weight:600; }
+        .est-ausente   { background:#fee2e2; color:#dc2626; padding:3px 10px; border-radius:12px; font-size:.78rem; font-weight:600; }
+        .est-libre     { background:#f3f4f6; color:#9ca3af; padding:3px 10px; border-radius:12px; font-size:.78rem; font-weight:600; }
+        .est-sin_salida { background:#fef3c7; color:#92400e; padding:3px 10px; border-radius:12px; font-size:.78rem; font-weight:600; }
+    </style>
 
-    <!-- Configuración de geoposición fija -->
-    <div class="evidencia-info" style="margin-bottom:20px;">
-        <b>📍 Geoposición fija del QR</b><br>
-        <span style="font-size:0.85rem;">Define las coordenadas del lugar de trabajo. El técnico deberá estar dentro del radio permitido al escanear.</span>
+    <!-- Tabs -->
+    <div style="display:flex; gap:10px; margin-bottom:28px; flex-wrap:wrap;">
+        <button class="tab-btn active" onclick="switchTab('tab-qr',this)">📲 QR de Asistencia</button>
+        <button class="tab-btn" onclick="switchTab('tab-horarios',this)">📅 Horario Semanal</button>
+        <button class="tab-btn" onclick="switchTab('tab-registros',this)">📋 Registros del Día</button>
     </div>
 
-    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:20px;">
-        <div>
-            <label style="font-size:0.82rem; font-weight:600; color:#374151;">Latitud fija</label>
-            <input type="number" id="latFija" step="0.000001" value="32.5027" placeholder="Ej: 32.5027">
+    <!-- TAB 1: QR -->
+    <div id="tab-qr" class="tab-panel active">
+        <div class="evidencia-info" style="margin-bottom:20px;">
+            <b>📍 Geoposición del punto de asistencia</b><br>
+            <span style="font-size:.85rem;">Define las coordenadas del lugar de trabajo. El técnico deberá estar dentro del radio al escanear.</span>
         </div>
-        <div>
-            <label style="font-size:0.82rem; font-weight:600; color:#374151;">Longitud fija</label>
-            <input type="number" id="lonFija" step="0.000001" value="-117.0037" placeholder="Ej: -117.0037">
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:20px;">
+            <div><label style="font-size:.82rem; font-weight:600; color:#374151;">Latitud</label><input type="number" id="latFija" step="0.000001" value="32.5027"></div>
+            <div><label style="font-size:.82rem; font-weight:600; color:#374151;">Longitud</label><input type="number" id="lonFija" step="0.000001" value="-117.0037"></div>
+            <div><label style="font-size:.82rem; font-weight:600; color:#374151;">Radio (metros)</label><input type="number" id="radioMetros" value="200" min="10" max="5000"></div>
         </div>
-        <div>
-            <label style="font-size:0.82rem; font-weight:600; color:#374151;">Radio permitido (metros)</label>
-            <input type="number" id="radioMetros" value="200" min="10" max="5000">
+        <div style="display:flex; gap:12px; margin-bottom:28px; flex-wrap:wrap;">
+            <button class="btn-primary" style="width:auto; padding:12px 24px;" onclick="generarQR()">🔄 Generar QR</button>
+            <button class="btn-warning" style="width:auto; padding:12px 24px;" onclick="usarUbicacionActual()">📡 Usar mi ubicación</button>
         </div>
-    </div>
-
-    <div style="display:flex; gap:12px; margin-bottom:28px; flex-wrap:wrap;">
-        <button class="btn-primary" style="width:auto; padding:12px 24px;" onclick="generarQR()">🔄 Generar QR de Asistencia</button>
-        <button class="btn-warning" style="width:auto; padding:12px 24px;" onclick="usarUbicacionActual()">📡 Usar mi ubicación actual</button>
-    </div>
-
-    <!-- QR generado -->
-    <div id="qrSection" style="display:none; margin-bottom:32px;">
-        <div class="section-title">📲 QR para Escanear</div>
-        <div style="display:flex; gap:32px; align-items:flex-start; flex-wrap:wrap;">
-            <div style="background:white; padding:24px; border-radius:16px; box-shadow:0 4px 20px rgba(0,43,91,0.1); text-align:center;">
-                <div id="qrCanvas"></div>
-                <p style="font-size:0.78rem; color:#6b7280; margin-top:12px;">Válido por <b id="qrTimer">05:00</b></p>
-                <button class="btn-primary" style="width:auto; padding:10px 20px; font-size:0.85rem; margin-top:8px;" onclick="generarQR()">🔁 Regenerar</button>
+        <div id="qrSection" style="display:none; margin-bottom:32px;">
+            <div class="section-title">📲 QR Generado</div>
+            <div style="display:flex; gap:32px; align-items:flex-start; flex-wrap:wrap;">
+                <div style="background:white; padding:24px; border-radius:16px; box-shadow:0 4px 20px rgba(0,43,91,0.1); text-align:center;">
+                    <div id="qrCanvas"></div>
+                    <p style="font-size:.78rem; color:#6b7280; margin-top:12px;">Expira en <b id="qrTimer">05:00</b></p>
+                    <button class="btn-primary" style="width:auto; padding:10px 20px; font-size:.85rem; margin-top:8px;" onclick="generarQR()">🔁 Regenerar</button>
+                </div>
+                <div style="flex:1; min-width:220px;">
+                    <div class="inv-info-bar" style="margin-bottom:12px;">📍 Punto configurado</div>
+                    <p style="font-size:.9rem;"><b>Lat:</b> <span id="qrLatLabel"></span></p>
+                    <p style="font-size:.9rem;"><b>Lon:</b> <span id="qrLonLabel"></span></p>
+                    <p style="font-size:.9rem;"><b>Radio:</b> <span id="qrRadioLabel"></span> m</p>
+                    <div id="mapaLink" style="margin-top:8px;"></div>
+                </div>
             </div>
-            <div style="flex:1; min-width:220px;">
-                <div class="inv-info-bar" style="margin-bottom:12px;">📍 Punto de asistencia configurado</div>
-                <p style="font-size:0.9rem;"><b>Lat:</b> <span id="qrLatLabel"></span></p>
-                <p style="font-size:0.9rem;"><b>Lon:</b> <span id="qrLonLabel"></span></p>
-                <p style="font-size:0.9rem;"><b>Radio:</b> <span id="qrRadioLabel"></span> m</p>
-                <div id="mapaLink" style="margin-top:8px;"></div>
-            </div>
         </div>
     </div>
 
-    <!-- Historial de registros de asistencia -->
-    <div class="section-title">📋 Registros de Asistencia del Día</div>
-    <div style="display:flex; gap:12px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
-        <input type="date" id="fechaFiltro" style="width:auto; margin-bottom:0;" onchange="cargarRegistros()">
-        <button class="btn-primary" style="width:auto; padding:10px 20px; font-size:0.85rem;" onclick="cargarRegistros()">🔄 Actualizar</button>
-        <button class="btn-success" style="width:auto; padding:10px 20px; font-size:0.85rem;" onclick="exportarCSV()">📥 Exportar CSV</button>
+    <!-- TAB 2: HORARIO SEMANAL -->
+    <div id="tab-horarios" class="tab-panel">
+        <div style="display:flex; gap:12px; align-items:center; margin-bottom:20px; flex-wrap:wrap;">
+            <label style="font-weight:600; font-size:.9rem;">Semana del lunes:</label>
+            <input type="date" id="semanaInput" style="width:auto; margin-bottom:0;" onchange="cargarHorarios()">
+            <button class="btn-primary" style="width:auto; padding:10px 22px;" onclick="guardarHorarios()">💾 Guardar Horarios</button>
+        </div>
+        <div id="tablaHorarios" style="overflow-x:auto;"></div>
+
+        <div class="section-title" style="margin-top:32px;">📊 Resumen Semanal de Asistencia</div>
+        <div id="resumenSemanal" style="overflow-x:auto;"></div>
     </div>
-    <div id="tablaAsistencia" style="overflow-x:auto;"></div>
+
+    <!-- TAB 3: REGISTROS DEL DÍA -->
+    <div id="tab-registros" class="tab-panel">
+        <div style="display:flex; gap:12px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
+            <input type="date" id="fechaFiltro" style="width:auto; margin-bottom:0;" onchange="cargarRegistros()">
+            <button class="btn-primary" style="width:auto; padding:10px 20px; font-size:.85rem;" onclick="cargarRegistros()">🔄 Actualizar</button>
+            <button class="btn-success" style="width:auto; padding:10px 20px; font-size:.85rem;" onclick="exportarCSV()">📥 Exportar CSV</button>
+        </div>
+        <div id="tablaAsistencia" style="overflow-x:auto;"></div>
+    </div>
 
     <script>
-        let qrInterval = null;
-        let timerInterval = null;
-        let segundosRestantes = 0;
+        // ── Tabs ──────────────────────────────────────────────────────────────
+        function switchTab(id, btn) {
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            btn.classList.add('active');
+        }
 
-        // Poner fecha de hoy por defecto
-        document.getElementById('fechaFiltro').value = new Date().toISOString().slice(0, 10);
+        // ── Init fechas ───────────────────────────────────────────────────────
+        const hoy = new Date();
+        document.getElementById('fechaFiltro').value = hoy.toISOString().slice(0,10);
+        const lunes = new Date(hoy); lunes.setDate(hoy.getDate() - (hoy.getDay() === 0 ? 6 : hoy.getDay()-1));
+        document.getElementById('semanaInput').value = lunes.toISOString().slice(0,10);
+
         cargarRegistros();
+        cargarHorarios();
+
+        // ── QR ────────────────────────────────────────────────────────────────
+        let timerInterval = null; let segundosRestantes = 0;
 
         function usarUbicacionActual() {
             if (!navigator.geolocation) return alert('Tu navegador no soporta geolocalización.');
             navigator.geolocation.getCurrentPosition(pos => {
                 document.getElementById('latFija').value = pos.coords.latitude.toFixed(6);
                 document.getElementById('lonFija').value = pos.coords.longitude.toFixed(6);
-                alert('✅ Coordenadas actualizadas con tu posición actual.');
+                alert('✅ Coordenadas actualizadas.');
             }, () => alert('No se pudo obtener la ubicación.'));
         }
 
@@ -2063,28 +2170,16 @@ async def asistencia_admin():
             const lat = parseFloat(document.getElementById('latFija').value);
             const lon = parseFloat(document.getElementById('lonFija').value);
             const radio = parseInt(document.getElementById('radioMetros').value);
-            if (isNaN(lat) || isNaN(lon) || isNaN(radio)) return alert('Completa todos los campos de configuración.');
-
+            if (isNaN(lat)||isNaN(lon)||isNaN(radio)) return alert('Completa todos los campos.');
             const token = btoa(`asistencia:${lat}:${lon}:${radio}:${Date.now()}`);
             const url = `${window.location.origin}/app/checkin?token=${encodeURIComponent(token)}&lat=${lat}&lon=${lon}&radio=${radio}`;
-
             document.getElementById('qrCanvas').innerHTML = '';
-            new QRCode(document.getElementById('qrCanvas'), {
-                text: url,
-                width: 220,
-                height: 220,
-                colorDark: '#002B5B',
-                colorLight: '#ffffff',
-                correctLevel: QRCode.CorrectLevel.H
-            });
-
+            new QRCode(document.getElementById('qrCanvas'), {text:url, width:220, height:220, colorDark:'#002B5B', colorLight:'#ffffff', correctLevel:QRCode.CorrectLevel.H});
             document.getElementById('qrLatLabel').textContent = lat;
             document.getElementById('qrLonLabel').textContent = lon;
             document.getElementById('qrRadioLabel').textContent = radio;
-            document.getElementById('mapaLink').innerHTML = `<a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" style="color:#0057A8; font-size:0.85rem;">🗺 Ver en Google Maps</a>`;
+            document.getElementById('mapaLink').innerHTML = `<a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" style="color:#0057A8; font-size:.85rem;">🗺 Ver en Google Maps</a>`;
             document.getElementById('qrSection').style.display = 'block';
-
-            // Timer de 5 minutos
             if (timerInterval) clearInterval(timerInterval);
             segundosRestantes = 300;
             actualizarTimer();
@@ -2093,45 +2188,153 @@ async def asistencia_admin():
                 actualizarTimer();
                 if (segundosRestantes <= 0) {
                     clearInterval(timerInterval);
-                    document.getElementById('qrCanvas').innerHTML = '<p style="color:#dc2626; font-weight:600;">⏱ QR expirado. Regenera.</p>';
+                    document.getElementById('qrCanvas').innerHTML = '<p style="color:#dc2626;font-weight:600;">⏱ QR expirado. Regenera.</p>';
                 }
             }, 1000);
         }
 
         function actualizarTimer() {
-            const m = String(Math.floor(segundosRestantes / 60)).padStart(2, '0');
-            const s = String(segundosRestantes % 60).padStart(2, '0');
+            const m = String(Math.floor(segundosRestantes/60)).padStart(2,'0');
+            const s = String(segundosRestantes%60).padStart(2,'0');
             const el = document.getElementById('qrTimer');
-            if (el) el.textContent = m + ':' + s;
+            if (el) el.textContent = m+':'+s;
         }
 
+        // ── Horarios Semanales ────────────────────────────────────────────────
+        let tecnicosData = [];
+        let horariosData = {};
+        const diasSemana = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+
+        function getLunes(semanaStr) {
+            return semanaStr; // ya viene como YYYY-MM-DD del lunes
+        }
+
+        function fechasDeSemana(lunesStr) {
+            const lunes = new Date(lunesStr + 'T00:00:00');
+            return Array.from({length:6}, (_,i) => {
+                const d = new Date(lunes); d.setDate(lunes.getDate()+i);
+                return d.toISOString().slice(0,10);
+            });
+        }
+
+        async function cargarHorarios() {
+            const semana = document.getElementById('semanaInput').value;
+            if (!semana) return;
+            try {
+                const [tecRes, horRes, resRes] = await Promise.all([
+                    fetchAuth('/api/usuarios/'),
+                    fetchAuth(`/api/horarios/?semana=${semana}`),
+                    fetchAuth(`/api/horarios/resumen?semana=${semana}`)
+                ]);
+                tecnicosData = (await tecRes.json()).filter(u => u.role === 'tecnico');
+                const horarios = await horRes.json();
+                const resumen = await resRes.json();
+
+                horariosData = {};
+                horarios.forEach(h => { horariosData[h.username+'_'+h.fecha] = h; });
+
+                const fechas = fechasDeSemana(semana);
+
+                // Tabla editable de horarios
+                let html = '<table class="horario-tbl"><thead><tr><th>Técnico</th>';
+                fechas.forEach((f,i) => { html += `<th>${diasSemana[i]}<br><small style="font-weight:400;opacity:.8;">${f.slice(5)}</small></th>`; });
+                html += '</tr></thead><tbody>';
+                tecnicosData.forEach(tec => {
+                    html += `<tr><td>${tec.username}</td>`;
+                    fechas.forEach(f => {
+                        const h = horariosData[tec.username+'_'+f] || {};
+                        html += `<td>
+                            <div style="display:flex;flex-direction:column;gap:4px;align-items:center;">
+                                <input type="time" class="hor-input" data-user="${tec.username}" data-fecha="${f}" data-tipo="entrada" value="${h.hora_entrada||''}" title="Entrada">
+                                <input type="time" class="hor-input" data-user="${tec.username}" data-fecha="${f}" data-tipo="salida"  value="${h.hora_salida||''}"  title="Salida">
+                            </div>
+                        </td>`;
+                    });
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+                document.getElementById('tablaHorarios').innerHTML = html;
+
+                // Tabla de resumen de asistencia real
+                renderResumen(resumen, fechas);
+
+            } catch(e) {
+                console.error('Error cargando horarios:', e);
+                document.getElementById('tablaHorarios').innerHTML = '<p style="color:#dc2626;">Error al cargar horarios.</p>';
+            }
+        }
+
+        function renderResumen(resumen, fechas) {
+            if (!resumen.length) {
+                document.getElementById('resumenSemanal').innerHTML = '<p style="color:#6b7280; padding:12px;">No hay registros de asistencia para esta semana.</p>';
+                return;
+            }
+            const estadoLabel = {completo:'✅ Completo', retardo:'⚠️ Retardo', ausente:'❌ Ausente', libre:'🏖 Libre', sin_salida:'⚠️ Sin salida', sin_entrada:'⚠️ Sin entrada'};
+            const estadoClass = {completo:'est-completo', retardo:'est-retardo', ausente:'est-ausente', libre:'est-libre', sin_salida:'est-sin_salida', sin_entrada:'est-retardo'};
+            const tecnicos = [...new Set(resumen.map(r=>r.username))].sort();
+            let html = '<table class="horario-tbl"><thead><tr><th>Técnico</th>';
+            fechas.forEach((f,i) => { html += `<th>${diasSemana[i]}<br><small style="font-weight:400;opacity:.8;">${f.slice(5)}</small></th>`; });
+            html += '<th>Hrs. trabajadas</th></tr></thead><tbody>';
+            tecnicos.forEach(tec => {
+                const filas = resumen.filter(r=>r.username===tec);
+                let totalHrs = 0;
+                html += `<tr><td>${tec}</td>`;
+                fechas.forEach(f => {
+                    const r = filas.find(x=>x.fecha===f);
+                    if (!r) { html += '<td><span class="est-libre">Libre</span></td>'; return; }
+                    if (r.horas_trabajadas) totalHrs += parseFloat(r.horas_trabajadas);
+                    const est = r.retardo_min > 0 ? 'retardo' : r.estado;
+                    const badge = `<span class="${estadoClass[r.estado]||'est-libre'}">${estadoLabel[r.estado]||r.estado}</span>`;
+                    const detalle = r.hora_entrada_real ? `<br><small style="color:#6b7280;">${r.hora_entrada_real||'—'} → ${r.hora_salida_real||'—'}</small>` : '';
+                    const ret = r.retardo_min > 0 ? `<br><small style="color:#d97706;">+${r.retardo_min}min retardo</small>` : '';
+                    html += `<td>${badge}${detalle}${ret}</td>`;
+                });
+                html += `<td><b>${totalHrs.toFixed(1)} h</b></td></tr>`;
+            });
+            html += '</tbody></table>';
+            document.getElementById('resumenSemanal').innerHTML = html;
+        }
+
+        async function guardarHorarios() {
+            const semana = document.getElementById('semanaInput').value;
+            const inputs = document.querySelectorAll('.hor-input');
+            const registros = [];
+            const map = {};
+            inputs.forEach(inp => {
+                const key = inp.dataset.user+'_'+inp.dataset.fecha;
+                if (!map[key]) map[key] = {username:inp.dataset.user, fecha:inp.dataset.fecha, semana, hora_entrada:null, hora_salida:null};
+                if (inp.dataset.tipo==='entrada') map[key].hora_entrada = inp.value||null;
+                else map[key].hora_salida = inp.value||null;
+            });
+            Object.values(map).forEach(r => registros.push(r));
+            try {
+                const res = await fetchAuth('/api/horarios/', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({registros})});
+                const data = await res.json();
+                if (data.ok) {
+                    alert(`✅ Guardado: ${data.guardados} horarios, ${data.eliminados} días libres.`);
+                    cargarHorarios();
+                } else { alert('Error al guardar.'); }
+            } catch(e) { alert('Error al guardar horarios.'); }
+        }
+
+        // ── Registros del día ─────────────────────────────────────────────────
         async function cargarRegistros() {
             const fecha = document.getElementById('fechaFiltro').value;
             try {
                 const res = await fetchAuth(`/api/asistencia/registros?fecha=${fecha}`);
-                if (!res.ok) { document.getElementById('tablaAsistencia').innerHTML = '<p style="color:#6b7280;">Sin registros para esta fecha.</p>'; return; }
+                if (!res.ok) { document.getElementById('tablaAsistencia').innerHTML = '<p style="color:#6b7280; padding:12px;">Sin registros para esta fecha.</p>'; return; }
                 const data = await res.json();
                 if (!data.length) { document.getElementById('tablaAsistencia').innerHTML = '<p style="color:#6b7280; padding:12px;">No hay registros para esta fecha.</p>'; return; }
-                let html = `<table><thead><tr>
-                    <th>#</th><th>Técnico</th><th>Hora Entrada</th><th>Latitud</th><th>Longitud</th><th>Distancia</th><th>Estado</th>
-                </tr></thead><tbody>`;
-                data.forEach((r, i) => {
-                    const estadoBadge = r.dentro_radio
-                        ? '<span class="badge" style="background:#dcfce7; color:#16a34a;">✅ Dentro</span>'
-                        : '<span class="badge" style="background:#fee2e2; color:#dc2626;">❌ Fuera</span>';
-                    html += `<tr>
-                        <td>${i+1}</td>
-                        <td><b>${r.username}</b></td>
-                        <td>${r.hora}</td>
-                        <td>${r.lat_tecnico}</td>
-                        <td>${r.lon_tecnico}</td>
-                        <td>${r.distancia_m} m</td>
-                        <td>${estadoBadge}</td>
-                    </tr>`;
+                let html = `<table><thead><tr><th>#</th><th>Técnico</th><th>Hora Entrada</th><th>Latitud</th><th>Longitud</th><th>Distancia</th><th>Estado</th></tr></thead><tbody>`;
+                data.forEach((r,i) => {
+                    const badge = r.dentro_radio
+                        ? '<span class="badge" style="background:#dcfce7;color:#16a34a;">✅ Dentro</span>'
+                        : '<span class="badge" style="background:#fee2e2;color:#dc2626;">❌ Fuera</span>';
+                    html += `<tr><td>${i+1}</td><td><b>${r.username}</b></td><td>${r.hora}</td><td>${r.lat_tecnico}</td><td>${r.lon_tecnico}</td><td>${r.distancia_m} m</td><td>${badge}</td></tr>`;
                 });
                 html += '</tbody></table>';
                 document.getElementById('tablaAsistencia').innerHTML = html;
-            } catch (e) {
+            } catch(e) {
                 document.getElementById('tablaAsistencia').innerHTML = '<p style="color:#dc2626;">Error al cargar registros.</p>';
             }
         }
@@ -2141,23 +2344,18 @@ async def asistencia_admin():
             if (!tabla) return alert('No hay datos para exportar.');
             let csv = '';
             tabla.querySelectorAll('tr').forEach(row => {
-                const cols = [...row.querySelectorAll('th, td')].map(c => '"' + c.innerText.replace(/"/g, '""') + '"');
-                csv += cols.join(',') + '\\n';
+                const cols = [...row.querySelectorAll('th,td')].map(c => '"'+c.innerText.replace(/"/g,'""')+'"');
+                csv += cols.join(',') + '\n';
             });
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `asistencia_${document.getElementById('fechaFiltro').value}.csv`;
-            a.click();
+            const blob = new Blob([csv], {type:'text/csv'});
+            const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
+            a.download=`asistencia_${document.getElementById('fechaFiltro').value}.csv`; a.click();
         }
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("📍 Control de Asistencia", contenido, "asistencia"))
 
 
-# ------------------------------------------------------------
-# CHECKIN – PÁGINA DEL TÉCNICO: escanea QR y registra ubicación
-# ------------------------------------------------------------
 @router.get("/app/checkin", response_class=HTMLResponse)
 async def checkin_tecnico():
     contenido = """
