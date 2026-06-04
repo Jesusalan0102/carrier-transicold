@@ -2364,198 +2364,683 @@ async def checkin_tecnico():
     contenido = """
     <script>if (window.role !== 'tecnico') { window.location.href = '/app/dashboard'; }</script>
 
-    <div style="max-width:480px; margin:0 auto;">
+    <style>
+      /* ── Variables ── */
+      :root {
+        --ct-blue:       #004B87;
+        --ct-blue-light: #0066BB;
+        --ct-blue-dim:   #E8F0F8;
+        --ct-green:      #16A34A;
+        --ct-green-dim:  #DCFCE7;
+        --ct-amber:      #D97706;
+        --ct-amber-dim:  #FEF3C7;
+        --ct-red:        #DC2626;
+        --ct-red-dim:    #FEE2E2;
+        --ct-bg:         #F2F1ED;
+        --ct-card:       #FFFFFF;
+        --ct-border:     rgba(0,0,0,0.07);
+        --ct-text:       #111827;
+        --ct-muted:      #6B7280;
+        --ct-radius:     16px;
+      }
 
-        <!-- Estado inicial -->
-        <div id="estadoInicial">
-            <div class="evidencia-info" style="margin-bottom:20px; text-align:center;">
-                <div style="font-size:3rem; margin-bottom:8px;">📍</div>
-                <b style="font-size:1.1rem;">Registro de Asistencia</b><br>
-                <span style="font-size:0.88rem;">Escanea el código QR para registrar tu entrada.</span>
-            </div>
+      .ct-wrap { width:100%; max-width:460px; margin:0 auto; padding-bottom:2rem; }
 
-            <!-- Cámara para escanear QR -->
-            <div style="background:white; border-radius:16px; padding:20px; box-shadow:0 4px 16px rgba(0,43,91,0.1); margin-bottom:20px; text-align:center;">
-                <div class="section-title" style="margin-top:0;">📷 Escanear QR</div>
-                <video id="qrVideo" style="width:100%; border-radius:10px; max-height:280px; background:#000;" autoplay playsinline></video>
-                <canvas id="qrCanvasHidden" style="display:none;"></canvas>
-                <p id="scanStatus" style="font-size:0.85rem; color:#6b7280; margin-top:8px;">Iniciando cámara...</p>
-                <button class="btn-primary" style="margin-top:10px;" onclick="iniciarCamara()">🔄 Activar Cámara</button>
-            </div>
+      /* Greeting */
+      .ct-greeting {
+        background: var(--ct-blue);
+        border-radius: var(--ct-radius);
+        padding: 1.25rem 1.5rem;
+        color: white;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .ct-greeting-left h2 { font-size:18px; font-weight:600; }
+      .ct-greeting-left p  { font-size:13px; opacity:0.75; margin-top:2px; }
+      .ct-greeting-time {
+        font-family: 'DM Mono', monospace;
+        font-size: 28px; font-weight: 500;
+        letter-spacing: -1px; white-space: nowrap;
+      }
 
-            <!-- O bien, si ya viene con token en URL -->
-            <div id="tokenUrlSection" style="display:none; background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px; padding:16px; margin-bottom:20px; text-align:center;">
-                <p style="font-size:0.9rem; margin-bottom:12px;">✅ QR detectado desde enlace</p>
-                <button class="btn-primary" onclick="procesarDesdeURL()">📍 Registrar mi Asistencia</button>
-            </div>
+      /* Today card */
+      .ct-today {
+        background: var(--ct-card);
+        border: 1px solid var(--ct-border);
+        border-radius: var(--ct-radius);
+        padding: 1.25rem;
+        margin-bottom: 1rem;
+      }
+      .ct-today-label {
+        font-size:11px; font-weight:600; letter-spacing:0.08em;
+        text-transform:uppercase; color:var(--ct-muted); margin-bottom:14px;
+      }
+      .ct-times { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px; }
+      .ct-time-box {
+        background: var(--ct-bg); border-radius:12px; padding:14px; text-align:center;
+      }
+      .ct-time-box .label { font-size:11px; color:var(--ct-muted); margin-bottom:6px; }
+      .ct-time-box .value {
+        font-family: 'DM Mono', monospace;
+        font-size:24px; font-weight:500; color:var(--ct-text);
+      }
+      .ct-time-box .value.registered { color:var(--ct-green); }
+
+      /* GPS pill */
+      .ct-gps-pill {
+        display:inline-flex; align-items:center; gap:6px;
+        background:var(--ct-bg); border-radius:20px;
+        padding:6px 12px; font-size:12px; color:var(--ct-muted);
+        margin-bottom:16px;
+      }
+      .ct-gps-pill .dot {
+        width:8px; height:8px; border-radius:50%;
+        background:var(--ct-muted); flex-shrink:0; transition:background 0.3s;
+      }
+      .ct-gps-pill .dot.ok   { background:var(--ct-green); }
+      .ct-gps-pill .dot.warn { background:var(--ct-amber); }
+      .ct-gps-pill .dot.bad  { background:var(--ct-red); }
+
+      /* Action buttons */
+      .ct-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+      .ct-btn {
+        padding:14px 10px; border:none; border-radius:12px;
+        font-family:inherit; font-size:14px; font-weight:600;
+        cursor:pointer; display:flex; align-items:center;
+        justify-content:center; gap:7px;
+        transition:opacity 0.15s, transform 0.1s;
+      }
+      .ct-btn:active { transform:scale(0.97); opacity:0.85; }
+      .ct-btn-entrada { background:var(--ct-blue); color:white; }
+      .ct-btn-salida  { background:var(--ct-blue-dim); color:var(--ct-blue); }
+      .ct-btn:disabled { opacity:0.4; pointer-events:none; }
+
+      /* History */
+      .ct-history {
+        background:var(--ct-card);
+        border:1px solid var(--ct-border);
+        border-radius:var(--ct-radius);
+        overflow:hidden; margin-bottom:1rem;
+      }
+      .ct-history-header {
+        padding:1rem 1.25rem 0.75rem;
+        font-size:11px; font-weight:600; letter-spacing:0.08em;
+        text-transform:uppercase; color:var(--ct-muted);
+        border-bottom:1px solid var(--ct-border);
+      }
+      .ct-history-row {
+        display:grid; grid-template-columns:1fr 80px 80px;
+        padding:11px 1.25rem;
+        border-bottom:1px solid var(--ct-border);
+        align-items:center; font-size:14px;
+      }
+      .ct-history-row:last-child { border-bottom:none; }
+      .ct-history-row .fecha { color:var(--ct-muted); font-size:13px; }
+      .ct-history-row .mono  { font-family:'DM Mono',monospace; font-size:13px; font-weight:500; }
+      .ct-history-row .mono.ok  { color:var(--ct-green); }
+      .ct-history-row .mono.dim { color:var(--ct-muted); }
+
+      /* Modal overlay */
+      .ct-modal-overlay {
+        position:fixed; inset:0;
+        background:rgba(0,0,0,0.55);
+        backdrop-filter:blur(4px);
+        z-index:999;
+        display:none; align-items:flex-end; justify-content:center;
+      }
+      .ct-modal-overlay.open { display:flex; }
+      .ct-modal {
+        background:var(--ct-card);
+        border-radius:24px 24px 0 0;
+        width:100%; max-width:480px;
+        max-height:92vh; overflow-y:auto;
+        animation:ctSlideUp 0.28s cubic-bezier(0.34,1.3,0.64,1);
+      }
+      @keyframes ctSlideUp {
+        from { transform:translateY(60px); opacity:0; }
+        to   { transform:translateY(0);    opacity:1; }
+      }
+
+      /* Progress steps */
+      .ct-steps {
+        display:flex; align-items:center; justify-content:center;
+        gap:8px; padding:20px 24px 0;
+      }
+      .ct-step-dot {
+        width:8px; height:8px; border-radius:50%;
+        background:#E5E7EB; transition:all 0.3s;
+      }
+      .ct-step-dot.active  { background:var(--ct-blue); width:24px; border-radius:4px; }
+      .ct-step-dot.done    { background:var(--ct-green); }
+
+      .ct-modal-drag {
+        width:40px; height:4px; background:#E5E7EB;
+        border-radius:2px; margin:12px auto 0;
+      }
+      .ct-modal-head {
+        display:flex; align-items:center; justify-content:space-between;
+        padding:16px 20px 12px;
+      }
+      .ct-modal-head h3 { font-size:17px; font-weight:600; }
+      .ct-modal-head p  { font-size:13px; color:var(--ct-muted); margin-top:2px; }
+      .ct-modal-close {
+        width:32px; height:32px; border-radius:50%;
+        background:var(--ct-bg); border:none; cursor:pointer;
+        font-size:16px; display:flex; align-items:center; justify-content:center;
+        color:var(--ct-muted); flex-shrink:0;
+      }
+      .ct-paso { padding:0 20px 24px; }
+
+      /* Scanner */
+      .ct-scanner-wrap {
+        position:relative; background:#0A1521;
+        border-radius:16px; overflow:hidden; aspect-ratio:1/1;
+      }
+      #ct-qr-video { width:100%; height:100%; object-fit:cover; display:block; }
+      .ct-scanner-frame {
+        position:absolute; inset:0;
+        display:flex; align-items:center; justify-content:center;
+      }
+      .ct-scanner-frame svg { width:65%; height:65%; opacity:0.6; }
+      .ct-scan-line {
+        position:absolute; left:12%; right:12%;
+        height:2px;
+        background:linear-gradient(90deg,transparent,#00FFCC,#00FFCC,transparent);
+        animation:ctScanMove 2s ease-in-out infinite;
+      }
+      @keyframes ctScanMove { 0%{top:20%} 50%{top:80%} 100%{top:20%} }
+      #ct-qr-status { text-align:center; font-size:13px; color:var(--ct-muted); margin-top:12px; min-height:20px; }
+      .ct-qr-ok {
+        background:var(--ct-green-dim); color:var(--ct-green);
+        border-radius:8px; padding:8px 14px;
+        font-size:13px; font-weight:500;
+        text-align:center; display:none; margin-top:10px;
+      }
+
+      /* Selfie paso 2 */
+      .ct-selfie-area { text-align:center; padding:10px 0 6px; }
+      .ct-selfie-icon {
+        width:80px; height:80px; border-radius:50%;
+        background:var(--ct-blue-dim);
+        display:flex; align-items:center; justify-content:center;
+        margin:0 auto 16px; font-size:36px; color:var(--ct-blue);
+      }
+      .ct-selfie-area h4 { font-size:16px; font-weight:600; margin-bottom:6px; }
+      .ct-selfie-area p  { font-size:13px; color:var(--ct-muted); line-height:1.5; }
+
+      /* Confirm paso 3 */
+      #ct-preview-img {
+        width:100%; border-radius:14px; margin-bottom:14px; display:none;
+        max-height:240px; object-fit:cover;
+      }
+      .ct-confirm-info {
+        background:var(--ct-bg); border-radius:12px;
+        padding:14px; margin-bottom:16px;
+        display:grid; grid-template-columns:1fr 1fr; gap:10px;
+      }
+      .ct-confirm-info .item .k { font-size:11px; color:var(--ct-muted); text-transform:uppercase; letter-spacing:0.05em; }
+      .ct-confirm-info .item .v { font-size:14px; font-weight:600; margin-top:2px; }
+
+      /* Modal button */
+      .ct-modal-btn {
+        width:100%; padding:15px; border:none; border-radius:12px;
+        background:var(--ct-blue); color:white;
+        font-family:inherit; font-size:15px; font-weight:600;
+        cursor:pointer; display:flex; align-items:center;
+        justify-content:center; gap:8px;
+        transition:opacity 0.15s, transform 0.1s;
+      }
+      .ct-modal-btn:active  { transform:scale(0.98); opacity:0.9; }
+      .ct-modal-btn:disabled { opacity:0.4; pointer-events:none; }
+      .ct-modal-btn.success { background:var(--ct-green); }
+
+      /* Toast */
+      .ct-toast {
+        position:fixed; bottom:80px; left:50%; transform:translateX(-50%) translateY(20px);
+        background:#111; color:white; border-radius:12px;
+        padding:12px 20px; font-size:14px; font-weight:500;
+        white-space:nowrap; opacity:0; pointer-events:none;
+        transition:all 0.3s; z-index:1100;
+      }
+      .ct-toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+      .ct-toast.green { background:var(--ct-green); }
+      .ct-toast.red   { background:var(--ct-red); }
+    </style>
+
+    <div class="ct-wrap">
+
+      <!-- Saludo / hora -->
+      <div class="ct-greeting">
+        <div class="ct-greeting-left">
+          <h2 id="ct-saludo">Hola 👋</h2>
+          <p id="ct-fecha">—</p>
+        </div>
+        <div class="ct-greeting-time" id="ct-hora-actual">--:--</div>
+      </div>
+
+      <!-- Turno de hoy -->
+      <div class="ct-today">
+        <div class="ct-today-label">Turno de hoy</div>
+        <div class="ct-times">
+          <div class="ct-time-box">
+            <div class="label">↪ Entrada</div>
+            <div class="value" id="p-hora-entrada">--:--</div>
+          </div>
+          <div class="ct-time-box">
+            <div class="label">↩ Salida</div>
+            <div class="value" id="p-hora-salida">--:--</div>
+          </div>
         </div>
 
-        <!-- Estado de procesamiento -->
-        <div id="estadoProcesando" style="display:none; text-align:center; padding:40px 20px;">
-            <div style="font-size:3rem; margin-bottom:12px;">⏳</div>
-            <p style="font-weight:600; color:#374151;">Obteniendo tu ubicación...</p>
-            <p style="font-size:0.85rem; color:#6b7280;">Asegúrate de tener el GPS activado.</p>
+        <div class="ct-gps-pill">
+          <div class="dot" id="ct-gps-dot"></div>
+          <span id="ct-gps-label">Obteniendo ubicación...</span>
         </div>
 
-        <!-- Resultado -->
-        <div id="estadoResultado" style="display:none; text-align:center; padding:20px;">
+        <div class="ct-actions">
+          <button class="ct-btn ct-btn-entrada" onclick="abrirModalQR('entrada')">
+            ↪ Entrada
+          </button>
+          <button class="ct-btn ct-btn-salida" onclick="abrirModalQR('salida')">
+            ↩ Salida
+          </button>
         </div>
+      </div>
+
+      <!-- Historial reciente -->
+      <div class="ct-history">
+        <div class="ct-history-header">📋 Historial reciente</div>
+        <div id="ct-historial-body">
+          <div style="padding:20px;text-align:center;color:var(--ct-muted);font-size:13px;">Cargando...</div>
+        </div>
+      </div>
 
     </div>
 
+    <!-- ===== MODAL 3 PASOS ===== -->
+    <div class="ct-modal-overlay" id="ct-modal-overlay">
+      <div class="ct-modal">
+        <div class="ct-modal-drag"></div>
+
+        <div class="ct-steps">
+          <div class="ct-step-dot active" id="dot1"></div>
+          <div class="ct-step-dot" id="dot2"></div>
+          <div class="ct-step-dot" id="dot3"></div>
+        </div>
+
+        <div class="ct-modal-head">
+          <div>
+            <h3 id="ct-modal-title">Escanear QR</h3>
+            <p id="ct-modal-subtitle">Apunta la cámara al código QR</p>
+          </div>
+          <button class="ct-modal-close" onclick="cerrarModalQR()">✕</button>
+        </div>
+
+        <!-- Paso 1: QR Scanner -->
+        <div id="ct-paso1" class="ct-paso">
+          <div class="ct-scanner-wrap">
+            <video id="ct-qr-video" playsinline autoplay muted></video>
+            <canvas id="ct-qr-canvas" style="display:none;"></canvas>
+            <div class="ct-scanner-frame">
+              <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 60V20H60" stroke="white" stroke-width="6" stroke-linecap="round"/>
+                <path d="M140 20H180V60" stroke="white" stroke-width="6" stroke-linecap="round"/>
+                <path d="M180 140V180H140" stroke="white" stroke-width="6" stroke-linecap="round"/>
+                <path d="M60 180H20V140" stroke="white" stroke-width="6" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="ct-scan-line"></div>
+          </div>
+          <div id="ct-qr-status">Buscando código QR...</div>
+          <div class="ct-qr-ok" id="ct-qr-result">✅ QR válido detectado</div>
+        </div>
+
+        <!-- Paso 2: Selfie -->
+        <div id="ct-paso2" class="ct-paso" style="display:none;">
+          <div class="ct-selfie-area">
+            <div class="ct-selfie-icon">📸</div>
+            <h4>Confirma tu identidad</h4>
+            <p>Toma una foto para verificar<br>que eres tú quien registra la asistencia</p>
+          </div>
+          <div style="height:16px;"></div>
+          <button class="ct-modal-btn" onclick="ct_lanzarFotoConfirmacion()">
+            📷 Tomar selfie
+          </button>
+          <input type="file" id="ct-input-selfie" accept="image/*" capture="user"
+                 style="display:none;" onchange="ct_onSelfieSeleccionada(this)">
+        </div>
+
+        <!-- Paso 3: Confirmar -->
+        <div id="ct-paso3" class="ct-paso" style="display:none;">
+          <img id="ct-preview-img" alt="Selfie">
+          <div class="ct-confirm-info">
+            <div class="item"><div class="k">Tipo</div><div class="v" id="ct-paso3-tipo">—</div></div>
+            <div class="item"><div class="k">Hora</div><div class="v" id="ct-paso3-hora">—</div></div>
+            <div class="item"><div class="k">GPS</div><div class="v" id="ct-paso3-gps">—</div></div>
+            <div class="item"><div class="k">Usuario</div><div class="v" id="ct-paso3-user">—</div></div>
+          </div>
+          <button id="ct-btn-confirmar" class="ct-modal-btn" onclick="ct_confirmarRegistro()">
+            ✅ Confirmar registro
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="ct-toast" id="ct-toast"></div>
+
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
     <script>
-        let streamCamera = null;
-        let scanLoop = null;
-        let qrParams = null;
+    // ── Estado global ──────────────────────────────────────────────────────────
+    var _ctTipo        = null;   // 'entrada' | 'salida'
+    var _ctStream      = null;   // MediaStream de la cámara
+    var _ctScanLoop    = null;   // setInterval del scanner
+    var _ctSelfieB64   = null;   // foto base64
+    var _ctGeocoords   = null;   // { lat, lon, accuracy }
+    var _ctGeocerca    = null;   // { lat_fija, lon_fija, radio_metros }
 
-        // Revisar si ya vienen parámetros en la URL
-        window.addEventListener('DOMContentLoaded', () => {
-            const params = new URLSearchParams(window.location.search);
-            if (params.has('lat') && params.has('lon') && params.has('radio')) {
-                qrParams = {
-                    lat: parseFloat(params.get('lat')),
-                    lon: parseFloat(params.get('lon')),
-                    radio: parseInt(params.get('radio'))
-                };
-                document.getElementById('tokenUrlSection').style.display = 'block';
-            } else {
-                iniciarCamara();
-            }
+    // ── Toast ──────────────────────────────────────────────────────────────────
+    function ctToast(msg, type) {
+      var t = document.getElementById('ct-toast');
+      t.textContent = msg;
+      t.className = 'ct-toast show ' + (type || '');
+      setTimeout(function() { t.className = 'ct-toast'; }, 3200);
+    }
+
+    // ── Hora / Saludo ──────────────────────────────────────────────────────────
+    function _ctActualizarHora() {
+      var hora = new Intl.DateTimeFormat('es-MX', { timeZone:'America/Tijuana', hour:'2-digit', minute:'2-digit', hour12:false }).format(new Date());
+      var el = document.getElementById('ct-hora-actual');
+      if (el) el.textContent = hora;
+    }
+    setInterval(_ctActualizarHora, 15000);
+    _ctActualizarHora();
+
+    (function() {
+      var ahora = new Date();
+      var fechaEl = document.getElementById('ct-fecha');
+      if (fechaEl) fechaEl.textContent = ahora.toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long' });
+      var h = parseInt(new Date().toLocaleString('es-MX', { timeZone:'America/Tijuana', hour:'numeric', hour12:false }));
+      var saludo = h < 12 ? '¡Buenos días 👋' : h < 19 ? '¡Buenas tardes 👋' : '¡Buenas noches 👋';
+      var saludoEl = document.getElementById('ct-saludo');
+      if (saludoEl) saludoEl.textContent = saludo;
+    })();
+
+    // ── Carga de datos ─────────────────────────────────────────────────────────
+    async function _ctCargarHorarioHoy() {
+      try {
+        var hoy = new Intl.DateTimeFormat('en-CA', { timeZone:'America/Tijuana' }).format(new Date());
+        var username = window.username || '';
+        var res = await window.fetchAuth('/api/horarios/hoy?username=' + username + '&fecha=' + hoy);
+        var data = await res.json();
+        var h = data.horario || {};
+        var eEl = document.getElementById('p-hora-entrada');
+        var sEl = document.getElementById('p-hora-salida');
+        if (h.hora_entrada) { eEl.textContent = h.hora_entrada.slice(0,5); eEl.classList.add('registered'); }
+        if (h.hora_salida)  { sEl.textContent = h.hora_salida.slice(0,5);  sEl.classList.add('registered'); }
+      } catch(e) {}
+    }
+
+    async function _ctCargarHistorial() {
+      try {
+        var res = await window.fetchAuth('/api/horarios/mios');
+        var data = await res.json();
+        var body = document.getElementById('ct-historial-body');
+        if (!data || data.length === 0) {
+          body.innerHTML = '<div style="padding:20px;text-align:center;color:var(--ct-muted);font-size:13px;">Sin registros recientes</div>';
+          return;
+        }
+        body.innerHTML = data.slice(0, 7).map(function(h) {
+          var entrada = h.hora_entrada ? '<span class="mono ok">' + h.hora_entrada.slice(0,5) + '</span>' : '<span class="mono dim">—</span>';
+          var salida  = h.hora_salida  ? '<span class="mono ok">' + h.hora_salida.slice(0,5)  + '</span>' : '<span class="mono dim">—</span>';
+          return '<div class="ct-history-row"><span class="fecha">' + h.fecha + '</span>' + entrada + salida + '</div>';
+        }).join('');
+      } catch(e) {}
+    }
+
+    // ── Geocerca ───────────────────────────────────────────────────────────────
+    async function _ctCargarGeocerca() {
+      // 1. Primero intentar parámetros URL (QR dinámico del admin)
+      var params = new URLSearchParams(window.location.search);
+      if (params.has('lat') && params.has('lon') && params.has('radio')) {
+        _ctGeocerca = {
+          lat_fija:    parseFloat(params.get('lat')),
+          lon_fija:    parseFloat(params.get('lon')),
+          radio_metros: parseInt(params.get('radio'))
+        };
+        return;
+      }
+      // 2. Sin parámetros: cargar del servidor (QR fijo impreso)
+      try {
+        var res = await window.fetchAuth('/api/asistencia/configuracion');
+        if (res.ok) _ctGeocerca = await res.json();
+      } catch(e) {}
+    }
+
+    // ── GPS badge ──────────────────────────────────────────────────────────────
+    function _ctGPSBadge(accuracy) {
+      var dot   = document.getElementById('ct-gps-dot');
+      var label = document.getElementById('ct-gps-label');
+      if (!dot) return;
+      if (accuracy <= 50) {
+        dot.className = 'dot ok';
+        label.textContent = 'Ubicación precisa (±' + Math.round(accuracy) + 'm)';
+      } else if (accuracy <= 120) {
+        dot.className = 'dot warn';
+        label.textContent = 'Ubicación aceptable (±' + Math.round(accuracy) + 'm)';
+      } else {
+        dot.className = 'dot bad';
+        label.textContent = 'Señal GPS débil (±' + Math.round(accuracy) + 'm)';
+      }
+    }
+
+    // ── Init ───────────────────────────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', function() {
+      _ctCargarHorarioHoy();
+      _ctCargarHistorial();
+      _ctCargarGeocerca();
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          function(pos) {
+            _ctGPSBadge(pos.coords.accuracy);
+            _ctGeocoords = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy };
+          },
+          function() {
+            var dot = document.getElementById('ct-gps-dot');
+            var label = document.getElementById('ct-gps-label');
+            if (dot) dot.className = 'dot bad';
+            if (label) label.textContent = 'Sin permiso de ubicación';
+          },
+          { enableHighAccuracy: true, timeout: 10000 }
+        );
+      }
+    });
+
+    // ── Modal QR ───────────────────────────────────────────────────────────────
+    function abrirModalQR(tipo) {
+      _ctTipo      = tipo;
+      _ctSelfieB64 = null;
+
+      // Actualizar títulos
+      var label = tipo === 'entrada' ? 'Entrada' : 'Salida';
+      document.getElementById('ct-modal-title').textContent    = 'Escanear QR — ' + label;
+      document.getElementById('ct-modal-subtitle').textContent = 'Apunta la cámara al código QR';
+
+      // Resetear pasos
+      _ctIrPaso(1);
+      document.getElementById('ct-modal-overlay').classList.add('open');
+
+      // Iniciar cámara trasera para escanear QR
+      _ctIniciarScanner();
+    }
+
+    function cerrarModalQR() {
+      document.getElementById('ct-modal-overlay').classList.remove('open');
+      _ctDetenerCamara();
+    }
+
+    // ── Paso 1: Scanner QR ─────────────────────────────────────────────────────
+    function _ctIniciarScanner() {
+      document.getElementById('ct-qr-status').textContent = 'Solicitando cámara...';
+      document.getElementById('ct-qr-result').style.display = 'none';
+
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        .then(function(stream) {
+          _ctStream = stream;
+          var video = document.getElementById('ct-qr-video');
+          video.srcObject = stream;
+          video.play();
+          document.getElementById('ct-qr-status').textContent = '🔍 Apunta al código QR...';
+          _ctScanLoop = setInterval(_ctEscanearFrame, 300);
+        })
+        .catch(function() {
+          // Si no hay cámara, intentar con parámetros de URL o geocerca cargada
+          document.getElementById('ct-qr-status').textContent = '⚠️ Sin cámara — usando configuración del servidor';
+          if (_ctGeocerca) {
+            setTimeout(function() {
+              document.getElementById('ct-qr-result').style.display = 'block';
+              document.getElementById('ct-qr-result').textContent = '✅ Geocerca cargada correctamente';
+              setTimeout(function() { _ctIrPaso(2); }, 900);
+            }, 600);
+          } else {
+            document.getElementById('ct-qr-status').textContent = '❌ No hay cámara ni configuración. Recarga la página.';
+          }
         });
+    }
 
-        function iniciarCamara() {
-            document.getElementById('scanStatus').textContent = 'Solicitando acceso a la cámara...';
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-                .then(stream => {
-                    streamCamera = stream;
-                    const video = document.getElementById('qrVideo');
-                    video.srcObject = stream;
-                    video.play();
-                    document.getElementById('scanStatus').textContent = '🔍 Apunta al código QR...';
-                    scanLoop = setInterval(() => escanearFrame(), 400);
-                })
-                .catch(() => {
-                    document.getElementById('scanStatus').textContent = '⚠️ No se pudo acceder a la cámara. Usa el enlace directo del QR.';
-                });
+    function _ctEscanearFrame() {
+      var video  = document.getElementById('ct-qr-video');
+      var canvas = document.getElementById('ct-qr-canvas');
+      if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      var ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      var code = jsQR(imageData.data, imageData.width, imageData.height);
+      if (!code) return;
+
+      // QR detectado — parsear
+      clearInterval(_ctScanLoop);
+      try {
+        var url = new URL(code.data);
+        var p   = url.searchParams;
+        var lat  = parseFloat(p.get('lat'));
+        var lon  = parseFloat(p.get('lon'));
+        var rad  = parseInt(p.get('radio'));
+        if (isNaN(lat) || isNaN(lon)) throw new Error('sin coordenadas');
+        _ctGeocerca = { lat_fija: lat, lon_fija: lon, radio_metros: rad };
+        document.getElementById('ct-qr-result').style.display = 'block';
+        document.getElementById('ct-qr-status').textContent   = '✅ QR reconocido';
+        _ctDetenerCamara();
+        setTimeout(function() { _ctIrPaso(2); }, 700);
+      } catch(e) {
+        document.getElementById('ct-qr-status').textContent = '❌ QR no reconocido. Intenta de nuevo.';
+        _ctScanLoop = setInterval(_ctEscanearFrame, 300);
+      }
+    }
+
+    // ── Paso 2: Selfie ─────────────────────────────────────────────────────────
+    function ct_lanzarFotoConfirmacion() {
+      document.getElementById('ct-input-selfie').click();
+    }
+
+    function ct_onSelfieSeleccionada(input) {
+      if (!input.files || !input.files[0]) return;
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        _ctSelfieB64 = e.target.result;
+        _ctIrPaso(3);
+        // Preview
+        var img = document.getElementById('ct-preview-img');
+        img.src = _ctSelfieB64;
+        img.style.display = 'block';
+        // Rellenar datos resumen
+        var hora = new Intl.DateTimeFormat('es-MX', { timeZone:'America/Tijuana', hour:'2-digit', minute:'2-digit', hour12:false }).format(new Date());
+        document.getElementById('ct-paso3-tipo').textContent = _ctTipo === 'entrada' ? 'Entrada' : 'Salida';
+        document.getElementById('ct-paso3-hora').textContent = hora;
+        document.getElementById('ct-paso3-user').textContent = window.username || '—';
+        // GPS
+        if (_ctGeocoords) {
+          document.getElementById('ct-paso3-gps').textContent = '±' + Math.round(_ctGeocoords.accuracy || 0) + 'm';
+        } else {
+          document.getElementById('ct-paso3-gps').textContent = 'Sin GPS';
         }
+      };
+      reader.readAsDataURL(input.files[0]);
+    }
 
-        function escanearFrame() {
-            const video = document.getElementById('qrVideo');
-            const canvas = document.getElementById('qrCanvasHidden');
-            if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const code = jsQR(imageData.data, imageData.width, imageData.height);
-            if (code) {
-                clearInterval(scanLoop);
-                if (streamCamera) streamCamera.getTracks().forEach(t => t.stop());
-                try {
-                    const url = new URL(code.data);
-                    const p = url.searchParams;
-                    qrParams = {
-                        lat: parseFloat(p.get('lat')),
-                        lon: parseFloat(p.get('lon')),
-                        radio: parseInt(p.get('radio'))
-                    };
-                    if (isNaN(qrParams.lat) || isNaN(qrParams.lon)) throw new Error('QR inválido');
-                    document.getElementById('scanStatus').textContent = '✅ QR leído correctamente';
-                    procesarCheckin();
-                } catch {
-                    document.getElementById('scanStatus').textContent = '❌ QR no reconocido. Intenta de nuevo.';
-                    scanLoop = setInterval(() => escanearFrame(), 400);
-                }
-            }
+    // ── Paso 3: Confirmar ──────────────────────────────────────────────────────
+    async function ct_confirmarRegistro() {
+      var btn = document.getElementById('ct-btn-confirmar');
+      btn.disabled = true;
+      btn.textContent = '⏳ Enviando...';
+
+      // Intentar obtener GPS actualizado si no lo tenemos
+      var lat = 0, lon = 0, accuracy = null;
+      if (_ctGeocoords) {
+        lat      = _ctGeocoords.lat;
+        lon      = _ctGeocoords.lon;
+        accuracy = _ctGeocoords.accuracy || null;
+      }
+
+      try {
+        var res = await window.fetchAuth('/api/asistencia/registrar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tipo:       _ctTipo,
+            lat:        lat,
+            lon:        lon,
+            accuracy:   accuracy,
+            foto_base64: _ctSelfieB64 || null
+          })
+        });
+        var data = await res.json();
+
+        if (res.ok && data.ok) {
+          btn.textContent = '✅ ¡Registrado!';
+          btn.classList.add('success');
+          ctToast(data.mensaje || '✅ Asistencia registrada', 'green');
+          // Actualizar horario de hoy en la tarjeta
+          _ctCargarHorarioHoy();
+          _ctCargarHistorial();
+          setTimeout(function() { cerrarModalQR(); }, 1500);
+        } else {
+          var detalle = data.detail || {};
+          var msg = (typeof detalle === 'string') ? detalle : (detalle.mensaje || JSON.stringify(detalle));
+          ctToast('❌ ' + msg, 'red');
+          btn.disabled = false;
+          btn.textContent = '✅ Confirmar registro';
         }
+      } catch(e) {
+        ctToast('❌ Error de conexión. Intenta de nuevo.', 'red');
+        btn.disabled = false;
+        btn.textContent = '✅ Confirmar registro';
+      }
+    }
 
-        function procesarDesdeURL() {
-            if (!qrParams) return alert('No se detectaron parámetros del QR.');
-            procesarCheckin();
-        }
+    // ── Navegación pasos ───────────────────────────────────────────────────────
+    function _ctIrPaso(n) {
+      [1,2,3].forEach(function(i) {
+        document.getElementById('ct-paso' + i).style.display = i === n ? 'block' : 'none';
+        var dot = document.getElementById('dot' + i);
+        dot.className = 'ct-step-dot' + (i < n ? ' done' : i === n ? ' active' : '');
+      });
+      var titulos = ['Escanear QR', 'Foto de verificación', 'Confirmar registro'];
+      var subtitulos = ['Apunta la cámara al código QR', 'Toma una selfie para verificar tu identidad', 'Revisa los datos y confirma'];
+      document.getElementById('ct-modal-title').textContent    = titulos[n-1];
+      document.getElementById('ct-modal-subtitle').textContent = subtitulos[n-1];
+    }
 
-        function procesarCheckin() {
-            document.getElementById('estadoInicial').style.display = 'none';
-            document.getElementById('estadoProcesando').style.display = 'block';
-
-            if (!navigator.geolocation) {
-                mostrarResultado(false, 'Tu navegador no soporta geolocalización.');
-                return;
-            }
-
-            navigator.geolocation.getCurrentPosition(
-                pos => {
-                    const latTec = pos.coords.latitude;
-                    const lonTec = pos.coords.longitude;
-                    const distancia = calcularDistancia(latTec, lonTec, qrParams.lat, qrParams.lon);
-                    const dentroRadio = distancia <= qrParams.radio;
-                    enviarRegistro(latTec, lonTec, distancia, dentroRadio);
-                },
-                err => {
-                    mostrarResultado(false, 'No se pudo obtener tu ubicación GPS. Activa la localización e intenta de nuevo.');
-                },
-                { enableHighAccuracy: true, timeout: 10000 }
-            );
-        }
-
-        async function enviarRegistro(latTec, lonTec, distancia, dentroRadio) {
-            try {
-                const res = await fetchAuth('/api/asistencia/registrar', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        lat_fija: qrParams.lat,
-                        lon_fija: qrParams.lon,
-                        radio: qrParams.radio,
-                        lat_tecnico: latTec,
-                        lon_tecnico: lonTec,
-                        distancia_m: Math.round(distancia),
-                        dentro_radio: dentroRadio
-                    })
-                });
-                const data = await res.json();
-                mostrarResultado(dentroRadio, data.mensaje || (dentroRadio ? 'Asistencia registrada.' : 'Estás fuera del área permitida.'), latTec, lonTec, Math.round(distancia));
-            } catch {
-                mostrarResultado(false, 'Error al conectar con el servidor. Verifica tu conexión.');
-            }
-        }
-
-        function mostrarResultado(exito, mensaje, lat, lon, distancia) {
-            document.getElementById('estadoProcesando').style.display = 'none';
-            const el = document.getElementById('estadoResultado');
-            el.style.display = 'block';
-            const ahora = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
-            const iconoGrande = exito ? '✅' : '❌';
-            const color = exito ? '#16a34a' : '#dc2626';
-            const bg = exito ? '#dcfce7' : '#fee2e2';
-            const border = exito ? '#86efac' : '#fca5a5';
-            el.innerHTML = `
-                <div style="background:${bg}; border:2px solid ${border}; border-radius:20px; padding:32px 24px;">
-                    <div style="font-size:4rem; margin-bottom:12px;">${iconoGrande}</div>
-                    <h2 style="color:${color}; font-size:1.4rem; margin-bottom:8px;">${exito ? '¡Asistencia Registrada!' : 'No se pudo registrar'}</h2>
-                    <p style="color:#374151; font-size:0.95rem; margin-bottom:16px;">${mensaje}</p>
-                    ${lat ? `<div style="background:white; border-radius:12px; padding:12px; font-size:0.85rem; color:#374151; margin-bottom:16px; text-align:left;">
-                        <p>🕐 <b>Hora:</b> ${ahora}</p>
-                        <p>👤 <b>Técnico:</b> ${window.username}</p>
-                        <p>📍 <b>Tu ubicación:</b> ${lat.toFixed(5)}, ${lon.toFixed(5)}</p>
-                        <p>📏 <b>Distancia al punto:</b> ${distancia} m</p>
-                    </div>` : ''}
-                    <button class="btn-primary" onclick="window.location.href='/app/mis-tareas'">🏠 Ir a Mis Tareas</button>
-                </div>`;
-        }
-
-        // Haversine: distancia en metros entre dos coordenadas
-        function calcularDistancia(lat1, lon1, lat2, lon2) {
-            const R = 6371000;
-            const dLat = (lat2 - lat1) * Math.PI / 180;
-            const dLon = (lon2 - lon1) * Math.PI / 180;
-            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                      Math.sin(dLon/2) * Math.sin(dLon/2);
-            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        }
+    function _ctDetenerCamara() {
+      if (_ctScanLoop) { clearInterval(_ctScanLoop); _ctScanLoop = null; }
+      if (_ctStream)   { _ctStream.getTracks().forEach(function(t){ t.stop(); }); _ctStream = null; }
+    }
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("📍 Registrar Asistencia", contenido, "checkin"))
