@@ -3,7 +3,7 @@
 # Asegurar que el script se detenga si ocurre un error intermedio
 set -e
 
-echo "🚀 Iniciando entorno de producción (Junio 2026)..."
+echo "🚀 Iniciando entorno de producción (Junio 2026) — build $(date +%s)..."
 
 # Moverse al directorio del backend donde se encuentran main.py y las rutas
 cd "$(dirname "$0")"
