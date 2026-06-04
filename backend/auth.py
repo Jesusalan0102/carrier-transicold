@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
+import bcrypt as _bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 import os
@@ -10,14 +10,19 @@ SECRET_KEY = os.getenv("SECRET_KEY", "carrier_secret_key_2024_change_in_producti
 ALGORITHM  = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-pwd_context   = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
+
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    return _bcrypt.hashpw(password.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
+
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    try:
+        return _bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
+
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
@@ -25,8 +30,8 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
+
 def verify_token(credentials: str = Depends(oauth2_scheme)):
-    """Dependencia ligera — solo decodifica el JWT, sin tocar la BD."""
     exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -42,6 +47,6 @@ def verify_token(credentials: str = Depends(oauth2_scheme)):
     except JWTError:
         raise exc
 
+
 async def get_current_user(credentials: str = Depends(oauth2_scheme)):
-    """Alias de verify_token — usado por módulos de asistencia."""
     return verify_token(credentials)
