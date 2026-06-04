@@ -470,7 +470,7 @@ document.getElementById('ct-saludo').textContent = saludo;
 // ── Carga de datos ─────────────────────────────────────────────────────────
 async function cargarHorarioHoy() {
   try {
-    var hoy = new Date().toISOString().split('T')[0];
+    var hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Tijuana' }).format(new Date()); // YYYY-MM-DD en hora Tijuana
     var username = window.__ct_username || '';
     var res = await window.fetchAuth('/api/horarios/hoy?username=' + username + '&fecha=' + hoy);
     var data = await res.json();
