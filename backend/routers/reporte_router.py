@@ -147,9 +147,10 @@ def _sheet_actividades(wb, conn):
 def _sheet_tickets(wb, conn):
     ws = wb.create_sheet("Tickets")
     rows_db = _query(conn, """
-        SELECT t.id AS `Ticket #`, t.unit_number AS Unidad,
+        SELECT t.id AS `Ticket #`,
+               t.unit_number AS Unidad,
                u.vin_number AS VIN,
-               t.problema AS `Problema Reportado`,
+               t.descripcion AS `Descripción / Problema`,
                t.creado_por AS `Creado Por`,
                t.tecnico_asignado AS `Técnico Asignado`,
                t.atendido AS Atendido,
@@ -160,37 +161,6 @@ def _sheet_tickets(wb, conn):
                t.fecha_reporte AS `Fecha Reporte`
         FROM tickets t
         LEFT JOIN unidades u ON u.unit_number = t.unit_number
-        ORDER BY t.id DESC
-    """)
-    if not rows_db:
-        ws.cell(1, 1, "Sin registros").font = Font(italic=True)
-        return
-    cols = list(rows_db[0].keys())
-    _write_sheet(ws, cols, [[_safe_str(r[c]) for c in cols] for r in rows_db])
-
-
-# ── Hoja 5: Reporte Cierre Tickets ───────────────────────────────────────────
-def _sheet_cierre(wb, conn):
-    ws = wb.create_sheet("Reporte_Cierre_Tickets")
-    rows_db = _query(conn, """
-        SELECT t.id AS `Ticket #`, t.unit_number AS Unidad,
-               u.vin_number AS VIN,
-               t.problema AS `Problema Reportado`,
-               t.creado_por AS `Creado Por`,
-               t.tecnico_asignado AS `Técnico Asignado`,
-               t.fecha_creacion AS `Fecha Creación`,
-               t.fecha_atencion AS `Fecha Atención`,
-               a.actividad_id AS Actividad,
-               a.estado AS `Estado Actividad`,
-               a.fecha_inicio AS `Inicio Trabajo`,
-               a.fecha_fin AS `Fin Trabajo`,
-               a.comentario AS `Comentario Técnico`,
-               COALESCE(t.reporte_final, '—') AS `Reporte Final del Técnico`,
-               t.fecha_reporte AS `Fecha Reporte Final`,
-               t.atendido AS `Ticket Cerrado`
-        FROM tickets t
-        LEFT JOIN unidades u ON u.unit_number = t.unit_number
-        LEFT JOIN asignaciones a ON a.ticket_id = t.id
         ORDER BY t.id DESC
     """)
     if not rows_db:
@@ -483,7 +453,6 @@ def exportar_sistema_completo(current_user=Depends(verify_token)):
             ("Series_Unidades",          _sheet_unidades),
             ("Actividades",              _sheet_actividades),
             ("Tickets",                  _sheet_tickets),
-            ("Reporte_Cierre_Tickets",   _sheet_cierre),
             ("Horarios_Semanales",       _sheet_horarios),
             ("Asistencia_Retardos",      _sheet_asistencia),
             ("Resumen_Retardos_Tecnico", _sheet_resumen_retardos),
