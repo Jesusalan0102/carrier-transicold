@@ -2842,7 +2842,23 @@ async def checkin_tecnico():
     document.addEventListener('DOMContentLoaded', function() {
       _ctCargarHorarioHoy();
       _ctCargarHistorial();
-      _ctCargarGeocerca();
+
+      // Deshabilitar botones hasta que la geocerca esté lista
+      var btnE = document.querySelector('.ct-btn-entrada');
+      var btnS = document.querySelector('.ct-btn-salida');
+      if (btnE) btnE.disabled = true;
+      if (btnS) btnS.disabled = true;
+
+      _ctCargarGeocerca().then(function() {
+        if (_ctGeocerca) {
+          if (btnE) btnE.disabled = false;
+          if (btnS) btnS.disabled = false;
+        } else {
+          var gpsLabel = document.getElementById('ct-gps-label');
+          if (gpsLabel) gpsLabel.textContent = '⚠️ Sin configuración de geocerca';
+        }
+      });
+
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           function(pos) {
@@ -2865,17 +2881,22 @@ async def checkin_tecnico():
       _ctTipo      = tipo;
       _ctSelfieB64 = null;
 
-      // Actualizar títulos
       var label = tipo === 'entrada' ? 'Entrada' : 'Salida';
-      document.getElementById('ct-modal-title').textContent    = 'Escanear QR — ' + label;
-      document.getElementById('ct-modal-subtitle').textContent = 'Apunta la cámara al código QR';
-
-      // Resetear pasos
-      _ctIrPaso(1);
       document.getElementById('ct-modal-overlay').classList.add('open');
 
-      // Iniciar cámara trasera para escanear QR
-      _ctIniciarScanner();
+      // Si la geocerca ya está cargada (QR fijo del PDF o QR dinámico con params URL)
+      // → saltar el scanner y ir directo a selfie
+      if (_ctGeocerca) {
+        _ctIrPaso(2);
+        document.getElementById('ct-modal-title').textContent    = 'Foto de verificación — ' + label;
+        document.getElementById('ct-modal-subtitle').textContent = 'Toma una selfie para verificar tu identidad';
+      } else {
+        // Geocerca aún no cargada → mostrar scanner QR
+        _ctIrPaso(1);
+        document.getElementById('ct-modal-title').textContent    = 'Escanear QR — ' + label;
+        document.getElementById('ct-modal-subtitle').textContent = 'Apunta la cámara al código QR';
+        _ctIniciarScanner();
+      }
     }
 
     function cerrarModalQR() {
