@@ -47,19 +47,44 @@ def next_ticket_number(current_user=Depends(verify_token)):
 def crear_ticket(ticket: TicketCreate, current_user=Depends(verify_token)):
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo administradores")
-    res = execute_read("SELECT MAX(ticket_num) as max_num FROM tickets")
-    next_num = 1 if not res or res[0]["max_num"] is None else res[0]["max_num"] + 1
-    execute_write(
-        "INSERT INTO tickets (ticket_num, unit_number, vin_number, descripcion, creado_por) VALUES (%s,%s,%s,%s,%s)",
-        (next_num, ticket.unit_number, ticket.vin_number, ticket.descripcion, current_user["username"])
-    )
-    ticket_id = execute_read("SELECT id FROM tickets WHERE ticket_num=%s", (next_num,))
-    if ticket_id:
-        execute_write(
-            "INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado, ticket_id) VALUES (%s,%s,%s,'pendiente',%s)",
-            (ticket.unit_number, f"Ticket #{next_num}", ticket.tecnico, ticket_id[0]["id"])
-        )
-    return {"mensaje": "Ticket creado", "ticket_num": next_num}
+
+    from db import get_db_connection
+    import pymysql
+
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="No hay conexión con la base de datos")
+
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            # Bloquea la tabla para que ninguna transacción concurrente
+            # pueda leer el mismo MAX antes de que hagamos el INSERT.
+            cur.execute("SELECT MAX(ticket_num) AS max_num FROM tickets FOR UPDATE")
+            row = cur.fetchone()
+            next_num = 1 if not row or row["max_num"] is None else row["max_num"] + 1
+
+            cur.execute(
+                "INSERT INTO tickets (ticket_num, unit_number, vin_number, descripcion, creado_por) "
+                "VALUES (%s,%s,%s,%s,%s)",
+                (next_num, ticket.unit_number, ticket.vin_number,
+                 ticket.descripcion, current_user["username"])
+            )
+            ticket_id = cur.lastrowid
+
+            cur.execute(
+                "INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado, ticket_id) "
+                "VALUES (%s,%s,%s,'pendiente',%s)",
+                (ticket.unit_number, f"Ticket #{next_num}", ticket.tecnico, ticket_id)
+            )
+            conn.commit()
+
+        return {"mensaje": "Ticket creado", "ticket_num": next_num}
+
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
 
 # ── MARCAR ATENDIDO ────────────────────────────────────────────────────────
 @router.put("/{ticket_id}/atender")

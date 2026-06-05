@@ -239,7 +239,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
 
             try {{
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
+                const ws = new WebSocket(protocol + '//' + window.location.host + '/ws?token=' + encodeURIComponent(window.token || ''));
                 ws.onmessage = (event) => {{}};
                 ws.onerror = () => {{}};
             }} catch(e) {{}}

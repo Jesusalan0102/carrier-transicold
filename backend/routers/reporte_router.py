@@ -147,21 +147,21 @@ def _sheet_actividades(wb, conn):
 def _sheet_tickets(wb, conn):
     ws = wb.create_sheet("Tickets")
     rows_db = _query(conn, """
-        SELECT t.id AS `Ticket #`,
+        SELECT t.ticket_num AS `Ticket #`,
                t.unit_number AS Unidad,
                u.vin_number AS VIN,
                t.descripcion AS `Descripción / Problema`,
                t.creado_por AS `Creado Por`,
-               t.tecnico_asignado AS `Técnico Asignado`,
+               a.tecnico AS `Técnico Asignado`,
                t.atendido AS Atendido,
                t.reporte_enviado AS `Reporte Enviado`,
-               COALESCE(t.reporte_final, '—') AS `Reporte Final del Técnico`,
-               t.fecha_creacion AS `Fecha Creación`,
+               COALESCE(t.reporte_texto, '—') AS `Reporte Final del Técnico`,
                t.fecha_atencion AS `Fecha Atención`,
                t.fecha_reporte AS `Fecha Reporte`
         FROM tickets t
         LEFT JOIN unidades u ON u.unit_number = t.unit_number
-        ORDER BY t.id DESC
+        LEFT JOIN asignaciones a ON a.ticket_id = t.id
+        ORDER BY t.ticket_num DESC
     """)
     if not rows_db:
         ws.cell(1, 1, "Sin registros").font = Font(italic=True)
