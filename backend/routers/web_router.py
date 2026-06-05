@@ -190,6 +190,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/usuarios', label: '👥 Gestión de Usuarios' }},
                     {{ href: '/app/cluster', label: '⚡ Asignación por Cluster' }},
                     {{ href: '/app/asistencia', label: '📍 Control de Asistencia' }},
+                    {{ href: '/app/checkin', label: '🕐 Registrar Mi Asistencia' }},
                     {{ href: '/app/admin', label: '🛠 Panel de Administración' }},
                 ];
                 const visorMenu = [
@@ -2368,7 +2369,7 @@ async def asistencia_admin():
 @router.get("/app/checkin", response_class=HTMLResponse)
 async def checkin_tecnico():
     contenido = """
-    <script>if (window.role !== 'tecnico') { window.location.href = '/app/dashboard'; }</script>
+    <script>if (window.role !== 'tecnico' && window.role !== 'admin') { window.location.href = '/app/dashboard'; }</script>
 
     <style>
       /* ── Variables ── */
