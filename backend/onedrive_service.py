@@ -92,6 +92,55 @@ def _upload_with_retry(fn, *args, max_retries: int = 3, **kwargs):
     raise last_error
 
 
+def _ensure_folder(folder_path: str) -> str:
+    """
+    Garantiza que la carpeta (y toda su jerarquía) exista en OneDrive.
+    Si alguna carpeta del camino no existe, la crea con PATCH (upsert).
+    Devuelve el driveItem id de la carpeta final.
+
+    La Graph API NO crea carpetas intermedias al hacer PUT de un archivo:
+    si la carpeta no existe, el upload falla con 404.
+    Este helper lo resuelve recorriendo cada nivel del path.
+    """
+    token = _get_token()
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+    parts = [p for p in folder_path.strip("/").split("/") if p]
+    current_path = ""
+
+    for part in parts:
+        current_path = f"{current_path}/{part}" if current_path else part
+        url = f"{GRAPH_BASE}/me/drive/root:/{current_path}"
+
+        # Comprobar si ya existe
+        check = requests.get(url, headers=headers, timeout=15)
+        if check.status_code == 200:
+            continue  # carpeta ya existe, seguir al siguiente nivel
+
+        # No existe → crearla en el padre
+        if current_path == part:
+            # Nivel raíz: crear dentro de /root
+            parent_url = f"{GRAPH_BASE}/me/drive/root/children"
+        else:
+            parent_path = "/".join(current_path.split("/")[:-1])
+            parent_url = f"{GRAPH_BASE}/me/drive/root:/{parent_path}:/children"
+
+        body = {
+            "name": part,
+            "folder": {},
+            "@microsoft.graph.conflictBehavior": "rename",
+        }
+        create_resp = requests.post(parent_url, headers=headers, json=body, timeout=15)
+        if create_resp.status_code not in (200, 201):
+            raise Exception(
+                f"No se pudo crear carpeta '{current_path}': "
+                f"{create_resp.status_code} {create_resp.text[:200]}"
+            )
+        logger.info(f"[OneDrive] Carpeta creada: {current_path}")
+
+    return current_path
+
+
 def upload_bytes(content: bytes, onedrive_path: str, content_type: str = "application/octet-stream") -> dict:
     """Sube bytes a OneDrive personal (archivos hasta 4MB)."""
     url = f"{GRAPH_BASE}/me/drive/root:/{onedrive_path}:/content"
@@ -134,12 +183,52 @@ def upload_large_file(content: bytes, onedrive_path: str, content_type: str = "a
     return result
 
 
-def sync_evidencia(unit_number: str, nombre_archivo: str, contenido: bytes) -> str:
+def sync_evidencia(unit_number: str, nombre_archivo: str, contenido: bytes, unit_meta: dict = None) -> str:
     """
-    Sube una foto de evidencia a:
-      carrier-transicold/Evidencias/<unit_number>/<nombre_archivo>
+    Sube una foto de evidencia a OneDrive.
+
+    Estructura de carpetas:
+      carrier-transicold/Evidencias/<id_lote>/<unit_number> - <reefer_model>/
+
+    Si unit_meta es None, consulta la DB para obtener id_lote y reefer_model.
+    Si la unidad no tiene esos datos, usa solo unit_number como nombre de carpeta.
+
+    Crea la jerarquía de carpetas si no existe antes de subir el archivo.
     Incluye reintentos automáticos.
     """
+    # ── 1. Obtener metadata de la unidad ──────────────────────────────────
+    if unit_meta is None:
+        try:
+            from db import execute_read
+            rows = execute_read(
+                "SELECT id_lote, reefer_model FROM unidades WHERE unit_number=%s LIMIT 1",
+                (unit_number,)
+            )
+            unit_meta = rows[0] if rows else {}
+        except Exception as e:
+            logger.warning(f"[OneDrive] No se pudo obtener metadata de unidad {unit_number}: {e}")
+            unit_meta = {}
+
+    id_lote     = (unit_meta.get("id_lote") or "").strip()
+    reefer_model = (unit_meta.get("reefer_model") or "").strip()
+
+    # ── 2. Construir ruta de carpeta ──────────────────────────────────────
+    # Nombre de subcarpeta: "<unit_number> - <reefer_model>" o solo "<unit_number>"
+    subfolder_name = f"{unit_number} - {reefer_model}" if reefer_model else unit_number
+
+    if id_lote:
+        folder_path = f"{EVIDENCIAS_DIR}/{id_lote}/{subfolder_name}"
+    else:
+        folder_path = f"{EVIDENCIAS_DIR}/{subfolder_name}"
+
+    # ── 3. Garantizar que la carpeta existe en OneDrive ───────────────────
+    try:
+        _upload_with_retry(_ensure_folder, folder_path)
+    except Exception as e:
+        logger.error(f"[OneDrive] No se pudo crear carpeta '{folder_path}': {e}")
+        raise
+
+    # ── 4. Subir el archivo ───────────────────────────────────────────────
     ext = nombre_archivo.rsplit(".", 1)[-1].lower() if "." in nombre_archivo else "jpg"
     mime_map = {
         "jpg": "image/jpeg", "jpeg": "image/jpeg",
@@ -147,37 +236,39 @@ def sync_evidencia(unit_number: str, nombre_archivo: str, contenido: bytes) -> s
         "webp": "image/webp", "pdf": "application/pdf",
     }
     content_type = mime_map.get(ext, "application/octet-stream")
-    path = f"{EVIDENCIAS_DIR}/{unit_number}/{nombre_archivo}"
+    file_path = f"{folder_path}/{nombre_archivo}"
+
     try:
-        result  = _upload_with_retry(upload_bytes, contenido, path, content_type)
+        result  = _upload_with_retry(upload_bytes, contenido, file_path, content_type)
         web_url = result.get("webUrl", "")
-        logger.info(f"[OneDrive] Evidencia subida: {path}")
+        logger.info(f"[OneDrive] Evidencia subida: {file_path}")
         return web_url
     except Exception as e:
-        logger.error(f"[OneDrive] Error subiendo evidencia {path}: {e}")
+        logger.error(f"[OneDrive] Error subiendo evidencia {file_path}: {e}")
         raise
 
 
 def sync_evidencias_lote(unit_number: str, archivos: list[tuple[str, bytes]], max_workers: int = 4) -> dict:
     """
-    NUEVO: Sube múltiples evidencias en paralelo usando hilos.
-    
-    Args:
-        unit_number: Número de unidad
-        archivos: Lista de tuplas (nombre_archivo, contenido_bytes)
-        max_workers: Hilos simultáneos (4 es seguro para OneDrive personal)
-    
-    Returns:
-        {"subidas": [...], "errores": [...]}
-
-    Uso desde evidencias_router.py:
-        resultados = sync_evidencias_lote(unidad, [(f.filename, contenido), ...])
+    Sube múltiples evidencias en paralelo usando hilos.
+    Consulta la DB una sola vez para obtener metadata de la unidad
+    y la pasa a cada llamada individual (evita N consultas a la DB).
     """
+    try:
+        from db import execute_read
+        rows = execute_read(
+            "SELECT id_lote, reefer_model FROM unidades WHERE unit_number=%s LIMIT 1",
+            (unit_number,)
+        )
+        unit_meta = rows[0] if rows else {}
+    except Exception:
+        unit_meta = {}
+
     subidas = []
     errores = []
 
     def _subir_uno(nombre, contenido):
-        return sync_evidencia(unit_number, nombre, contenido)
+        return sync_evidencia(unit_number, nombre, contenido, unit_meta=unit_meta)
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_nombre = {
@@ -220,11 +311,32 @@ def sync_reporte_maestro(excel_bytes: bytes, fecha: str = None) -> str:
 
 def sync_zip_evidencias(unit_number: str, zip_bytes: bytes) -> str:
     """
-    Sube el ZIP de evidencias de una unidad a:
-      carrier-transicold/Evidencias/<unit_number>/<unit_number>_evidencias.zip
+    Sube el ZIP de evidencias de una unidad a la misma carpeta enriquecida:
+      carrier-transicold/Evidencias/<id_lote>/<unit_number> - <reefer_model>/
     """
+    try:
+        from db import execute_read
+        rows = execute_read(
+            "SELECT id_lote, reefer_model FROM unidades WHERE unit_number=%s LIMIT 1",
+            (unit_number,)
+        )
+        unit_meta = rows[0] if rows else {}
+    except Exception:
+        unit_meta = {}
+
+    id_lote      = (unit_meta.get("id_lote") or "").strip()
+    reefer_model = (unit_meta.get("reefer_model") or "").strip()
+    subfolder_name = f"{unit_number} - {reefer_model}" if reefer_model else unit_number
+    folder_path = f"{EVIDENCIAS_DIR}/{id_lote}/{subfolder_name}" if id_lote else f"{EVIDENCIAS_DIR}/{subfolder_name}"
+
+    try:
+        _upload_with_retry(_ensure_folder, folder_path)
+    except Exception as e:
+        logger.error(f"[OneDrive] No se pudo crear carpeta ZIP '{folder_path}': {e}")
+        raise
+
     nombre = f"{unit_number}_evidencias.zip"
-    path   = f"{EVIDENCIAS_DIR}/{unit_number}/{nombre}"
+    path   = f"{folder_path}/{nombre}"
     try:
         result  = _upload_with_retry(upload_large_file, zip_bytes, path, "application/zip")
         web_url = result.get("webUrl", "")
