@@ -2978,27 +2978,48 @@ async def checkin_tecnico():
 
     function ct_onSelfieSeleccionada(input) {
       if (!input.files || !input.files[0]) return;
-      var reader = new FileReader();
-      reader.onload = function(e) {
-        _ctSelfieB64 = e.target.result;
+      var file = input.files[0];
+      // Comprimir con Canvas antes de guardar — máx 800px, calidad 0.65 (~150KB)
+      var blobURL = URL.createObjectURL(file);
+      var tempImg = new Image();
+      tempImg.onload = function() {
+        URL.revokeObjectURL(blobURL);
+        var MAX = 800;
+        var w = tempImg.width, h = tempImg.height;
+        if (w > MAX || h > MAX) {
+          var ratio = Math.min(MAX / w, MAX / h);
+          w = Math.round(w * ratio);
+          h = Math.round(h * ratio);
+        }
+        var canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(tempImg, 0, 0, w, h);
+        _ctSelfieB64 = canvas.toDataURL('image/jpeg', 0.65);
+        _ctMostrarPaso3();
+      };
+      tempImg.onerror = function() {
+        // Fallback: usar FileReader directo si canvas falla
+        var reader = new FileReader();
+        reader.onload = function(e) { _ctSelfieB64 = e.target.result; _ctMostrarPaso3(); };
+        reader.readAsDataURL(file);
+      };
+      tempImg.src = blobURL;
+    }
+
+    function _ctMostrarPaso3() {
         _ctIrPaso(3);
-        // Preview
         var img = document.getElementById('ct-preview-img');
         img.src = _ctSelfieB64;
         img.style.display = 'block';
-        // Rellenar datos resumen
         var hora = new Intl.DateTimeFormat('es-MX', { timeZone:'America/Tijuana', hour:'2-digit', minute:'2-digit', hour12:false }).format(new Date());
         document.getElementById('ct-paso3-tipo').textContent = _ctTipo === 'entrada' ? 'Entrada' : 'Salida';
         document.getElementById('ct-paso3-hora').textContent = hora;
         document.getElementById('ct-paso3-user').textContent = window.username || '—';
-        // GPS
         if (_ctGeocoords) {
           document.getElementById('ct-paso3-gps').textContent = '±' + Math.round(_ctGeocoords.accuracy || 0) + 'm';
         } else {
           document.getElementById('ct-paso3-gps').textContent = 'Sin GPS';
         }
-      };
-      reader.readAsDataURL(input.files[0]);
     }
 
     // ── Paso 3: Confirmar ──────────────────────────────────────────────────────
