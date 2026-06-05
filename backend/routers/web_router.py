@@ -2328,12 +2328,18 @@ async def asistencia_admin():
                 if (!res.ok) { document.getElementById('tablaAsistencia').innerHTML = '<p style="color:#6b7280; padding:12px;">Sin registros para esta fecha.</p>'; return; }
                 const data = await res.json();
                 if (!data.length) { document.getElementById('tablaAsistencia').innerHTML = '<p style="color:#6b7280; padding:12px;">No hay registros para esta fecha.</p>'; return; }
-                let html = `<table><thead><tr><th>#</th><th>Técnico</th><th>Hora Entrada</th><th>Latitud</th><th>Longitud</th><th>Distancia</th><th>Estado</th></tr></thead><tbody>`;
+                let html = `<table><thead><tr><th>#</th><th>Técnico</th><th>Tipo</th><th>Hora</th><th>Latitud</th><th>Longitud</th><th>Distancia</th><th>Retardo</th><th>Estado</th></tr></thead><tbody>`;
                 data.forEach((r,i) => {
-                    const badge = r.dentro_radio
+                    const badge = r.aprobado
                         ? '<span class="badge" style="background:#dcfce7;color:#16a34a;">✅ Dentro</span>'
                         : '<span class="badge" style="background:#fee2e2;color:#dc2626;">❌ Fuera</span>';
-                    html += `<tr><td>${i+1}</td><td><b>${r.username}</b></td><td>${r.hora}</td><td>${r.lat_tecnico}</td><td>${r.lon_tecnico}</td><td>${r.distancia_m} m</td><td>${badge}</td></tr>`;
+                    const tipo  = r.tipo === 'entrada' ? '🟢 Entrada' : r.tipo === 'salida' ? '🔴 Salida' : (r.tipo || '—');
+                    const hora  = r.hora_checkin ? r.hora_checkin.slice(0,5) : '—';
+                    const lat   = r.latitud   != null ? parseFloat(r.latitud).toFixed(5)   : '—';
+                    const lon   = r.longitud  != null ? parseFloat(r.longitud).toFixed(5)  : '—';
+                    const dist  = r.distancia_metros != null ? r.distancia_metros + ' m' : '—';
+                    const ret   = r.retardo_min > 0 ? '<span style="color:#d97706;">+' + r.retardo_min + ' min</span>' : '<span style="color:#6b7280;">—</span>';
+                    html += `<tr><td>${i+1}</td><td><b>${r.username||'—'}</b></td><td>${tipo}</td><td>${hora}</td><td>${lat}</td><td>${lon}</td><td>${dist}</td><td>${ret}</td><td>${badge}</td></tr>`;
                 });
                 html += '</tbody></table>';
                 document.getElementById('tablaAsistencia').innerHTML = html;
