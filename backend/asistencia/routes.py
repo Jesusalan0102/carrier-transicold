@@ -55,20 +55,43 @@ def _semana_de_fecha(fecha_str: str) -> str:
 @router.get("/registros")
 def obtener_registros(fecha: str = Query(None)):
     connection = get_db_connection()
+
     try:
         with connection.cursor(pymysql.cursors.DictCursor) as cursor:
+
+            query = """
+                SELECT *
+                FROM registros_asistencia
+            """
+
+            params = []
+
             if fecha:
-                cursor.execute("""
-                    SELECT username, DATE_FORMAT(fecha,'%Y-%m-%d') AS fecha, tipo, hora_checkin,
-                           latitud, longitud, distancia_metros, aprobado, retardo_min
-                    FROM registros_asistencia WHERE DATE(fecha) = %s ORDER BY hora_checkin
-                """, (fecha,))
-            else:
-                cursor.execute("SELECT * FROM registros_asistencia ORDER BY fecha DESC LIMIT 500")
-            return cursor.fetchall()
+                query += " WHERE DATE(fecha) = %s "
+                params.append(fecha)
+
+            query += " ORDER BY fecha DESC LIMIT 500 "
+
+            cursor.execute(query, params)
+
+            rows = cursor.fetchall()
+
+            # Convertir fechas/horas a string
+            for row in rows:
+                for key, value in row.items():
+                    row[key] = _to_str(value)
+
+            return rows
+
+    except Exception as e:
+        print("❌ ERROR /registros:", str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error obteniendo registros: {str(e)}"
+        )
+
     finally:
         connection.close()
-
 # Debug
 @router.get("/debug-registros")
 def debug_registros(current_user=Depends(verify_token)):
