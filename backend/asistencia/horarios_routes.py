@@ -22,6 +22,7 @@ from db import execute_read, execute_write
 
 import io
 import unicodedata
+import traceback
 
 import zoneinfo
 from datetime import datetime
@@ -309,6 +310,15 @@ async def importar_excel(
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo administradores")
 
+    try:
+        return await _importar_excel_impl(semana, file)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error interno: {traceback.format_exc()[-300:]}")
+
+
+async def _importar_excel_impl(semana: str, file):
     # Validar semana
     try:
         lunes = date.fromisoformat(semana)
@@ -357,19 +367,22 @@ async def importar_excel(
         raise HTTPException(status_code=400, detail="No se encontró la columna 'Nombre Completo'")
 
     # Cargar técnicos de la BD para hacer matching
-    users_db = execute_read(
-        "SELECT username, COALESCE(nombre_completo, username) AS nombre FROM users WHERE role='tecnico'"
-    ) or []
-
-    # Intentar con nombre_completo; si la columna no existe, usar username
+    # Intentar con nombre_completo primero; si la columna no existe en el schema, caer a username
     try:
-        users_db2 = execute_read(
-            "SELECT username, nombre_completo AS nombre FROM users WHERE role='tecnico' AND nombre_completo IS NOT NULL"
+        users_db = execute_read(
+            "SELECT username, nombre_completo AS nombre FROM users WHERE role='tecnico' AND nombre_completo IS NOT NULL AND nombre_completo != ''"
         ) or []
-        if users_db2:
-            users_db = users_db2
     except Exception:
-        pass
+        users_db = []
+
+    if not users_db:
+        # nombre_completo no existe o vacío para todos -> usar username como referencia
+        try:
+            users_db = execute_read(
+                "SELECT username, username AS nombre FROM users WHERE role='tecnico'"
+            ) or []
+        except Exception:
+            users_db = []
 
     def buscar_username(nombre_excel: str) -> Optional[str]:
         mejor = None
@@ -425,9 +438,12 @@ async def importar_excel(
             sin_match.append(nombre)
 
     # Lista de técnicos disponibles para el selector de corrección manual
-    tecnicos_disponibles = [u["username"] for u in (execute_read(
-        "SELECT username FROM users WHERE role='tecnico' ORDER BY username"
-    ) or [])]
+    try:
+        tecnicos_disponibles = [u["username"] for u in (execute_read(
+            "SELECT username FROM users WHERE role='tecnico' ORDER BY username"
+        ) or [])]
+    except Exception:
+        tecnicos_disponibles = [u["username"] for u in users_db]
 
     return {
         "semana":               semana,
