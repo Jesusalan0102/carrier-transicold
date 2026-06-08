@@ -481,3 +481,43 @@ def generar_qr():
         raise HTTPException(500, str(e))
     finally:
         connection.close()
+
+
+# ── GET /api/asistencia/debug-registros ───────────────────────────────────────
+# Endpoint temporal de diagnóstico: muestra los últimos 50 registros sin filtro
+# de fecha, más el COUNT total y los últimos valores de fecha guardados en BD.
+
+@router.get("/debug-registros")
+def debug_registros(current_user=Depends(verify_token)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(403, "Solo administradores")
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(500, "No hay conexión con la base de datos")
+    try:
+        with connection.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute("SELECT COUNT(*) AS total FROM registros_asistencia")
+            total = cursor.fetchone()["total"]
+
+            cursor.execute("""
+                SELECT username,
+                       fecha,
+                       DATE_FORMAT(fecha,'%Y-%m-%d') AS fecha_fmt,
+                       tipo, hora_checkin, aprobado, retardo_min
+                FROM registros_asistencia
+                ORDER BY fecha DESC, hora_checkin DESC
+                LIMIT 50
+            """)
+            rows = cursor.fetchall()
+            result = []
+            for r in rows:
+                row = dict(r)
+                row["hora_checkin"] = str(row["hora_checkin"])[:8] if row.get("hora_checkin") else None
+                row["fecha_raw"] = str(row["fecha"])
+                result.append(row)
+
+            return {"total_registros": total, "ultimos_50": result}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+    finally:
+        connection.close()
