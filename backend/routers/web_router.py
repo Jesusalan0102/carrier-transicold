@@ -2411,10 +2411,17 @@ async def asistencia_admin():
             fd.append('file', file);
 
             try {
-                const res = await fetchAuth(`/api/horarios/importar-excel?semana=${semana}`, {method:'POST', body:fd});
+                // Usar fetch directo (NO fetchAuth) para que el browser
+                // ponga Content-Type: multipart/form-data con el boundary correcto.
+                // Solo agregamos Authorization manualmente.
+                const res = await fetch(`/api/horarios/importar-excel?semana=${semana}`, {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + window.token },
+                    body: fd
+                });
                 if (!res.ok) {
                     const err = await res.json().catch(()=>({}));
-                    errEl.textContent = '❌ ' + (err.detail || 'Error procesando el archivo.');
+                    errEl.textContent = '❌ ' + (err.detail || 'Error ' + res.status + ' procesando el archivo.');
                     errEl.style.display = '';
                     return;
                 }
