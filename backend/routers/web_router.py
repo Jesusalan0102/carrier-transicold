@@ -2195,8 +2195,10 @@ async def asistencia_admin():
             <input type="date" id="fechaFiltro" style="width:auto; margin-bottom:0;" onchange="cargarRegistros()">
             <button class="btn-primary" style="width:auto; padding:10px 20px; font-size:.85rem;" onclick="cargarRegistros()">🔄 Actualizar</button>
             <button class="btn-success" style="width:auto; padding:10px 20px; font-size:.85rem;" onclick="exportarCSV()">📥 Exportar CSV</button>
+            <button style="width:auto; padding:10px 20px; font-size:.85rem; background:#f59e0b; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:600;" onclick="debugRegistros()">🔍 Debug BD</button>
         </div>
         <div id="tablaAsistencia" style="overflow-x:auto;"></div>
+        <div id="debugOutput" style="display:none; margin-top:16px; background:#1e293b; color:#e2e8f0; border-radius:10px; padding:16px; font-family:monospace; font-size:.8rem; white-space:pre-wrap; overflow-x:auto;"></div>
     </div>
 
     <script>
@@ -2561,6 +2563,36 @@ async def asistencia_admin():
             const blob = new Blob([csv], {type:'text/csv'});
             const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
             a.download=`asistencia_${document.getElementById('fechaFiltro').value}.csv`; a.click();
+        }
+
+        async function debugRegistros() {
+            const out = document.getElementById('debugOutput');
+            out.style.display = '';
+            out.textContent = 'Consultando BD...';
+            try {
+                const res = await fetchAuth('/api/asistencia/debug-registros');
+                const data = await res.json();
+                if (!res.ok) { out.textContent = 'Error: ' + JSON.stringify(data, null, 2); return; }
+
+                const total = data.total_registros;
+                const rows  = data.ultimos_50 || [];
+                let txt = `TOTAL registros en BD: ${total}\n`;
+                txt += `Últimos ${rows.length} registros:\n`;
+                txt += '─'.repeat(90) + '\n';
+                txt += 'username'.padEnd(22) + 'fecha_raw'.padEnd(28) + 'fecha_fmt'.padEnd(14) + 'tipo'.padEnd(10) + 'hora_checkin\n';
+                txt += '─'.repeat(90) + '\n';
+                rows.forEach(r => {
+                    txt += (r.username||'').padEnd(22)
+                         + String(r.fecha_raw||'').padEnd(28)
+                         + String(r.fecha_fmt||'').padEnd(14)
+                         + (r.tipo||'').padEnd(10)
+                         + (r.hora_checkin||'') + '\n';
+                });
+                if (total === 0) txt += '\n⚠️  La tabla está VACÍA — no se ha registrado ningún check-in.\n';
+                out.textContent = txt;
+            } catch(e) {
+                out.textContent = 'Error de red: ' + e.message;
+            }
         }
     </script>
     """
