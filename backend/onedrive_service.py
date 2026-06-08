@@ -92,34 +92,66 @@ def _upload_with_retry(fn, *args, max_retries: int = 3, **kwargs):
     raise last_error
 
 
+def _sanitize_folder_name(name: str) -> str:
+    """
+    Elimina caracteres prohibidos por OneDrive/SharePoint en nombres de carpeta.
+    Prohibidos: ~ " # % & * : < > ? / \\ { | }
+    También elimina puntos y espacios al inicio/final (regla de OneDrive).
+    """
+    forbidden = set('~"#%&*:<>?/\\{|}')
+    sanitized = "".join(c for c in name if c not in forbidden)
+    return sanitized.strip(". ")
+
+
 def _ensure_folder(folder_path: str) -> str:
     """
     Garantiza que la carpeta (y toda su jerarquía) exista en OneDrive.
-    Si alguna carpeta del camino no existe, la crea con PATCH (upsert).
-    Devuelve el driveItem id de la carpeta final.
+    Devuelve el path final (sanitizado) de la carpeta.
 
     La Graph API NO crea carpetas intermedias al hacer PUT de un archivo:
     si la carpeta no existe, el upload falla con 404.
     Este helper lo resuelve recorriendo cada nivel del path.
-    """
-    token = _get_token()
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
+    Fixes aplicados:
+    - conflictBehavior cambiado de "rename" a "fail":
+      "rename" creaba silenciosamente "carpeta 1" en lugar de "carpeta",
+      causando que el upload posterior fallara con 404 porque el path
+      real en OneDrive era distinto al que se intentaba escribir.
+      Con "fail" + manejo de 409 tratamos el conflicto como "ya existe".
+    - Sanitización de nombres: OneDrive prohíbe ~ " # % & * : < > ? / \\ { | }
+      en nombres de carpeta; sin sanitizar, el POST de creación falla con 400.
+    - Token se refresca en cada iteración (no se captura una vez al inicio)
+      para evitar expiración en rutas con muchos niveles.
+    """
     parts = [p for p in folder_path.strip("/").split("/") if p]
     current_path = ""
 
     for part in parts:
+        part = _sanitize_folder_name(part)
+        if not part:
+            continue
         current_path = f"{current_path}/{part}" if current_path else part
+
+        # Refrescar token en cada nivel (evita expiración a mitad del loop)
+        headers = {
+            "Authorization": f"Bearer {_get_token()}",
+            "Content-Type": "application/json",
+        }
         url = f"{GRAPH_BASE}/me/drive/root:/{current_path}"
 
-        # Comprobar si ya existe
+        # Comprobar si ya existe como carpeta
         check = requests.get(url, headers=headers, timeout=15)
         if check.status_code == 200:
-            continue  # carpeta ya existe, seguir al siguiente nivel
+            item = check.json()
+            if "folder" in item:
+                continue  # es carpeta y ya existe → OK
+            # Existe pero es un archivo con ese nombre — poco probable pero manejarlo
+            raise Exception(
+                f"'{current_path}' existe en OneDrive pero es un archivo, no una carpeta"
+            )
 
         # No existe → crearla en el padre
         if current_path == part:
-            # Nivel raíz: crear dentro de /root
             parent_url = f"{GRAPH_BASE}/me/drive/root/children"
         else:
             parent_path = "/".join(current_path.split("/")[:-1])
@@ -128,15 +160,22 @@ def _ensure_folder(folder_path: str) -> str:
         body = {
             "name": part,
             "folder": {},
-            "@microsoft.graph.conflictBehavior": "rename",
+            # FIX: "rename" creaba "carpeta 1" silenciosamente → usar "fail" y
+            # tratar 409 como "ya existe" (race condition entre workers concurrentes)
+            "@microsoft.graph.conflictBehavior": "fail",
         }
         create_resp = requests.post(parent_url, headers=headers, json=body, timeout=15)
-        if create_resp.status_code not in (200, 201):
+
+        if create_resp.status_code in (200, 201):
+            logger.info(f"[OneDrive] Carpeta creada: {current_path}")
+        elif create_resp.status_code == 409:
+            # Conflicto = la carpeta ya existe (creada por otro worker concurrente)
+            logger.debug(f"[OneDrive] Carpeta ya existe (409): {current_path}")
+        else:
             raise Exception(
                 f"No se pudo crear carpeta '{current_path}': "
-                f"{create_resp.status_code} {create_resp.text[:200]}"
+                f"{create_resp.status_code} {create_resp.text[:300]}"
             )
-        logger.info(f"[OneDrive] Carpeta creada: {current_path}")
 
     return current_path
 
@@ -222,8 +261,11 @@ def sync_evidencia(unit_number: str, nombre_archivo: str, contenido: bytes, unit
         folder_path = f"{EVIDENCIAS_DIR}/{subfolder_name}"
 
     # ── 3. Garantizar que la carpeta existe en OneDrive ───────────────────
+    # IMPORTANTE: usar el path sanitizado que devuelve _ensure_folder,
+    # porque los nombres de carpeta se sanitizan internamente y el path
+    # real en OneDrive puede diferir del folder_path construido arriba.
     try:
-        _upload_with_retry(_ensure_folder, folder_path)
+        real_folder_path = _upload_with_retry(_ensure_folder, folder_path)
     except Exception as e:
         logger.error(f"[OneDrive] No se pudo crear carpeta '{folder_path}': {e}")
         raise
@@ -236,7 +278,7 @@ def sync_evidencia(unit_number: str, nombre_archivo: str, contenido: bytes, unit
         "webp": "image/webp", "pdf": "application/pdf",
     }
     content_type = mime_map.get(ext, "application/octet-stream")
-    file_path = f"{folder_path}/{nombre_archivo}"
+    file_path = f"{real_folder_path}/{nombre_archivo}"
 
     try:
         result  = _upload_with_retry(upload_bytes, contenido, file_path, content_type)
@@ -330,13 +372,13 @@ def sync_zip_evidencias(unit_number: str, zip_bytes: bytes) -> str:
     folder_path = f"{EVIDENCIAS_DIR}/{id_lote}/{subfolder_name}" if id_lote else f"{EVIDENCIAS_DIR}/{subfolder_name}"
 
     try:
-        _upload_with_retry(_ensure_folder, folder_path)
+        real_folder_path = _upload_with_retry(_ensure_folder, folder_path)
     except Exception as e:
         logger.error(f"[OneDrive] No se pudo crear carpeta ZIP '{folder_path}': {e}")
         raise
 
     nombre = f"{unit_number}_evidencias.zip"
-    path   = f"{folder_path}/{nombre}"
+    path   = f"{real_folder_path}/{nombre}"
     try:
         result  = _upload_with_retry(upload_large_file, zip_bytes, path, "application/zip")
         web_url = result.get("webUrl", "")
