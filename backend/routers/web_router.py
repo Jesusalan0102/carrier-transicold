@@ -2195,10 +2195,8 @@ async def asistencia_admin():
             <input type="date" id="fechaFiltro" style="width:auto; margin-bottom:0;" onchange="cargarRegistros()">
             <button class="btn-primary" style="width:auto; padding:10px 20px; font-size:.85rem;" onclick="cargarRegistros()">🔄 Actualizar</button>
             <button class="btn-success" style="width:auto; padding:10px 20px; font-size:.85rem;" onclick="exportarCSV()">📥 Exportar CSV</button>
-            <button style="width:auto; padding:10px 20px; font-size:.85rem; background:#f59e0b; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:600;" onclick="debugRegistros()">🔍 Debug BD</button>
         </div>
         <div id="tablaAsistencia" style="overflow-x:auto;"></div>
-        <div id="debugOutput" style="display:none; margin-top:16px; background:#1e293b; color:#e2e8f0; border-radius:10px; padding:16px; font-family:monospace; font-size:.8rem; white-space:pre-wrap; overflow-x:auto;"></div>
     </div>
 
     <script>
@@ -2208,33 +2206,13 @@ async def asistencia_admin():
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.getElementById(id).classList.add('active');
             btn.classList.add('active');
-            // Recargar datos al cambiar de tab para que siempre estén frescos
-            if (id === 'tab-registros') cargarRegistros();
-            if (id === 'tab-horarios')  cargarHorarios();
         }
 
         // -- Init fechas -------------------------------------------------------
-        // Usamos fecha LOCAL del navegador (no toISOString que es UTC)
-        // para evitar que en Tijuana (UTC-7/8) aparezca la fecha de ayer.
-        function fechaLocalHoy() {
-            const d = new Date();
-            const y = d.getFullYear();
-            const m = String(d.getMonth()+1).padStart(2,'0');
-            const dd = String(d.getDate()).padStart(2,'0');
-            return `${y}-${m}-${dd}`;
-        }
-        function fechaLocalLunes() {
-            const d = new Date();
-            const dow = d.getDay(); // 0=dom, 1=lun...
-            const diff = dow === 0 ? 6 : dow - 1;
-            const lunes = new Date(d.getFullYear(), d.getMonth(), d.getDate() - diff);
-            const y = lunes.getFullYear();
-            const m = String(lunes.getMonth()+1).padStart(2,'0');
-            const dd = String(lunes.getDate()).padStart(2,'0');
-            return `${y}-${m}-${dd}`;
-        }
-        document.getElementById('fechaFiltro').value = fechaLocalHoy();
-        document.getElementById('semanaInput').value = fechaLocalLunes();
+        const hoy = new Date();
+        document.getElementById('fechaFiltro').value = hoy.toISOString().slice(0,10);
+        const lunes = new Date(hoy); lunes.setDate(hoy.getDate() - (hoy.getDay() === 0 ? 6 : hoy.getDay()-1));
+        document.getElementById('semanaInput').value = lunes.toISOString().slice(0,10);
 
         cargarRegistros();
         cargarHorarios();
@@ -2295,14 +2273,10 @@ async def asistencia_admin():
         }
 
         function fechasDeSemana(lunesStr) {
-            // Forzar medianoche local (sin zona) para evitar rollover UTC
-            const [y,m,d] = lunesStr.split('-').map(Number);
+            const lunes = new Date(lunesStr + 'T00:00:00');
             return Array.from({length:6}, (_,i) => {
-                const dt = new Date(y, m-1, d+i);
-                const yy = dt.getFullYear();
-                const mm = String(dt.getMonth()+1).padStart(2,'0');
-                const dd = String(dt.getDate()).padStart(2,'0');
-                return `${yy}-${mm}-${dd}`;
+                const d = new Date(lunes); d.setDate(lunes.getDate()+i);
+                return d.toISOString().slice(0,10);
             });
         }
 
@@ -2587,36 +2561,6 @@ async def asistencia_admin():
             const blob = new Blob([csv], {type:'text/csv'});
             const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
             a.download=`asistencia_${document.getElementById('fechaFiltro').value}.csv`; a.click();
-        }
-
-        async function debugRegistros() {
-            const out = document.getElementById('debugOutput');
-            out.style.display = '';
-            out.textContent = 'Consultando BD...';
-            try {
-                const res = await fetchAuth('/api/asistencia/debug-registros');
-                const data = await res.json();
-                if (!res.ok) { out.textContent = 'Error: ' + JSON.stringify(data, null, 2); return; }
-
-                const total = data.total_registros;
-                const rows  = data.ultimos_50 || [];
-                let txt = `TOTAL registros en BD: ${total}\n`;
-                txt += `Últimos ${rows.length} registros:\n`;
-                txt += '─'.repeat(90) + '\n';
-                txt += 'username'.padEnd(22) + 'fecha_raw'.padEnd(28) + 'fecha_fmt'.padEnd(14) + 'tipo'.padEnd(10) + 'hora_checkin\n';
-                txt += '─'.repeat(90) + '\n';
-                rows.forEach(r => {
-                    txt += (r.username||'').padEnd(22)
-                         + String(r.fecha_raw||'').padEnd(28)
-                         + String(r.fecha_fmt||'').padEnd(14)
-                         + (r.tipo||'').padEnd(10)
-                         + (r.hora_checkin||'') + '\n';
-                });
-                if (total === 0) txt += '\n⚠️  La tabla está VACÍA — no se ha registrado ningún check-in.\n';
-                out.textContent = txt;
-            } catch(e) {
-                out.textContent = 'Error de red: ' + e.message;
-            }
         }
     </script>
     """
