@@ -93,7 +93,7 @@ def obtener_registros(fecha: str = Query(None)):
                 # FIX: DATE() explícito para evitar desfases de timezone
                 cursor.execute(
                     """
-                    SELECT username, DATE_FORMAT(fecha,'%Y-%m-%d') AS fecha,
+                    SELECT username, DATE_FORMAT(fecha,'%%Y-%%m-%%d') AS fecha,
                            tipo, hora_checkin, latitud, longitud,
                            distancia_metros, aprobado, retardo_min
                     FROM registros_asistencia
@@ -105,7 +105,7 @@ def obtener_registros(fecha: str = Query(None)):
             else:
                 cursor.execute(
                     """
-                    SELECT username, DATE_FORMAT(fecha,'%Y-%m-%d') AS fecha,
+                    SELECT username, DATE_FORMAT(fecha,'%%Y-%%m-%%d') AS fecha,
                            tipo, hora_checkin, latitud, longitud,
                            distancia_metros, aprobado, retardo_min
                     FROM registros_asistencia
