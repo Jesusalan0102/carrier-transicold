@@ -14,11 +14,14 @@ Fixes aplicados:
 from datetime import date, timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
 from auth import verify_token
 from db import execute_read, execute_write
+
+import io
+import unicodedata
 
 import zoneinfo
 from datetime import datetime
@@ -237,6 +240,264 @@ def save_horarios(payload: HorariosBatch, current_user=Depends(verify_token)):
                      entrada or None, salida or None)
                 )
             guardados += 1
+
+    return {"ok": True, "guardados": guardados, "eliminados": eliminados}
+
+
+# ── POST /api/horarios/importar-excel ──────────────────────────────────────────
+# Parsea un .xlsx con columnas: Técnico (username), Nombre Completo,
+# Lunes Entrada, Lunes Salida, ..., Sábado Entrada, Sábado Salida
+# Hace fuzzy matching de nombre → username si la columna username está vacía.
+# Devuelve un preview JSON para que el admin confirme antes de guardar.
+
+def _normalizar(s: str) -> str:
+    """Lowercase, sin tildes, sin espacios extra."""
+    s = s.strip().lower()
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    return " ".join(s.split())
+
+
+def _similitud(a: str, b: str) -> float:
+    """Ratio de palabras en común (0-1)."""
+    wa = set(_normalizar(a).split())
+    wb = set(_normalizar(b).split())
+    if not wa or not wb:
+        return 0.0
+    return len(wa & wb) / max(len(wa), len(wb))
+
+
+DIAS_COLS = [
+    ("Lunes",     "lunes_entrada",     "lunes_salida"),
+    ("Martes",    "martes_entrada",    "martes_salida"),
+    ("Miércoles", "miercoles_entrada", "miercoles_salida"),
+    ("Jueves",    "jueves_entrada",    "jueves_salida"),
+    ("Viernes",   "viernes_entrada",   "viernes_salida"),
+    ("Sábado",    "sabado_entrada",    "sabado_salida"),
+]
+
+
+def _parse_hora(val) -> Optional[str]:
+    """Convierte cualquier representación de hora a HH:MM o None."""
+    if val is None:
+        return None
+    s = str(val).strip()
+    if not s or s in ("-", ""):
+        return None
+    # Formato HH:MM:SS o HH:MM
+    parts = s.split(":")
+    if len(parts) >= 2:
+        try:
+            h = int(parts[0])
+            m = int(parts[1])
+            return f"{h:02d}:{m:02d}"
+        except Exception:
+            pass
+    return None
+
+
+@router.post("/importar-excel")
+async def importar_excel(
+    semana: str = Query(..., description="YYYY-MM-DD (lunes de la semana)"),
+    file: UploadFile = File(...),
+    current_user=Depends(verify_token)
+):
+    """
+    Recibe un .xlsx, lo parsea y devuelve un preview con el matching
+    username → nombre_completo para que el admin confirme.
+    """
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+
+    # Validar semana
+    try:
+        lunes = date.fromisoformat(semana)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Formato de semana inválido (YYYY-MM-DD)")
+
+    # Calcular fechas de la semana
+    fechas_semana = [(lunes + timedelta(days=i)).isoformat() for i in range(6)]
+
+    # Leer archivo
+    content = await file.read()
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"No se pudo leer el archivo Excel: {e}")
+
+    # Buscar hoja "Horarios" (o la primera)
+    hoja_nombre = "Horarios" if "Horarios" in wb.sheetnames else wb.sheetnames[0]
+    ws = wb[hoja_nombre]
+
+    # Leer encabezados de la primera fila
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        raise HTTPException(status_code=400, detail="El archivo está vacío")
+
+    headers = [str(h).strip() if h is not None else "" for h in rows[0]]
+
+    # Mapear columnas por nombre
+    def col_idx(name: str) -> Optional[int]:
+        name_n = _normalizar(name)
+        for i, h in enumerate(headers):
+            if _normalizar(h) == name_n:
+                return i
+        return None
+
+    idx_username = col_idx("Técnico (username)")
+    idx_nombre   = col_idx("Nombre Completo")
+
+    col_map = {}
+    for dia_label, key_e, key_s in DIAS_COLS:
+        col_map[key_e] = col_idx(f"{dia_label} Entrada")
+        col_map[key_s] = col_idx(f"{dia_label} Salida")
+
+    if idx_nombre is None:
+        raise HTTPException(status_code=400, detail="No se encontró la columna 'Nombre Completo'")
+
+    # Cargar técnicos de la BD para hacer matching
+    users_db = execute_read(
+        "SELECT username, COALESCE(nombre_completo, username) AS nombre FROM users WHERE role='tecnico'"
+    ) or []
+
+    # Intentar con nombre_completo; si la columna no existe, usar username
+    try:
+        users_db2 = execute_read(
+            "SELECT username, nombre_completo AS nombre FROM users WHERE role='tecnico' AND nombre_completo IS NOT NULL"
+        ) or []
+        if users_db2:
+            users_db = users_db2
+    except Exception:
+        pass
+
+    def buscar_username(nombre_excel: str) -> Optional[str]:
+        mejor = None
+        mejor_score = 0.0
+        for u in users_db:
+            score = _similitud(nombre_excel, u["nombre"])
+            if score > mejor_score:
+                mejor_score = score
+                mejor = u["username"]
+        return mejor if mejor_score >= 0.5 else None
+
+    # Parsear filas de datos
+    preview_rows = []
+    sin_match = []
+
+    for row in rows[1:]:
+        nombre = row[idx_nombre] if idx_nombre is not None else None
+        if not nombre:
+            continue
+        nombre = str(nombre).strip()
+        if not nombre:
+            continue
+
+        # Username: primero del Excel, luego fuzzy match
+        username_excel = None
+        if idx_username is not None:
+            v = row[idx_username]
+            if v:
+                username_excel = str(v).strip() or None
+
+        username_matched = username_excel or buscar_username(nombre)
+        confianza = "manual" if username_excel else ("auto" if username_matched else "sin_match")
+
+        horarios_dia = []
+        for i, (dia_label, key_e, key_s) in enumerate(DIAS_COLS):
+            entrada = _parse_hora(row[col_map[key_e]] if col_map.get(key_e) is not None else None)
+            salida  = _parse_hora(row[col_map[key_s]] if col_map.get(key_s) is not None else None)
+            horarios_dia.append({
+                "fecha":        fechas_semana[i],
+                "dia":          dia_label,
+                "hora_entrada": entrada,
+                "hora_salida":  salida,
+            })
+
+        entry = {
+            "nombre_excel":     nombre,
+            "username":         username_matched,
+            "confianza":        confianza,
+            "horarios":         horarios_dia,
+        }
+        preview_rows.append(entry)
+        if not username_matched:
+            sin_match.append(nombre)
+
+    # Lista de técnicos disponibles para el selector de corrección manual
+    tecnicos_disponibles = [u["username"] for u in (execute_read(
+        "SELECT username FROM users WHERE role='tecnico' ORDER BY username"
+    ) or [])]
+
+    return {
+        "semana":               semana,
+        "fechas_semana":        fechas_semana,
+        "preview":              preview_rows,
+        "sin_match":            sin_match,
+        "tecnicos_disponibles": tecnicos_disponibles,
+        "total":                len(preview_rows),
+    }
+
+
+# ── POST /api/horarios/confirmar-importacion ────────────────────────────────────
+# Recibe el preview (ya con usernames corregidos) y los guarda en la BD.
+
+class HorarioImportDia(BaseModel):
+    fecha:        str
+    hora_entrada: Optional[str] = None
+    hora_salida:  Optional[str] = None
+
+class HorarioImportRow(BaseModel):
+    username: str
+    horarios: List[HorarioImportDia]
+
+class ConfirmarImportacion(BaseModel):
+    semana:   str
+    registros: List[HorarioImportRow]
+
+@router.post("/confirmar-importacion")
+def confirmar_importacion(payload: ConfirmarImportacion, current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+
+    guardados  = 0
+    eliminados = 0
+
+    for row in payload.registros:
+        if not row.username:
+            continue
+        for dia in row.horarios:
+            entrada = (dia.hora_entrada or "").strip()
+            salida  = (dia.hora_salida  or "").strip()
+
+            existente = execute_read(
+                "SELECT id FROM horarios WHERE username=%s AND fecha=%s",
+                (row.username, dia.fecha)
+            )
+
+            if not entrada and not salida:
+                if existente:
+                    execute_write(
+                        "DELETE FROM horarios WHERE username=%s AND fecha=%s",
+                        (row.username, dia.fecha)
+                    )
+                    eliminados += 1
+            else:
+                if existente:
+                    execute_write(
+                        "UPDATE horarios SET hora_entrada=%s, hora_salida=%s, semana=%s "
+                        "WHERE username=%s AND fecha=%s",
+                        (entrada or None, salida or None, payload.semana,
+                         row.username, dia.fecha)
+                    )
+                else:
+                    execute_write(
+                        "INSERT INTO horarios (username, fecha, semana, hora_entrada, hora_salida) "
+                        "VALUES (%s,%s,%s,%s,%s)",
+                        (row.username, dia.fecha, payload.semana,
+                         entrada or None, salida or None)
+                    )
+                guardados += 1
 
     return {"ok": True, "guardados": guardados, "eliminados": eliminados}
 

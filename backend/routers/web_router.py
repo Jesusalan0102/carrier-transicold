@@ -2123,11 +2123,70 @@ async def asistencia_admin():
             <label style="font-weight:600; font-size:.9rem;">Semana del lunes:</label>
             <input type="date" id="semanaInput" style="width:auto; margin-bottom:0;" onchange="cargarHorarios()">
             <button class="btn-primary" style="width:auto; padding:10px 22px;" onclick="guardarHorarios()">💾 Guardar Horarios</button>
+            <button class="btn-success" style="width:auto; padding:10px 22px;" onclick="abrirModalImportacion()">📂 Importar Excel</button>
         </div>
         <div id="tablaHorarios" style="overflow-x:auto;"></div>
 
         <div class="section-title" style="margin-top:32px;">📊 Resumen Semanal de Asistencia</div>
         <div id="resumenSemanal" style="overflow-x:auto;"></div>
+    </div>
+
+    <!-- MODAL: Importar Horarios desde Excel -->
+    <div id="modalImportacion" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:9999; overflow-y:auto;">
+      <div style="background:white; margin:30px auto; max-width:960px; border-radius:16px; padding:32px; box-shadow:0 8px 40px rgba(0,43,91,0.18);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+          <h2 style="margin:0; font-size:1.2rem; color:#002B5B;">📂 Importar Horarios desde Excel</h2>
+          <button onclick="cerrarModalImportacion()" style="background:none; border:none; font-size:1.5rem; cursor:pointer; color:#6b7280;">✕</button>
+        </div>
+
+        <!-- Paso 1: Seleccionar archivo -->
+        <div id="imp-paso1">
+          <p style="color:#374151; margin-bottom:14px;">Selecciona un archivo <b>.xlsx</b> con el formato de horarios semanal. La columna <code>Técnico (username)</code> puede estar vacía — el sistema intentará identificar a cada técnico por su nombre completo.</p>
+          <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+            <input type="file" id="impFile" accept=".xlsx" style="width:auto; margin-bottom:0;">
+            <button class="btn-primary" style="width:auto; padding:10px 20px;" onclick="procesarExcel()">🔍 Procesar</button>
+          </div>
+          <div id="impError" style="color:#dc2626; margin-top:12px; display:none;"></div>
+        </div>
+
+        <!-- Paso 2: Preview -->
+        <div id="imp-paso2" style="display:none;">
+          <div id="impAvisoSinMatch" style="display:none; background:#fef3c7; border:1px solid #fde68a; border-radius:8px; padding:12px 16px; margin-bottom:16px; color:#92400e;">
+            ⚠️ Los siguientes nombres no se identificaron automáticamente. Asigna el username manualmente en la tabla:
+            <span id="impListaSinMatch"></span>
+          </div>
+          <p style="color:#374151; margin-bottom:12px; font-size:.9rem;">Revisa el mapeo <b>Nombre → Username</b>. Puedes corregir el username si es incorrecto. Las filas sin username <b>no se importarán</b>.</p>
+          <div style="overflow-x:auto;">
+            <table style="width:100%; border-collapse:collapse; font-size:.82rem;">
+              <thead>
+                <tr style="background:#002B5B; color:white;">
+                  <th style="padding:8px 12px; text-align:left;">Nombre en Excel</th>
+                  <th style="padding:8px 12px; text-align:left;">Username</th>
+                  <th style="padding:8px 12px; text-align:center;">Confianza</th>
+                  <th style="padding:8px 12px; text-align:center;">Lu Ent</th>
+                  <th style="padding:8px 12px; text-align:center;">Lu Sal</th>
+                  <th style="padding:8px 12px; text-align:center;">Ma Ent</th>
+                  <th style="padding:8px 12px; text-align:center;">Ma Sal</th>
+                  <th style="padding:8px 12px; text-align:center;">Mi Ent</th>
+                  <th style="padding:8px 12px; text-align:center;">Mi Sal</th>
+                  <th style="padding:8px 12px; text-align:center;">Ju Ent</th>
+                  <th style="padding:8px 12px; text-align:center;">Ju Sal</th>
+                  <th style="padding:8px 12px; text-align:center;">Vi Ent</th>
+                  <th style="padding:8px 12px; text-align:center;">Vi Sal</th>
+                  <th style="padding:8px 12px; text-align:center;">Sá Ent</th>
+                  <th style="padding:8px 12px; text-align:center;">Sá Sal</th>
+                </tr>
+              </thead>
+              <tbody id="impTableBody"></tbody>
+            </table>
+          </div>
+          <div style="display:flex; gap:12px; margin-top:20px; justify-content:flex-end; flex-wrap:wrap;">
+            <button onclick="cerrarModalImportacion()" style="padding:10px 22px; background:#f3f4f6; border:1px solid #d1d5db; border-radius:8px; cursor:pointer; font-weight:600;">Cancelar</button>
+            <button class="btn-primary" style="width:auto; padding:10px 24px;" onclick="confirmarImportacion()">✅ Confirmar e Importar</button>
+          </div>
+          <div id="impResultado" style="display:none; margin-top:16px; background:#dcfce7; border:1px solid #bbf7d0; border-radius:8px; padding:12px 16px; color:#166534; font-weight:600;"></div>
+        </div>
+      </div>
     </div>
 
     <!-- TAB 3: REGISTROS DEL DÍA -->
@@ -2319,6 +2378,141 @@ async def asistencia_admin():
                     cargarHorarios();
                 } else { alert('Error al guardar.'); }
             } catch(e) { alert('Error al guardar horarios.'); }
+        }
+
+        // -- Importar Excel ----------------------------------------------------
+        let _impPreview = null;
+        let _impTecnicos = [];
+
+        function abrirModalImportacion() {
+            document.getElementById('modalImportacion').style.display = 'block';
+            document.getElementById('imp-paso1').style.display = '';
+            document.getElementById('imp-paso2').style.display = 'none';
+            document.getElementById('impError').style.display = 'none';
+            document.getElementById('impFile').value = '';
+            document.getElementById('impResultado').style.display = 'none';
+            _impPreview = null;
+        }
+
+        function cerrarModalImportacion() {
+            document.getElementById('modalImportacion').style.display = 'none';
+        }
+
+        async function procesarExcel() {
+            const semana = document.getElementById('semanaInput').value;
+            if (!semana) { alert('Selecciona la semana primero.'); return; }
+            const file = document.getElementById('impFile').files[0];
+            if (!file) { alert('Selecciona un archivo .xlsx'); return; }
+
+            const errEl = document.getElementById('impError');
+            errEl.style.display = 'none';
+
+            const fd = new FormData();
+            fd.append('file', file);
+
+            try {
+                const res = await fetchAuth(`/api/horarios/importar-excel?semana=${semana}`, {method:'POST', body:fd});
+                if (!res.ok) {
+                    const err = await res.json().catch(()=>({}));
+                    errEl.textContent = '❌ ' + (err.detail || 'Error procesando el archivo.');
+                    errEl.style.display = '';
+                    return;
+                }
+                const data = await res.json();
+                _impPreview = data;
+                _impTecnicos = data.tecnicos_disponibles || [];
+                renderPreview(data);
+            } catch(e) {
+                errEl.textContent = '❌ Error de red: ' + e.message;
+                errEl.style.display = '';
+            }
+        }
+
+        function renderPreview(data) {
+            const tbody = document.getElementById('impTableBody');
+            tbody.innerHTML = '';
+
+            const badgeConf = {
+                auto:      '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-size:.75rem;">Auto ✓</span>',
+                manual:    '<span style="background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:10px;font-size:.75rem;">Excel</span>',
+                sin_match: '<span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:10px;font-size:.75rem;">Sin match ⚠</span>',
+            };
+
+            data.preview.forEach((row, idx) => {
+                const diasCells = row.horarios.map(d =>
+                    `<td style="padding:6px 8px;text-align:center;border-bottom:1px solid #f0f2f5;">${d.hora_entrada||'—'}</td>
+                     <td style="padding:6px 8px;text-align:center;border-bottom:1px solid #f0f2f5;">${d.hora_salida||'—'}</td>`
+                ).join('');
+
+                const selectOptions = ['<option value="">-- sin asignar --</option>'].concat(
+                    _impTecnicos.map(u => `<option value="${u}" ${u===row.username?'selected':''}>${u}</option>`)
+                ).join('');
+
+                tbody.innerHTML += `<tr>
+                    <td style="padding:6px 12px;border-bottom:1px solid #f0f2f5;white-space:nowrap;">${row.nombre_excel}</td>
+                    <td style="padding:6px 8px;border-bottom:1px solid #f0f2f5;">
+                        <select id="imp-usr-${idx}" style="font-size:.8rem;padding:3px 6px;border:1px solid #d1d5db;border-radius:6px;">
+                            ${selectOptions}
+                        </select>
+                    </td>
+                    <td style="padding:6px 8px;text-align:center;border-bottom:1px solid #f0f2f5;">${badgeConf[row.confianza]||row.confianza}</td>
+                    ${diasCells}
+                </tr>`;
+            });
+
+            // Aviso sin match
+            const avisoEl = document.getElementById('impAvisoSinMatch');
+            if (data.sin_match && data.sin_match.length) {
+                avisoEl.style.display = '';
+                document.getElementById('impListaSinMatch').textContent = ' ' + data.sin_match.join(', ');
+            } else {
+                avisoEl.style.display = 'none';
+            }
+
+            document.getElementById('imp-paso1').style.display = 'none';
+            document.getElementById('imp-paso2').style.display = '';
+        }
+
+        async function confirmarImportacion() {
+            if (!_impPreview) return;
+            const semana = _impPreview.semana;
+
+            const registros = _impPreview.preview.map((row, idx) => {
+                const username = document.getElementById('imp-usr-'+idx)?.value || '';
+                return {
+                    username,
+                    horarios: row.horarios.map(d => ({
+                        fecha:        d.fecha,
+                        hora_entrada: d.hora_entrada || null,
+                        hora_salida:  d.hora_salida  || null,
+                    }))
+                };
+            }).filter(r => r.username);
+
+            if (!registros.length) {
+                alert('No hay filas con username asignado para importar.');
+                return;
+            }
+
+            try {
+                const res = await fetchAuth('/api/horarios/confirmar-importacion', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({semana, registros})
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    const el = document.getElementById('impResultado');
+                    el.textContent = `✅ Importación exitosa: ${data.guardados} horarios guardados, ${data.eliminados} eliminados.`;
+                    el.style.display = '';
+                    cargarHorarios();
+                    setTimeout(() => cerrarModalImportacion(), 2500);
+                } else {
+                    alert('Error al confirmar importación.');
+                }
+            } catch(e) {
+                alert('Error de red al importar: ' + e.message);
+            }
         }
 
         // -- Registros del día -------------------------------------------------
