@@ -2208,13 +2208,33 @@ async def asistencia_admin():
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.getElementById(id).classList.add('active');
             btn.classList.add('active');
+            // Recargar datos al cambiar de tab para que siempre estén frescos
+            if (id === 'tab-registros') cargarRegistros();
+            if (id === 'tab-horarios')  cargarHorarios();
         }
 
         // -- Init fechas -------------------------------------------------------
-        const hoy = new Date();
-        document.getElementById('fechaFiltro').value = hoy.toISOString().slice(0,10);
-        const lunes = new Date(hoy); lunes.setDate(hoy.getDate() - (hoy.getDay() === 0 ? 6 : hoy.getDay()-1));
-        document.getElementById('semanaInput').value = lunes.toISOString().slice(0,10);
+        // Usamos fecha LOCAL del navegador (no toISOString que es UTC)
+        // para evitar que en Tijuana (UTC-7/8) aparezca la fecha de ayer.
+        function fechaLocalHoy() {
+            const d = new Date();
+            const y = d.getFullYear();
+            const m = String(d.getMonth()+1).padStart(2,'0');
+            const dd = String(d.getDate()).padStart(2,'0');
+            return `${y}-${m}-${dd}`;
+        }
+        function fechaLocalLunes() {
+            const d = new Date();
+            const dow = d.getDay(); // 0=dom, 1=lun...
+            const diff = dow === 0 ? 6 : dow - 1;
+            const lunes = new Date(d.getFullYear(), d.getMonth(), d.getDate() - diff);
+            const y = lunes.getFullYear();
+            const m = String(lunes.getMonth()+1).padStart(2,'0');
+            const dd = String(lunes.getDate()).padStart(2,'0');
+            return `${y}-${m}-${dd}`;
+        }
+        document.getElementById('fechaFiltro').value = fechaLocalHoy();
+        document.getElementById('semanaInput').value = fechaLocalLunes();
 
         cargarRegistros();
         cargarHorarios();
@@ -2275,10 +2295,14 @@ async def asistencia_admin():
         }
 
         function fechasDeSemana(lunesStr) {
-            const lunes = new Date(lunesStr + 'T00:00:00');
+            // Forzar medianoche local (sin zona) para evitar rollover UTC
+            const [y,m,d] = lunesStr.split('-').map(Number);
             return Array.from({length:6}, (_,i) => {
-                const d = new Date(lunes); d.setDate(lunes.getDate()+i);
-                return d.toISOString().slice(0,10);
+                const dt = new Date(y, m-1, d+i);
+                const yy = dt.getFullYear();
+                const mm = String(dt.getMonth()+1).padStart(2,'0');
+                const dd = String(dt.getDate()).padStart(2,'0');
+                return `${yy}-${mm}-${dd}`;
             });
         }
 
