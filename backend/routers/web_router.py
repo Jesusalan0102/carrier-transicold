@@ -2209,10 +2209,18 @@ async def asistencia_admin():
         }
 
         // -- Init fechas -------------------------------------------------------
+        // FIX: toISOString() devuelve fecha UTC; en Tijuana (UTC-7) puede ser
+        // el día siguiente desde las 17:00. Usar Intl.DateTimeFormat en-CA
+        // para obtener siempre la fecha local en Tijuana (formato YYYY-MM-DD).
+        function fechaTijuana(d) {
+            return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Tijuana' }).format(d || new Date());
+        }
         const hoy = new Date();
-        document.getElementById('fechaFiltro').value = hoy.toISOString().slice(0,10);
-        const lunes = new Date(hoy); lunes.setDate(hoy.getDate() - (hoy.getDay() === 0 ? 6 : hoy.getDay()-1));
-        document.getElementById('semanaInput').value = lunes.toISOString().slice(0,10);
+        document.getElementById('fechaFiltro').value = fechaTijuana(hoy);
+        // Calcular lunes de la semana usando la fecha local Tijuana (no UTC)
+        const hoyTJ = new Date(fechaTijuana(hoy) + 'T12:00:00');
+        const lunes = new Date(hoyTJ); lunes.setDate(hoyTJ.getDate() - (hoyTJ.getDay() === 0 ? 6 : hoyTJ.getDay()-1));
+        document.getElementById('semanaInput').value = fechaTijuana(lunes);
 
         cargarRegistros();
         cargarHorarios();
@@ -2273,10 +2281,11 @@ async def asistencia_admin():
         }
 
         function fechasDeSemana(lunesStr) {
-            const lunes = new Date(lunesStr + 'T00:00:00');
+            const lunes = new Date(lunesStr + 'T12:00:00');
             return Array.from({length:6}, (_,i) => {
                 const d = new Date(lunes); d.setDate(lunes.getDate()+i);
-                return d.toISOString().slice(0,10);
+                // FIX: usar Tijuana timezone, no UTC (toISOString puede dar día anterior)
+                return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Tijuana' }).format(d);
             });
         }
 
