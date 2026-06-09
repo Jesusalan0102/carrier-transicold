@@ -335,8 +335,10 @@ def sync_reporte_maestro(excel_bytes: bytes, fecha: str = None) -> str:
       carrier-transicold/Reportes/YYYY-MM/Carrier_Reporte_YYYY-MM-DD.xlsx
     """
     from datetime import datetime
+from zoneinfo import ZoneInfo
+TZ = ZoneInfo("America/Tijuana")
     if not fecha:
-        fecha = datetime.now().strftime("%Y-%m-%d")
+        fecha = datetime.now(TZ).strftime("%Y-%m-%d")
     mes    = fecha[:7]
     nombre = f"Carrier_Reporte_{fecha}.xlsx"
     path   = f"{REPORTES_DIR}/{mes}/{nombre}"

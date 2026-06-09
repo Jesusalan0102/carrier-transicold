@@ -319,7 +319,9 @@ def reporte_excel(current_user: dict = Depends(verify_token)):
     excel_bytes = buf.getvalue()
 
     from datetime import datetime
-    fecha = datetime.now().strftime("%Y-%m-%d")
+from zoneinfo import ZoneInfo
+TZ = ZoneInfo("America/Tijuana")
+    fecha = datetime.now(TZ).strftime("%Y-%m-%d")
 
     # ── Auto-sync a OneDrive cada vez que se descarga el reporte ──────────
     if ONEDRIVE_ENABLED:

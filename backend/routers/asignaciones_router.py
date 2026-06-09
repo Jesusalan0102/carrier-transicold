@@ -3,6 +3,8 @@ from db import execute_read, execute_write
 from auth import verify_token
 from models import AsignacionCreate, AsignacionUpdate
 from datetime import datetime
+from zoneinfo import ZoneInfo
+TZ = ZoneInfo("America/Tijuana")
 
 router = APIRouter(prefix="/api/asignaciones", tags=["asignaciones"])
 
@@ -73,7 +75,7 @@ def crear_asignacion(asig: AsignacionCreate, current_user=Depends(verify_token))
         raise HTTPException(status_code=403, detail="Solo administradores pueden asignar directamente")
     execute_write(
         "INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado, fecha_asignacion) VALUES (%s,%s,%s,%s,%s)",
-        (asig.unidad, asig.actividad_id, asig.tecnico, asig.estado, datetime.now())
+        (asig.unidad, asig.actividad_id, asig.tecnico, asig.estado, datetime.now(TZ))
     )
     return {"mensaje": "Asignación creada"}
 
@@ -100,7 +102,7 @@ def solicitar_actividad(asig: AsignacionCreate, current_user=Depends(verify_toke
         )
     execute_write(
         "INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado, fecha_asignacion) VALUES (%s,%s,%s,'solicitado',%s)",
-        (asig.unidad, asig.actividad_id, tecnico, datetime.now())
+        (asig.unidad, asig.actividad_id, tecnico, datetime.now(TZ))
     )
     return {"mensaje": "Solicitud enviada, pendiente de aprobación"}
 
@@ -125,7 +127,7 @@ def rechazar(asig_id: int, current_user=Depends(verify_token)):
 def iniciar(asig_id: int, current_user=Depends(verify_token)):
     execute_write(
         "UPDATE asignaciones SET estado='en_proceso', fecha_inicio=%s WHERE id=%s",
-        (datetime.now(), asig_id)
+        (datetime.now(TZ), asig_id)
     )
     return {"mensaje": "Actividad iniciada"}
 
@@ -136,7 +138,7 @@ def finalizar(asig_id: int, data: dict, current_user=Depends(verify_token)):
     if not comentario:
         raise HTTPException(status_code=400, detail="El comentario es obligatorio para finalizar")
     ticket_id = data.get("ticket_id")
-    now = datetime.now()
+    now = datetime.now(TZ)
     execute_write(
         "UPDATE asignaciones SET estado='completada', fecha_fin=%s WHERE id=%s",
         (now, asig_id)

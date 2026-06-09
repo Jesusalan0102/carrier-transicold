@@ -1,5 +1,7 @@
 import io
 from datetime import datetime
+from zoneinfo import ZoneInfo
+TZ = ZoneInfo("America/Tijuana")
 import pymysql
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
@@ -86,7 +88,7 @@ def _sheet_resumen(wb, conn):
     ws.merge_cells("A1:B1")
     ws.row_dimensions[1].height = 28
 
-    fecha = ws.cell(2, 1, f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    fecha = ws.cell(2, 1, f"Generado: {datetime.now(TZ).strftime('%d/%m/%Y %H:%M')}")
     fecha.font = Font(name="Arial", size=9, italic=True, color="595959")
     ws.merge_cells("A2:B2")
 
@@ -473,7 +475,7 @@ def exportar_sistema_completo(current_user=Depends(verify_token)):
         wb.save(buf)
         buf.seek(0)
 
-        fecha_hoy = datetime.now().strftime("%Y%m%d_%H%M")
+        fecha_hoy = datetime.now(TZ).strftime("%Y%m%d_%H%M")
         filename  = f"Reporte_Maestro_CarrierTransicold_{fecha_hoy}.xlsx"
 
         return StreamingResponse(

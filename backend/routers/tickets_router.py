@@ -4,6 +4,8 @@ from auth import verify_token
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
+from zoneinfo import ZoneInfo
+TZ = ZoneInfo("America/Tijuana")
 
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
 
@@ -91,7 +93,7 @@ def crear_ticket(ticket: TicketCreate, current_user=Depends(verify_token)):
 def atender_ticket(ticket_id: int, current_user=Depends(verify_token)):
     execute_write(
         "UPDATE tickets SET atendido=TRUE, fecha_atencion=%s WHERE id=%s",
-        (datetime.now(), ticket_id)
+        (datetime.now(TZ), ticket_id)
     )
     return {"mensaje": "Ticket marcado como atendido"}
 
@@ -100,7 +102,7 @@ def atender_ticket(ticket_id: int, current_user=Depends(verify_token)):
 def enviar_reporte(ticket_id: int, report: TicketReport, current_user=Depends(verify_token)):
     if not report.reporte.strip():
         raise HTTPException(status_code=400, detail="El reporte no puede estar vacío")
-    ahora = datetime.now()
+    ahora = datetime.now(TZ)
 
     # 1. Guardar texto del reporte y marcar ticket como completado
     execute_write(
