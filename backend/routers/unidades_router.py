@@ -3,6 +3,9 @@ from db import execute_read, execute_write
 from auth import verify_token
 from pydantic import BaseModel
 from typing import Optional
+from datetime import datetime
+from zoneinfo import ZoneInfo
+TZ = ZoneInfo("America/Tijuana")
 
 router = APIRouter(prefix="/api/unidades", tags=["unidades"])
 
@@ -47,12 +50,13 @@ def listar_unidades(current_user=Depends(verify_token)):
 def crear_unidad(unidad: UnidadCreate, current_user=Depends(verify_token)):
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo administradores")
+    ahora = datetime.now(TZ).replace(tzinfo=None)
     execute_write(
         """INSERT INTO unidades
            (unit_number, id_lote, vin_number, reefer_serial, reefer_model,
             evaporator_serial_mjs11, evaporator_serial_mjd22, engine_serial,
-            compressor_serial, generator_serial, battery_charger_serial)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            compressor_serial, generator_serial, battery_charger_serial, fecha_registro)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
            ON DUPLICATE KEY UPDATE
            id_lote=%s, vin_number=%s, reefer_serial=%s, reefer_model=%s,
            evaporator_serial_mjs11=%s, evaporator_serial_mjd22=%s, engine_serial=%s,
@@ -60,7 +64,7 @@ def crear_unidad(unidad: UnidadCreate, current_user=Depends(verify_token)):
         (unidad.unit_number, unidad.id_lote, unidad.vin_number, unidad.reefer_serial,
          unidad.reefer_model, unidad.evaporator_serial_mjs11, unidad.evaporator_serial_mjd22,
          unidad.engine_serial, unidad.compressor_serial, unidad.generator_serial,
-         unidad.battery_charger_serial,
+         unidad.battery_charger_serial, ahora,
          unidad.id_lote, unidad.vin_number, unidad.reefer_serial, unidad.reefer_model,
          unidad.evaporator_serial_mjs11, unidad.evaporator_serial_mjd22, unidad.engine_serial,
          unidad.compressor_serial, unidad.generator_serial, unidad.battery_charger_serial)

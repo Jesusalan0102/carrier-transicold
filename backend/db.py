@@ -10,7 +10,7 @@ def _run_migrations():
     conn = pool.connection()
     try:
         with conn.cursor() as cur:
-            # Agrega retardo_min a registros_asistencia si no existe
+            # ── retardo_min en registros_asistencia ───────────────────────────
             cur.execute("""
                 SELECT COUNT(*) FROM information_schema.COLUMNS
                 WHERE TABLE_SCHEMA = DATABASE()
@@ -25,6 +25,22 @@ def _run_migrations():
                 )
                 conn.commit()
                 print("✅ Migración: columna retardo_min añadida a registros_asistencia")
+
+            # ── fecha_registro en unidades ────────────────────────────────────
+            cur.execute("""
+                SELECT COUNT(*) FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME   = 'unidades'
+                  AND COLUMN_NAME  = 'fecha_registro'
+            """)
+            row2 = cur.fetchone()
+            count2 = row2[0] if isinstance(row2, tuple) else list(row2.values())[0]
+            if count2 == 0:
+                cur.execute(
+                    "ALTER TABLE unidades ADD COLUMN fecha_registro DATETIME DEFAULT NULL"
+                )
+                conn.commit()
+                print("✅ Migración: columna fecha_registro añadida a unidades")
     except Exception as e:
         print(f"⚠️  Migración omitida: {e}")
     finally:

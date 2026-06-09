@@ -122,12 +122,61 @@ def _sheet_resumen(wb, conn):
 # ── Hoja 2: Series / Unidades ─────────────────────────────────────────────────
 def _sheet_unidades(wb, conn):
     ws = wb.create_sheet("Series_Unidades")
-    rows_db = _query(conn, "SELECT * FROM unidades ORDER BY unit_number")
+    rows_db = _query(conn, """
+        SELECT
+            unit_number              AS `Número de Unidad`,
+            id_lote                  AS `Lote / Flota`,
+            vin_number               AS `VIN (Chasis)`,
+            reefer_model             AS `Modelo Reefer`,
+            reefer_serial            AS `Serie Reefer`,
+            evaporator_serial_mjs11  AS `Serie Evaporador MJS11`,
+            evaporator_serial_mjd22  AS `Serie Evaporador MJD22`,
+            engine_serial            AS `Serie Motor`,
+            compressor_serial        AS `Serie Compresor`,
+            generator_serial         AS `Serie Generador`,
+            battery_charger_serial   AS `Serie Cargador Batería`,
+            fecha_registro           AS `Fecha y Hora de Registro`
+        FROM unidades
+        ORDER BY id_lote, unit_number
+    """)
     if not rows_db:
         ws.cell(1, 1, "Sin registros").font = Font(italic=True)
         return
+
     cols = list(rows_db[0].keys())
-    _write_sheet(ws, cols, [[_safe_str(r[c]) for c in cols] for r in rows_db])
+
+    # Encabezado
+    ws.append(cols)
+    hstyle = _hdr(AZUL_CORP)
+    for col_i in range(1, len(cols) + 1):
+        _apply(ws.cell(1, col_i), hstyle)
+    ws.row_dimensions[1].height = 22
+
+    fill_alt = PatternFill("solid", start_color=GRIS_FILA, end_color=GRIS_FILA)
+
+    for row_i, r in enumerate(rows_db, 2):
+        row_vals = []
+        for c in cols:
+            val = r[c]
+            # Formatear fecha/hora en Tijuana
+            if c == "Fecha y Hora de Registro":
+                if val is None:
+                    row_vals.append("—")
+                elif hasattr(val, "strftime"):
+                    # Si viene como datetime naive desde DB, mostrarlo directo
+                    row_vals.append(val.strftime("%d/%m/%Y %H:%M:%S"))
+                else:
+                    row_vals.append(_safe_str(val))
+            else:
+                row_vals.append(_safe_str(val) if val not in (None, "") else "—")
+        ws.append(row_vals)
+
+        if row_i % 2 == 0:
+            for col_i in range(1, len(cols) + 1):
+                ws.cell(row_i, col_i).fill = fill_alt
+
+    ws.freeze_panes = "A2"
+    _autofit(ws)
 
 
 # ── Hoja 3: Actividades ───────────────────────────────────────────────────────
