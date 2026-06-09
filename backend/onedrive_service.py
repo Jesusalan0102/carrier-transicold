@@ -19,9 +19,13 @@ import os
 import time
 import logging
 import requests
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
+
+TZ = ZoneInfo("America/Tijuana")
 
 BASE_FOLDER    = "carrier-transicold"
 EVIDENCIAS_DIR = f"{BASE_FOLDER}/Evidencias"
@@ -334,9 +338,6 @@ def sync_reporte_maestro(excel_bytes: bytes, fecha: str = None) -> str:
     Sube el reporte Excel a:
       carrier-transicold/Reportes/YYYY-MM/Carrier_Reporte_YYYY-MM-DD.xlsx
     """
-    from datetime import datetime
-from zoneinfo import ZoneInfo
-TZ = ZoneInfo("America/Tijuana")
     if not fecha:
         fecha = datetime.now(TZ).strftime("%Y-%m-%d")
     mes    = fecha[:7]
