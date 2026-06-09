@@ -1688,14 +1688,53 @@ async def mis_tareas():
             const cntRes = await fetchAuth(`/api/evidencias/count?unit_number=${unidad}&tecnico=${username}`); const cnt = await cntRes.json();
             const totalPrev = cnt.total || 0; const restantes = 100 - totalPrev;
             if (restantes <= 0) return alert('Límite de 100 fotos alcanzado');
-            const modal = mostrarModal(`<div class="modal-content"><h3>📸 Subir Evidencia – ${unidad}</h3><p>Guardadas: <b>${totalPrev}</b> · Disponibles: <b>${restantes}</b></p><input type="file" id="fotosInput" multiple accept="image/*"><div id="previewFotos" style="display:flex; flex-wrap:wrap; gap:8px; margin:12px 0;"></div><button class="btn-primary" id="btnGuardarFotos">💾 Guardar Fotos</button><button class="btn-danger" onclick="cerrarModal()">Cancelar</button></div>`);
+            const modal = mostrarModal(`<div class="modal-content"><h3>📸 Subir Evidencia – ${unidad}</h3><p>Guardadas: <b>${totalPrev}</b> · Disponibles: <b>${restantes}</b></p><input type="file" id="fotosInput" multiple accept="image/*"><div id="previewFotos" style="display:flex; flex-wrap:wrap; gap:8px; margin:12px 0;"></div><div id="compressInfo" style="font-size:12px;color:#666;margin-bottom:8px;"></div><button class="btn-primary" id="btnGuardarFotos">💾 Guardar Fotos</button><button class="btn-danger" onclick="cerrarModal()">Cancelar</button></div>`);
+
+            // Comprime una imagen con Canvas API (max 1200px, calidad 0.75 JPEG)
+            async function comprimirImagen(file) {
+                return new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = ev => {
+                        const img = new Image();
+                        img.onload = () => {
+                            const MAX = 1200;
+                            let { width: w, height: h } = img;
+                            if (w > MAX || h > MAX) {
+                                if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+                                else       { w = Math.round(w * MAX / h); h = MAX; }
+                            }
+                            const canvas = document.createElement('canvas');
+                            canvas.width = w; canvas.height = h;
+                            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                            canvas.toBlob(blob => {
+                                if (blob && blob.size < file.size) {
+                                    resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }));
+                                } else {
+                                    resolve(file); // si ya era pequeño, usar original
+                                }
+                            }, 'image/jpeg', 0.75);
+                        };
+                        img.onerror = () => resolve(file); // fallback al original
+                        img.src = ev.target.result;
+                    };
+                    reader.onerror = () => resolve(file);
+                    reader.readAsDataURL(file);
+                });
+            }
+
             document.getElementById('fotosInput').addEventListener('change', e => {
                 const files = Array.from(e.target.files).slice(0, restantes), previewDiv = document.getElementById('previewFotos'); previewDiv.innerHTML = '';
-                files.forEach(f => { const r = new FileReader(); r.onload = ev => { const img = document.createElement('img'); img.src = ev.target.result; img.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:8px;'; previewDiv.appendChild(img); }; r.readAsDataURL(f); });
+                let totalKB = 0; files.forEach(f => { totalKB += f.size / 1024; const r = new FileReader(); r.onload = ev => { const img = document.createElement('img'); img.src = ev.target.result; img.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:8px;'; previewDiv.appendChild(img); }; r.readAsDataURL(f); });
+                document.getElementById('compressInfo').textContent = `${files.length} foto(s) · ${(totalKB/1024).toFixed(1)} MB → se comprimirán a ~${Math.round(totalKB * 0.05 / 1024 * 10) / 10 || '<0.5'} MB antes de subir`;
             });
+
             document.getElementById('btnGuardarFotos').onclick = async () => {
                 const input = document.getElementById('fotosInput'); if (!input.files.length) return alert('Selecciona fotos');
-                const fd = new FormData(); fd.append('unidad', unidad); fd.append('tecnico', username); for (let f of input.files) fd.append('files', f);
+                const btn = document.getElementById('btnGuardarFotos'); btn.disabled = true; btn.textContent = '⏳ Comprimiendo...';
+                const archivos = Array.from(input.files).slice(0, restantes);
+                const comprimidos = await Promise.all(archivos.map(f => comprimirImagen(f)));
+                btn.textContent = '📤 Subiendo...';
+                const fd = new FormData(); fd.append('unidad', unidad); fd.append('tecnico', username); comprimidos.forEach(f => fd.append('files', f));
                 await fetchAuth('/api/evidencias/upload', { method: 'POST', body: fd }); alert('Fotos guardadas'); cerrarModal();
             };
         }
