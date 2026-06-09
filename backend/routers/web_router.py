@@ -327,6 +327,18 @@ async def dashboard():
         .status-tbl tbody tr:hover td { background:#eef4ff; }
         .status-tbl .check { color:#16a34a; font-size:1rem; }
         .status-tbl .dash { color:#d1d5db; }
+        .status-tbl .badge-proceso {
+            display:inline-flex; align-items:center; gap:3px;
+            background:#fff7ed; color:#c2410c; border:1px solid #fed7aa;
+            border-radius:999px; padding:2px 8px; font-size:0.68rem;
+            font-weight:600; white-space:nowrap; animation:pulse-badge 2s infinite;
+        }
+        .status-tbl .badge-pendiente {
+            display:inline-block; font-size:0.85rem; opacity:0.7;
+        }
+        @keyframes pulse-badge {
+            0%,100% { opacity:1; } 50% { opacity:0.55; }
+        }
         .lotes-wrap { border:1px solid #e5e7eb; border-radius:12px; overflow:hidden; margin-bottom:12px; }
         .lote-hdr { background:linear-gradient(90deg,#002B5B,#0057A8); color:white; padding:14px 20px; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:space-between; }
         .lote-body { display:none; padding:16px; overflow-x:auto; background:white; }
@@ -408,15 +420,25 @@ async def dashboard():
                     const unidades = await unidadesRes.json();
                     if (unidades.length) {
                         // Tabla de estatus – CSS correcta
-                        const compSet = new Set(asignaciones.filter(a=>a.estado==='completada').map(a=>a.unidad+'||'+a.actividad_id));
+                        const compSet    = new Set(asignaciones.filter(a=>a.estado==='completada').map(a=>a.unidad+'||'+a.actividad_id));
+                        const procesoSet = new Set(asignaciones.filter(a=>a.estado==='en_proceso').map(a=>a.unidad+'||'+a.actividad_id));
+                        const pendSet    = new Set(asignaciones.filter(a=>a.estado==='pendiente').map(a=>a.unidad+'||'+a.actividad_id));
                         let tbl = '<table class="status-tbl"><thead><tr><th>LOTE</th><th>#Económico</th>';
                         actividades.forEach(a => { tbl += `<th>${a}</th>`; });
                         tbl += '</tr></thead><tbody>';
                         unidades.forEach(u => {
                             tbl += `<tr><td>${u.id_lote||''}</td><td>${u.unit_number}</td>`;
                             actividades.forEach(act => {
-                                const ok = compSet.has(u.unit_number+'||'+act);
-                                tbl += ok ? '<td><span class="check">✔</span></td>' : '<td><span class="dash">—</span></td>';
+                                const key = u.unit_number+'||'+act;
+                                if (compSet.has(key)) {
+                                    tbl += '<td><span class="check">✔</span></td>';
+                                } else if (procesoSet.has(key)) {
+                                    tbl += '<td><span class="badge-proceso" title="En proceso">⚙ En proceso</span></td>';
+                                } else if (pendSet.has(key)) {
+                                    tbl += '<td><span class="badge-pendiente" title="Pendiente">⏳</span></td>';
+                                } else {
+                                    tbl += '<td><span class="dash">—</span></td>';
+                                }
                             });
                             tbl += '</tr>';
                         });
