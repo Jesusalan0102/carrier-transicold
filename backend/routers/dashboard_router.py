@@ -2,8 +2,12 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from db import execute_read
 from auth import verify_token
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import io
 import logging
+
+TZ = ZoneInfo("America/Tijuana")
 
 # ── Importación opcional de OneDrive ────────────────────────────────────────
 try:
@@ -318,9 +322,6 @@ def reporte_excel(current_user: dict = Depends(verify_token)):
     buf.seek(0)
     excel_bytes = buf.getvalue()
 
-    from datetime import datetime
-from zoneinfo import ZoneInfo
-TZ = ZoneInfo("America/Tijuana")
     fecha = datetime.now(TZ).strftime("%Y-%m-%d")
 
     # ── Auto-sync a OneDrive cada vez que se descarga el reporte ──────────
