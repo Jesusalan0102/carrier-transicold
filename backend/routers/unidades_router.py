@@ -50,26 +50,41 @@ def listar_unidades(current_user=Depends(verify_token)):
 def crear_unidad(unidad: UnidadCreate, current_user=Depends(verify_token)):
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo administradores")
-    ahora = datetime.now(TZ).replace(tzinfo=None)
-    execute_write(
-        """INSERT INTO unidades
-           (unit_number, id_lote, vin_number, reefer_serial, reefer_model,
-            evaporator_serial_mjs11, evaporator_serial_mjd22, engine_serial,
-            compressor_serial, generator_serial, battery_charger_serial, fecha_registro)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-           ON DUPLICATE KEY UPDATE
-           id_lote=%s, vin_number=%s, reefer_serial=%s, reefer_model=%s,
-           evaporator_serial_mjs11=%s, evaporator_serial_mjd22=%s, engine_serial=%s,
-           compressor_serial=%s, generator_serial=%s, battery_charger_serial=%s""",
-        (unidad.unit_number, unidad.id_lote, unidad.vin_number, unidad.reefer_serial,
-         unidad.reefer_model, unidad.evaporator_serial_mjs11, unidad.evaporator_serial_mjd22,
-         unidad.engine_serial, unidad.compressor_serial, unidad.generator_serial,
-         unidad.battery_charger_serial, ahora,
-         unidad.id_lote, unidad.vin_number, unidad.reefer_serial, unidad.reefer_model,
-         unidad.evaporator_serial_mjs11, unidad.evaporator_serial_mjd22, unidad.engine_serial,
-         unidad.compressor_serial, unidad.generator_serial, unidad.battery_charger_serial)
+
+    # Verificar si la unidad ya existe
+    existente = execute_read(
+        "SELECT id FROM unidades WHERE unit_number=%s", (unidad.unit_number,)
     )
-    return {"mensaje": "Unidad registrada"}
+
+    if existente:
+        # Ya existe → actualizar datos SIN tocar fecha_registro
+        execute_write(
+            """UPDATE unidades SET
+               id_lote=%s, vin_number=%s, reefer_serial=%s, reefer_model=%s,
+               evaporator_serial_mjs11=%s, evaporator_serial_mjd22=%s, engine_serial=%s,
+               compressor_serial=%s, generator_serial=%s, battery_charger_serial=%s
+               WHERE unit_number=%s""",
+            (unidad.id_lote, unidad.vin_number, unidad.reefer_serial, unidad.reefer_model,
+             unidad.evaporator_serial_mjs11, unidad.evaporator_serial_mjd22, unidad.engine_serial,
+             unidad.compressor_serial, unidad.generator_serial, unidad.battery_charger_serial,
+             unidad.unit_number)
+        )
+        return {"mensaje": "Unidad actualizada"}
+    else:
+        # Nueva unidad → registrar con fecha_registro = ahora (hora Tijuana)
+        ahora = datetime.now(TZ).replace(tzinfo=None)
+        execute_write(
+            """INSERT INTO unidades
+               (unit_number, id_lote, vin_number, reefer_serial, reefer_model,
+                evaporator_serial_mjs11, evaporator_serial_mjd22, engine_serial,
+                compressor_serial, generator_serial, battery_charger_serial, fecha_registro)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (unidad.unit_number, unidad.id_lote, unidad.vin_number, unidad.reefer_serial,
+             unidad.reefer_model, unidad.evaporator_serial_mjs11, unidad.evaporator_serial_mjd22,
+             unidad.engine_serial, unidad.compressor_serial, unidad.generator_serial,
+             unidad.battery_charger_serial, ahora)
+        )
+        return {"mensaje": "Unidad registrada"}
 
 # ── EDITAR COMPLETA (admin panel) ──────────────────────────────────────────
 @router.put("/{unidad_id}")
