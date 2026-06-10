@@ -240,8 +240,96 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
             try {{
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 const ws = new WebSocket(protocol + '//' + window.location.host + '/ws?token=' + encodeURIComponent(window.token || ''));
-                ws.onmessage = (event) => {{}};
-                ws.onerror = () => {{}};
+
+                // ── Sistema de sonidos via Web Audio API ───────────────────
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                let _actx = null;
+                function _getCtx() {{ if (!_actx) _actx = new AudioCtx(); return _actx; }}
+
+                function _playTone(freqs, dur, waveType, vol) {{
+                    dur = dur||0.18; waveType = waveType||'sine'; vol = vol||0.35;
+                    try {{
+                        const ctx = _getCtx();
+                        freqs.forEach(function(f, i) {{
+                            const osc = ctx.createOscillator();
+                            const gain = ctx.createGain();
+                            osc.connect(gain); gain.connect(ctx.destination);
+                            osc.type = waveType;
+                            osc.frequency.setValueAtTime(f, ctx.currentTime + i*dur);
+                            gain.gain.setValueAtTime(vol, ctx.currentTime + i*dur);
+                            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i*dur + dur);
+                            osc.start(ctx.currentTime + i*dur);
+                            osc.stop(ctx.currentTime + (i+1)*dur);
+                        }});
+                    }} catch(e) {{}}
+                }}
+
+                const _SOUNDS = {{
+                    solicitud_nueva:      function(){{ _playTone([660,880],0.15,'sine',0.4); }},
+                    asignacion_nueva:     function(){{ _playTone([523,659,784],0.14,'triangle',0.35); }},
+                    solicitud_aprobada:   function(){{ _playTone([784,988,1047],0.13,'sine',0.3); }},
+                    actividad_iniciada:   function(){{ _playTone([440,554],0.16,'triangle',0.3); }},
+                    actividad_completada: function(){{ _playTone([523,659,784,1047],0.12,'sine',0.4); }},
+                    ticket_nuevo:         function(){{ _playTone([330,262,220],0.2,'sawtooth',0.25); }},
+                }};
+                const _LABELS = {{
+                    solicitud_nueva:      'Solicitud de actividad',
+                    asignacion_nueva:     'Actividad asignada',
+                    solicitud_aprobada:   'Solicitud aprobada',
+                    actividad_iniciada:   'Actividad iniciada',
+                    actividad_completada: 'Actividad completada',
+                    ticket_nuevo:         'Nuevo ticket creado',
+                }};
+                const _ICONS = {{
+                    solicitud_nueva:'&#x1F4CB;', asignacion_nueva:'&#x2705;',
+                    solicitud_aprobada:'&#x1F44D;', actividad_iniciada:'&#x25B6;&#xFE0F;',
+                    actividad_completada:'&#x1F3C1;', ticket_nuevo:'&#x1F3AB;',
+                }};
+
+                function _showToast(evType, payload) {{
+                    const label = _LABELS[evType] || evType;
+                    const icon  = _ICONS[evType]  || '';
+                    const t = document.createElement('div');
+                    t.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#1F4E78;color:#fff;'
+                        + 'padding:12px 18px;border-radius:10px;font-size:13px;font-family:Arial,sans-serif;'
+                        + 'z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.35);max-width:280px;'
+                        + 'line-height:1.4;opacity:0;transition:opacity .25s';
+                    var extra = (payload && (payload.unidad || payload.unit_number || payload.tecnico))
+                        ? '<br><span style="opacity:.75;font-size:11px">'
+                            + (payload.unidad || payload.unit_number || '')
+                            + (payload.tecnico ? ' &middot; ' + payload.tecnico : '')
+                            + '</span>'
+                        : '';
+                    t.innerHTML = icon + ' <strong>' + label + '</strong>' + extra;
+                    document.body.appendChild(t);
+                    requestAnimationFrame(function(){{ t.style.opacity = '1'; }});
+                    setTimeout(function(){{ t.style.opacity = '0'; setTimeout(function(){{ t.remove(); }}, 300); }}, 4500);
+                }}
+
+                // Desbloquear AudioContext al primer click del usuario
+                document.addEventListener('click', function(){{ try{{ _getCtx().resume(); }}catch(e){{}} }}, {{once:true}});
+
+                function _attachHandlers(socket) {{
+                    socket.onmessage = function(ev) {{
+                        try {{
+                            const d = JSON.parse(ev.data);
+                            if (d.type && d.type !== 'status' && _SOUNDS[d.type]) {{
+                                _SOUNDS[d.type]();
+                                _showToast(d.type, d.payload || {{}});
+                            }}
+                        }} catch(e) {{}}
+                    }};
+                    socket.onerror = function(){{}};
+                    socket.onclose = function() {{
+                        setTimeout(function() {{
+                            try {{
+                                var ws2 = new WebSocket(protocol + '//' + window.location.host + '/ws?token=' + encodeURIComponent(window.token || ''));
+                                _attachHandlers(ws2);
+                            }} catch(e) {{}}
+                        }}, 8000);
+                    }};
+                }}
+                _attachHandlers(ws);
             }} catch(e) {{}}
         </script>
         {extra_scripts}

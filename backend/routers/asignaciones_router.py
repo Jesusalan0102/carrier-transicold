@@ -4,7 +4,20 @@ from auth import verify_token
 from models import AsignacionCreate, AsignacionUpdate
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import asyncio
 TZ = ZoneInfo("America/Tijuana")
+
+def _notify(event: str, payload: dict = None):
+    """Helper síncrono para emitir eventos WebSocket desde endpoints síncronos."""
+    try:
+        from routers.ws import notify
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(notify(event, payload))
+        else:
+            loop.run_until_complete(notify(event, payload))
+    except Exception:
+        pass
 
 router = APIRouter(prefix="/api/asignaciones", tags=["asignaciones"])
 
@@ -77,6 +90,7 @@ def crear_asignacion(asig: AsignacionCreate, current_user=Depends(verify_token))
         "INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado, fecha_asignacion) VALUES (%s,%s,%s,%s,%s)",
         (asig.unidad, asig.actividad_id, asig.tecnico, asig.estado, datetime.now(TZ))
     )
+    _notify("asignacion_nueva", {"tecnico": asig.tecnico, "unidad": asig.unidad})
     return {"mensaje": "Asignación creada"}
 
 # ── SOLICITAR (técnico pide aprobación) ────────────────────────────────────
@@ -104,6 +118,7 @@ def solicitar_actividad(asig: AsignacionCreate, current_user=Depends(verify_toke
         "INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado, fecha_asignacion) VALUES (%s,%s,%s,'solicitado',%s)",
         (asig.unidad, asig.actividad_id, tecnico, datetime.now(TZ))
     )
+    _notify("solicitud_nueva", {"tecnico": tecnico, "unidad": asig.unidad})
     return {"mensaje": "Solicitud enviada, pendiente de aprobación"}
 
 # ── APROBAR (admin) ────────────────────────────────────────────────────────
@@ -112,6 +127,7 @@ def aprobar(asig_id: int, current_user=Depends(verify_token)):
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo administradores")
     execute_write("UPDATE asignaciones SET estado='pendiente' WHERE id=%s", (asig_id,))
+    _notify("solicitud_aprobada", {"asignacion_id": asig_id})
     return {"mensaje": "Solicitud aprobada"}
 
 # ── RECHAZAR/ELIMINAR (admin) ──────────────────────────────────────────────
@@ -129,6 +145,7 @@ def iniciar(asig_id: int, current_user=Depends(verify_token)):
         "UPDATE asignaciones SET estado='en_proceso', fecha_inicio=%s WHERE id=%s",
         (datetime.now(TZ), asig_id)
     )
+    _notify("actividad_iniciada", {"asignacion_id": asig_id})
     return {"mensaje": "Actividad iniciada"}
 
 # ── FINALIZAR (técnico, comentario obligatorio) ────────────────────────────
@@ -152,6 +169,7 @@ def finalizar(asig_id: int, data: dict, current_user=Depends(verify_token)):
             "UPDATE tickets SET atendido=TRUE, fecha_atencion=%s WHERE id=%s",
             (now, ticket_id)
         )
+    _notify("actividad_completada", {"asignacion_id": asig_id, "tecnico": current_user["username"]})
     return {"mensaje": "Actividad finalizada"}
 
 # ── EDITAR (admin: cambiar estado/técnico/actividad + comentario) ──────────

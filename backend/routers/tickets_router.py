@@ -5,7 +5,19 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import asyncio
 TZ = ZoneInfo("America/Tijuana")
+
+def _notify(event: str, payload: dict = None):
+    try:
+        from routers.ws import notify
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(notify(event, payload))
+        else:
+            loop.run_until_complete(notify(event, payload))
+    except Exception:
+        pass
 
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
 
@@ -80,6 +92,7 @@ def crear_ticket(ticket: TicketCreate, current_user=Depends(verify_token)):
             )
             conn.commit()
 
+        _notify("ticket_nuevo", {"unit_number": ticket.unit_number, "ticket_num": next_num})
         return {"mensaje": "Ticket creado", "ticket_num": next_num}
 
     except Exception as e:
