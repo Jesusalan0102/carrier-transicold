@@ -12,9 +12,11 @@ const PRECACHE = [
 // ── Install ───────────────────────────────────────────────────────────────────
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(PRECACHE))
+    caches.open(CACHE_NAME).then(cache =>
+      // addAll falla si algún recurso da 404; usamos add individual con catch
+      Promise.allSettled(PRECACHE.map(url => cache.add(url).catch(() => {})))
+    ).then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
 // ── Activate ──────────────────────────────────────────────────────────────────
