@@ -392,7 +392,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
 
             // Registrar SW
             if ('serviceWorker' in navigator) {{
-                navigator.serviceWorker.register('/static/sw.js')
+                navigator.serviceWorker.register('/sw.js')
                     .then(function(reg) {{
                         _swReg = reg;
                         // Si ya tienen permiso concedido, suscribir sin pedir nada

@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 import uvicorn
 import os
 from dotenv import load_dotenv
@@ -72,6 +74,18 @@ app.include_router(push_router)
 
 app.include_router(asistencia_router,    prefix="/api")
 app.include_router(horarios_router)
+
+# ── Archivos estáticos (iconos, manifest, sw.js) ──────────────────────────────
+import pathlib
+_STATIC_DIR = pathlib.Path(__file__).parent / "static"
+if _STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+# sw.js debe estar en la raíz para que el Service Worker controle todo /app/*
+@app.get("/sw.js", include_in_schema=False)
+async def service_worker():
+    sw_path = _STATIC_DIR / "sw.js"
+    return FileResponse(str(sw_path), media_type="application/javascript")
 
 # ── Health check ──────────────────────────────────────────────────────────────
 @app.get("/")
