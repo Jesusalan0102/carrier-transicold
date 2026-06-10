@@ -11,8 +11,12 @@ import os, json, logging
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/push", tags=["push"])
 
-VAPID_PRIVATE = os.getenv("VAPID_PRIVATE_KEY", "")
-VAPID_PUBLIC  = os.getenv("VAPID_PUBLIC_KEY",  "")
+# Claves VAPID — también hardcodeadas como fallback si el .env no carga
+_VAPID_PRIVATE_DEFAULT = "B4J2etCPRETTelmCuPZ4zK45_9xa3xFjGuKRZ55tUxI"
+_VAPID_PUBLIC_DEFAULT  = "BLSYNF4Fq1lNklFX-RjjAMVCVUetUM-U9ikZvc8IK--e4noIYJXk_TEEAeGR8_vrUG0vKs3TbE3VSmonmejhVN8"
+
+VAPID_PRIVATE = os.getenv("VAPID_PRIVATE_KEY", _VAPID_PRIVATE_DEFAULT)
+VAPID_PUBLIC  = os.getenv("VAPID_PUBLIC_KEY",  _VAPID_PUBLIC_DEFAULT)
 VAPID_EMAIL   = os.getenv("VAPID_EMAIL", "mailto:admin@carrier-transicold.com")
 
 

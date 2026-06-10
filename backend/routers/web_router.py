@@ -333,64 +333,80 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
             }} catch(e) {{}}
 
             // ── Push Notifications (segundo plano) ────────────────────────
+            function _b64ToUint8(b64) {{
+                var b = b64.replace(/-/g,'+').replace(/_/g,'/');
+                var raw = atob(b);
+                var arr = new Uint8Array(raw.length);
+                for (var i=0; i<raw.length; i++) arr[i] = raw.charCodeAt(i);
+                return arr;
+            }}
+
+            var _pushReady = false;
+            var _vapidKey  = null;
+            var _swReg     = null;
+
+            async function _registerPushSub() {{
+                if (_pushReady || !_swReg || !_vapidKey) return;
+                try {{
+                    var sub = await _swReg.pushManager.getSubscription();
+                    if (!sub) {{
+                        sub = await _swReg.pushManager.subscribe({{
+                            userVisibleOnly: true,
+                            applicationServerKey: _b64ToUint8(_vapidKey),
+                        }});
+                    }}
+                    var sj = sub.toJSON();
+                    var res = await window.fetchAuth('/api/push/subscribe', {{
+                        method: 'POST',
+                        headers: {{'Content-Type':'application/json'}},
+                        body: JSON.stringify({{endpoint: sj.endpoint, keys: sj.keys}}),
+                    }});
+                    if (res && res.ok) _pushReady = true;
+                }} catch(e) {{ console.warn('Push subscribe error:', e); }}
+            }}
+
             async function _setupPush() {{
                 if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
                 try {{
-                    // Obtener clave pública VAPID
-                    const r = await fetch('/api/push/vapid-public-key');
+                    var r = await fetch('/api/push/vapid-public-key');
                     if (!r.ok) return;
-                    const {{ publicKey }} = await r.json();
+                    var d = await r.json();
+                    _vapidKey = d.publicKey;
+                    if (!_vapidKey) return;
 
-                    const reg = await navigator.serviceWorker.ready;
+                    _swReg = await navigator.serviceWorker.ready;
 
-                    // Verificar si ya hay suscripción activa
-                    let sub = await reg.pushManager.getSubscription();
-                    if (!sub) {{
-                        // Solicitar permiso la primera vez
-                        const perm = await Notification.requestPermission();
-                        if (perm !== 'granted') return;
-
-                        // Convertir clave base64url a Uint8Array
-                        const key = publicKey.replace(/-/g,'+').replace(/_/g,'/');
-                        const raw = atob(key);
-                        const arr = new Uint8Array(raw.length);
-                        for (let i=0; i<raw.length; i++) arr[i] = raw.charCodeAt(i);
-
-                        sub = await reg.pushManager.subscribe({{
-                            userVisibleOnly: true,
-                            applicationServerKey: arr,
-                        }});
+                    // Si ya tenemos permiso, suscribir de inmediato
+                    if (Notification.permission === 'granted') {{
+                        await _registerPushSub();
+                        return;
                     }}
+                    // Si está bloqueado, no hacer nada
+                    if (Notification.permission === 'denied') return;
 
-                    // Registrar suscripción en el servidor
-                    const subJson = sub.toJSON();
-                    await window.fetchAuth('/api/push/subscribe', {{
-                        method: 'POST',
-                        headers: {{ 'Content-Type': 'application/json' }},
-                        body: JSON.stringify({{
-                            endpoint: subJson.endpoint,
-                            keys: subJson.keys,
-                        }}),
-                    }});
+                    // Pedir permiso (requiere gesto del usuario)
+                    var perm = await Notification.requestPermission();
+                    if (perm === 'granted') await _registerPushSub();
                 }} catch(e) {{ console.warn('Push setup error:', e); }}
             }}
 
-            // Registrar SW y configurar push después del primer click del usuario
+            // Registrar SW
             if ('serviceWorker' in navigator) {{
-                navigator.serviceWorker.register('/static/sw.js').then(function() {{
-                    // Intentar configurar push inmediatamente si ya hay permiso
-                    if (Notification.permission === 'granted') {{
-                        _setupPush();
-                    }}
-                }});
+                navigator.serviceWorker.register('/static/sw.js')
+                    .then(function(reg) {{
+                        _swReg = reg;
+                        // Si ya tienen permiso concedido, suscribir sin pedir nada
+                        if (Notification.permission === 'granted') {{
+                            _setupPush();
+                        }}
+                    }})
+                    .catch(function(e) {{ console.warn('SW register error:', e); }});
             }}
 
-            // Solicitar permiso push al primer click
+            // Al primer click pedir permiso si aún no está concedido/denegado
             document.addEventListener('click', function() {{
-                if (Notification.permission === 'default') {{
-                    _setupPush();
-                }}
-            }}, {{ once: true }});
+                if (Notification.permission !== 'denied') _setupPush();
+            }}, {{once: true}});
         </script>
         {extra_scripts}
     </body>

@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import os
+from dotenv import load_dotenv
+load_dotenv()
 
 # ── Autenticación ────────────────────────────────────────────────────────────
 from routers.auth_router import router as auth_router
