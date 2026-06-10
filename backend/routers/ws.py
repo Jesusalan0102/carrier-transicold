@@ -13,12 +13,19 @@ SECRET_KEY = os.getenv("SECRET_KEY", "carrier_secret_key_2024_change_in_producti
 ALGORITHM  = os.getenv("ALGORITHM", "HS256")
 
 
+# ── Loop reference (set on first WebSocket connection) ───────────────────────
+_main_loop = None
+
 # ── Connection Manager ────────────────────────────────────────────────────────
 class ConnectionManager:
     def __init__(self):
         self.active: list[WebSocket] = []
 
     async def connect(self, ws: WebSocket):
+        global _main_loop
+        import asyncio
+        if _main_loop is None:
+            _main_loop = asyncio.get_event_loop()
         await ws.accept()
         self.active.append(ws)
 

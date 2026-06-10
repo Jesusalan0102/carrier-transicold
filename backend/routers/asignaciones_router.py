@@ -8,14 +8,13 @@ import asyncio
 TZ = ZoneInfo("America/Tijuana")
 
 def _notify(event: str, payload: dict = None):
-    """Helper síncrono para emitir eventos WebSocket desde endpoints síncronos."""
+    """Emite evento WebSocket desde endpoint síncrono (thread pool de FastAPI)."""
     try:
-        from routers.ws import notify
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.ensure_future(notify(event, payload))
-        else:
-            loop.run_until_complete(notify(event, payload))
+        from routers.ws import notify, _main_loop
+        import asyncio
+        loop = _main_loop or asyncio.get_event_loop()
+        if loop and loop.is_running():
+            asyncio.run_coroutine_threadsafe(notify(event, payload), loop)
     except Exception:
         pass
 
