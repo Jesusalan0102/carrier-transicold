@@ -23,6 +23,7 @@ from routers.toma_valores_router import router as toma_valores_router
 from routers.comentarios_router import router as comentarios_router
 from routers.cluster_router     import router as cluster_router
 from routers.ws                 import router as ws_router
+from routers.push_router        import router as push_router
 
 # ── Asistencia / QR ──────────────────────────────────────────────────────────
 from asistencia.routes          import router as asistencia_router
@@ -65,6 +66,7 @@ app.include_router(toma_valores_router)
 app.include_router(comentarios_router)
 app.include_router(cluster_router)
 app.include_router(ws_router)
+app.include_router(push_router)
 
 app.include_router(asistencia_router,    prefix="/api")
 app.include_router(horarios_router)

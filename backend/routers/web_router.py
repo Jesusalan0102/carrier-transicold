@@ -331,6 +331,66 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 }}
                 _attachHandlers(ws);
             }} catch(e) {{}}
+
+            // ── Push Notifications (segundo plano) ────────────────────────
+            async function _setupPush() {{
+                if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+                try {{
+                    // Obtener clave pública VAPID
+                    const r = await fetch('/api/push/vapid-public-key');
+                    if (!r.ok) return;
+                    const {{ publicKey }} = await r.json();
+
+                    const reg = await navigator.serviceWorker.ready;
+
+                    // Verificar si ya hay suscripción activa
+                    let sub = await reg.pushManager.getSubscription();
+                    if (!sub) {{
+                        // Solicitar permiso la primera vez
+                        const perm = await Notification.requestPermission();
+                        if (perm !== 'granted') return;
+
+                        // Convertir clave base64url a Uint8Array
+                        const key = publicKey.replace(/-/g,'+').replace(/_/g,'/');
+                        const raw = atob(key);
+                        const arr = new Uint8Array(raw.length);
+                        for (let i=0; i<raw.length; i++) arr[i] = raw.charCodeAt(i);
+
+                        sub = await reg.pushManager.subscribe({{
+                            userVisibleOnly: true,
+                            applicationServerKey: arr,
+                        }});
+                    }}
+
+                    // Registrar suscripción en el servidor
+                    const subJson = sub.toJSON();
+                    await window.fetchAuth('/api/push/subscribe', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{
+                            endpoint: subJson.endpoint,
+                            keys: subJson.keys,
+                        }}),
+                    }});
+                }} catch(e) {{ console.warn('Push setup error:', e); }}
+            }}
+
+            // Registrar SW y configurar push después del primer click del usuario
+            if ('serviceWorker' in navigator) {{
+                navigator.serviceWorker.register('/static/sw.js').then(function() {{
+                    // Intentar configurar push inmediatamente si ya hay permiso
+                    if (Notification.permission === 'granted') {{
+                        _setupPush();
+                    }}
+                }});
+            }}
+
+            // Solicitar permiso push al primer click
+            document.addEventListener('click', function() {{
+                if (Notification.permission === 'default') {{
+                    _setupPush();
+                }}
+            }}, {{ once: true }});
         </script>
         {extra_scripts}
     </body>

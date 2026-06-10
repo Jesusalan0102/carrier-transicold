@@ -22,6 +22,9 @@ cryptography==45.0.7
 # --- Microsoft / Azure ---
 msal==1.31.1
 
+# --- Push Notifications ---
+pywebpush==2.0.0
+
 # --- HTTP ---
 requests==2.32.3
 

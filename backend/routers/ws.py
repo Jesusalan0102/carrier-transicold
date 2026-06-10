@@ -47,13 +47,47 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+# ── Textos de notificación push por evento ───────────────────────────────────
+_PUSH_LABELS = {
+    "solicitud_nueva":      ("📋 Solicitud de actividad",  "Un técnico solicitó una actividad"),
+    "asignacion_nueva":     ("✅ Actividad asignada",       "Se asignó una nueva actividad"),
+    "solicitud_aprobada":   ("👍 Solicitud aprobada",       "Tu solicitud fue aprobada"),
+    "actividad_iniciada":   ("▶️ Actividad iniciada",      "Un técnico inició una actividad"),
+    "actividad_completada": ("🏁 Actividad completada",    "Una actividad fue completada"),
+    "ticket_nuevo":         ("🎫 Nuevo ticket",             "Se creó un nuevo ticket de servicio"),
+}
+
+
 async def notify(event: str, payload: dict = None):
-    """Llamar desde cualquier router para emitir un evento con sonido."""
-    await manager.broadcast({
+    """Emite evento por WebSocket (app abierta) y Push Notification (segundo plano)."""
+    data = {
         "type": event,
         "payload": payload or {},
         "time": datetime.now(TZ).isoformat(),
-    })
+    }
+    # 1. Broadcast WebSocket a todas las pestañas abiertas
+    await manager.broadcast(data)
+
+    # 2. Push Notification para usuarios en segundo plano (hilo separado)
+    if event in _PUSH_LABELS:
+        title, base_body = _PUSH_LABELS[event]
+        # Enriquecer el body con datos del payload
+        p = payload or {}
+        parts = []
+        if p.get("tecnico"):    parts.append(p["tecnico"])
+        if p.get("unidad"):     parts.append(f"Unidad {p['unidad']}")
+        if p.get("unit_number"): parts.append(f"Unidad {p['unit_number']}")
+        body = " · ".join(parts) if parts else base_body
+        import asyncio, concurrent.futures
+        loop = asyncio.get_event_loop()
+        try:
+            from routers.push_router import send_push_to_all
+            await loop.run_in_executor(
+                None,
+                lambda: send_push_to_all(title, body, tag=event)
+            )
+        except Exception:
+            pass
 
 
 @router.websocket("/ws")
