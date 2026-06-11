@@ -5,7 +5,9 @@ from fastapi.responses import FileResponse
 import uvicorn
 import os
 from dotenv import load_dotenv
+import logging
 load_dotenv()
+logging.basicConfig(level=logging.INFO, format='%(levelname)s [%(name)s]: %(message)s')
 
 # ── Autenticación ────────────────────────────────────────────────────────────
 from routers.auth_router import router as auth_router

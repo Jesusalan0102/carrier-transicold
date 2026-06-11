@@ -109,9 +109,10 @@ def send_push_to_all(title: str, body: str, tag: str = "carrier-event", url: str
         "url":   url,
     })
 
+    logger.info(f"Enviando push '{title}' a {len(subs)} suscriptor(es)")
     for sub in subs:
         try:
-            webpush(
+            resp = webpush(
                 subscription_info={
                     "endpoint": sub["endpoint"],
                     "keys": {
@@ -123,13 +124,13 @@ def send_push_to_all(title: str, body: str, tag: str = "carrier-event", url: str
                 vapid_private_key=VAPID_PRIVATE,
                 vapid_claims={"sub": VAPID_EMAIL},
             )
+            logger.info(f"Push OK para {sub['username']} — status: {getattr(resp, 'status_code', resp)}")
         except Exception as e:
             err_str = str(e)
+            logger.error(f"Push FAILED para {sub['username']}: {type(e).__name__}: {err_str[:300]}")
             # 410 Gone o 404 = suscripción expirada, limpiar
             if "410" in err_str or "404" in err_str:
                 dead_endpoints.append(sub["endpoint"])
-            else:
-                logger.warning(f"Push failed for {sub['username']}: {e}")
 
     for ep in dead_endpoints:
         try:
