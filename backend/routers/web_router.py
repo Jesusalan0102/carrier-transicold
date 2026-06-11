@@ -458,9 +458,9 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#002B5B;color:#fff;padding:14px 16px 20px;font-family:Arial,sans-serif;font-size:13px;z-index:99999;box-shadow:0 -4px 20px rgba(0,0,0,.4);line-height:1.5';
                     banner.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:flex-start">'
                         + '<div><strong style="font-size:14px">&#x1F4F2; Instala la app para recibir notificaciones</strong>'
-                        + '<br>Toca <strong>&#x1F4E4; Compartir</strong> y luego <strong>"Agregar a pantalla de inicio"</strong>'
+                        + '<br>Toca <strong>&#x1F4E4; Compartir</strong> y luego <strong>&quot;Agregar a pantalla de inicio&quot;</strong>'
                         + '<br><span style="opacity:.75;font-size:11px">Requerido en iPhone para notificaciones en segundo plano</span></div>'
-                        + '<button onclick="document.getElementById('ios-install-banner').remove();localStorage.setItem('pwa_install_dismissed','1')" '
+                        + '<button onclick="document.getElementById(&quot;ios-install-banner&quot;).remove();localStorage.setItem(&quot;pwa_install_dismissed&quot;,&quot;1&quot;)" '
                         + 'style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;padding:0 0 0 12px;line-height:1">&times;</button>'
                         + '</div>';
                     document.body.appendChild(banner);
@@ -1953,7 +1953,7 @@ async def mis_tareas():
                             canvas.getContext('2d').drawImage(img, 0, 0, w, h);
                             canvas.toBlob(blob => {
                                 if (blob && blob.size < file.size) {
-                                    resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }));
+                                    resolve(new File([blob], file.name.replace(/[.][^.]+$/, '.jpg'), { type: 'image/jpeg' }));
                                 } else {
                                     resolve(file); // si ya era pequeño, usar original
                                 }
