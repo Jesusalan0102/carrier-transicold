@@ -1,11 +1,12 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
-import asyncio, json
+import asyncio, json, logging
 from db import execute_read
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from jose import JWTError, jwt
 import os
 
+logger = logging.getLogger(__name__)
 TZ = ZoneInfo("America/Tijuana")
 router = APIRouter()
 
@@ -13,19 +14,12 @@ SECRET_KEY = os.getenv("SECRET_KEY", "carrier_secret_key_2024_change_in_producti
 ALGORITHM  = os.getenv("ALGORITHM", "HS256")
 
 
-# ── Loop reference (set on first WebSocket connection) ───────────────────────
-_main_loop = None
-
 # ── Connection Manager ────────────────────────────────────────────────────────
 class ConnectionManager:
     def __init__(self):
         self.active: list[WebSocket] = []
 
     async def connect(self, ws: WebSocket):
-        global _main_loop
-        import asyncio
-        if _main_loop is None:
-            _main_loop = asyncio.get_event_loop()
         await ws.accept()
         self.active.append(ws)
 
@@ -47,7 +41,7 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-# ── Textos de notificación push por evento ───────────────────────────────────
+# ── Textos de notificación push por evento ────────────────────────────────────
 _PUSH_LABELS = {
     "solicitud_nueva":      ("📋 Solicitud de actividad",  "Un técnico solicitó una actividad"),
     "asignacion_nueva":     ("✅ Actividad asignada",       "Se asignó una nueva actividad"),
@@ -59,35 +53,28 @@ _PUSH_LABELS = {
 
 
 async def notify(event: str, payload: dict = None):
-    """Emite evento por WebSocket (app abierta) y Push Notification (segundo plano)."""
+    """Emite evento por WebSocket Y envía push notification."""
     data = {
         "type": event,
         "payload": payload or {},
         "time": datetime.now(TZ).isoformat(),
     }
-    # 1. Broadcast WebSocket a todas las pestañas abiertas
+    # 1. WebSocket broadcast
     await manager.broadcast(data)
 
-    # 2. Push Notification para usuarios en segundo plano (hilo separado)
+    # 2. Push en executor para no bloquear
     if event in _PUSH_LABELS:
         title, base_body = _PUSH_LABELS[event]
-        # Enriquecer el body con datos del payload
         p = payload or {}
         parts = []
-        if p.get("tecnico"):    parts.append(p["tecnico"])
-        if p.get("unidad"):     parts.append(f"Unidad {p['unidad']}")
+        if p.get("tecnico"):     parts.append(p["tecnico"])
+        if p.get("unidad"):      parts.append(f"Unidad {p['unidad']}")
         if p.get("unit_number"): parts.append(f"Unidad {p['unit_number']}")
         body = " · ".join(parts) if parts else base_body
-        import asyncio, concurrent.futures
+
         loop = asyncio.get_event_loop()
-        try:
-            from routers.push_router import send_push_to_all
-            await loop.run_in_executor(
-                None,
-                lambda: send_push_to_all(title, body, tag=event)
-            )
-        except Exception:
-            pass
+        from routers.push_router import send_push_to_all
+        await loop.run_in_executor(None, send_push_to_all, title, body, event)
 
 
 @router.websocket("/ws")
@@ -105,7 +92,6 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(default=No
 
     await manager.connect(websocket)
     try:
-        # Enviar estado inicial al conectarse
         sols    = len(execute_read("SELECT id FROM asignaciones WHERE estado='solicitado'"))
         tickets = len(execute_read("SELECT id FROM tickets WHERE atendido=FALSE"))
         await websocket.send_json({
@@ -114,7 +100,6 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(default=No
             "tickets": tickets,
             "time": datetime.now(TZ).isoformat(),
         })
-        # Mantener viva la conexión con heartbeat cada 30s
         while True:
             await asyncio.sleep(30)
             sols    = len(execute_read("SELECT id FROM asignaciones WHERE estado='solicitado'"))
