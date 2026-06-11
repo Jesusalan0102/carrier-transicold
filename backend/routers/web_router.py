@@ -122,6 +122,16 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>{titulo} – Carrier Transicold</title>
+        <!-- PWA / iOS meta tags -->
+        <link rel="manifest" href="/static/manifest.json">
+        <meta name="theme-color" content="#002B5B">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+        <meta name="apple-mobile-web-app-title" content="Carrier">
+        <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+        <link rel="apple-touch-icon" sizes="152x152" href="/static/icons/icon-152.png">
+        <link rel="apple-touch-icon" sizes="192x192" href="/static/icons/icon-192.png">
         {BASE_STYLE}
         <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
         <script>
@@ -407,6 +417,29 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
             document.addEventListener('click', function() {{
                 if (Notification.permission !== 'denied') _setupPush();
             }}, {{once: true}});
+
+            // ── Banner de instalación PWA para iOS ────────────────────────
+            (function() {{
+                var isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+                var isStandalone = ('standalone' in navigator) && navigator.standalone;
+                var dismissed = localStorage.getItem('pwa_install_dismissed');
+                if (!isIos || isStandalone || dismissed) return;
+
+                // Mostrar banner después de 2 segundos
+                setTimeout(function() {{
+                    var banner = document.createElement('div');
+                    banner.id = 'ios-install-banner';
+                    banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#002B5B;color:#fff;padding:14px 16px 20px;font-family:Arial,sans-serif;font-size:13px;z-index:99999;box-shadow:0 -4px 20px rgba(0,0,0,.4);line-height:1.5';
+                    banner.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+                        + '<div><strong style="font-size:14px">&#x1F4F2; Instala la app para recibir notificaciones</strong>'
+                        + '<br>Toca <strong>&#x1F4E4; Compartir</strong> y luego <strong>"Agregar a pantalla de inicio"</strong>'
+                        + '<br><span style="opacity:.75;font-size:11px">Requerido en iPhone para notificaciones en segundo plano</span></div>'
+                        + '<button onclick="document.getElementById('ios-install-banner').remove();localStorage.setItem('pwa_install_dismissed','1')" '
+                        + 'style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;padding:0 0 0 12px;line-height:1">&times;</button>'
+                        + '</div>';
+                    document.body.appendChild(banner);
+                }}, 2000);
+            }})();
         </script>
         {extra_scripts}
     </body>
