@@ -28,7 +28,8 @@ BASE_STYLE = """
         top: 0; left: 0; padding: 1.5rem 1rem; box-shadow: 4px 0 20px rgba(0,0,0,0.1);
         z-index: 100; overflow-y: auto; display: flex; flex-direction: column;
     }
-    .main-content { margin-left: 21rem; padding: 2rem; min-height: 100vh; }
+    .main-content { margin-left: 21rem; padding: 2rem; padding-left: calc(2rem + 58px); min-height: 100vh; transition: margin-left 0.3s ease, padding-left 0.3s ease; }
+    body.sidebar-hidden .main-content { padding-left: 2rem; }
     .main-header {
         font-size: 1.75rem; font-weight: 800; color: var(--carrier-blue);
         border-bottom: 3px solid var(--carrier-accent); padding-bottom: 12px; margin-bottom: 24px;
@@ -93,20 +94,27 @@ BASE_STYLE = """
     .modal-content input { margin-bottom: 10px; }
     .modal-content .btn-primary, .modal-content .btn-danger, .modal-content .btn-success { margin-top: 8px; }
     .hamburger {
-        display: none; position: fixed; top: 14px; left: 14px; z-index: 300;
+        display: flex; position: fixed; top: 14px; left: 14px; z-index: 300;
         background: var(--carrier-blue); color: white; border: none; border-radius: 10px;
         width: 44px; height: 44px; font-size: 1.3rem; cursor: pointer;
         box-shadow: 0 4px 12px rgba(0,43,91,0.35); align-items: center; justify-content: center;
+        transition: left 0.3s ease;
     }
+    .hamburger.sidebar-open { left: calc(21rem + 14px); }
     .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.45); z-index: 99; }
-    @media (max-width: 768px) {
+    .sidebar { transition: transform 0.3s ease; }
+    body.sidebar-hidden .sidebar { transform: translateX(-100%); }
+    body.sidebar-hidden .main-content { margin-left: 0; padding-top: 4rem; }
+    body.sidebar-hidden .hamburger { left: 14px; }
+    @media (max-width: 900px) {
         .main-header { font-size: 1.2rem; }
         .kpi-num { font-size: 1.6rem; }
-        .sidebar { width: 80vw; max-width: 300px; transform: translateX(-100%); transition: transform 0.3s ease; }
+        .sidebar { width: 80vw; max-width: 300px; transform: translateX(-100%); }
         .sidebar.open { transform: translateX(0); }
         .main-content { margin-left: 0; padding: 1rem; padding-top: 4rem; }
-        .hamburger { display: flex; }
         .overlay.open { display: block; }
+        .hamburger { left: 14px !important; }
+        body.sidebar-hidden .main-content { padding-top: 4rem; }
     }
 </style>
 """
@@ -222,7 +230,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 let navHtml = '';
                 menu.forEach(item => {{
                     const active = item.href === '/app/{pagina_activa}' ? ' active' : '';
-                    navHtml += `<a href="${{item.href}}" class="nav-item${{active}}" onclick="if(window.innerWidth<=768)toggleSidebar()">${{item.label}}</a>`;
+                    navHtml += `<a href="${{item.href}}" class="nav-item${{active}}" onclick="if(window.innerWidth<=900)toggleSidebar()">${{item.label}}</a>`;
                 }});
                 document.getElementById('navMenu').innerHTML = navHtml;
             }});
@@ -230,8 +238,26 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
             function toggleSidebar() {{
                 const sidebar = document.getElementById('sidebar');
                 const overlay = document.getElementById('overlay');
-                sidebar.classList.toggle('open');
-                overlay.classList.toggle('open');
+                const btn = document.getElementById('hambBtn');
+                if (window.innerWidth <= 900) {{
+                    // Mobile: toggle clase open en el sidebar
+                    sidebar.classList.toggle('open');
+                    overlay.classList.toggle('open');
+                }} else {{
+                    // Desktop: toggle clase sidebar-hidden en body
+                    document.body.classList.toggle('sidebar-hidden');
+                    btn.classList.toggle('sidebar-open');
+                    localStorage.setItem('sidebarHidden', document.body.classList.contains('sidebar-hidden') ? '1' : '0');
+                }}
+            }}
+
+            // Restaurar estado del sidebar en desktop al cargar
+            if (window.innerWidth > 900) {{
+                if (localStorage.getItem('sidebarHidden') === '1') {{
+                    document.body.classList.add('sidebar-hidden');
+                }} else {{
+                    document.getElementById('hambBtn').classList.add('sidebar-open');
+                }}
             }}
 
             function logout() {{
