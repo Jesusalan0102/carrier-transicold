@@ -1322,6 +1322,9 @@ async def admin():
         <button class="tab-btn" onclick="showTab('sql')" id="tab-sql">
           <i class="ti ti-terminal-2"></i> SQL Directo
         </button>
+        <button class="tab-btn" onclick="showTab('evidencias')" id="tab-evidencias">
+          <i class="ti ti-photo"></i> Evidencias
+        </button>
       </div>
 
       <!-- -- ACTIVIDADES -- -->
@@ -1512,6 +1515,42 @@ async def admin():
         </div>
         <div class="sql-result" id="sql-result"></div>
       </div>
+
+      <!-- -- EVIDENCIAS -- -->
+      <div id="sec-evidencias" class="section">
+        <div class="toolbar">
+          <select id="ev-select-unidad" onchange="evCargarFotos(1)" style="min-width:200px;">
+            <option value="">— Selecciona unidad —</option>
+          </select>
+          <span id="ev-total-badge" style="font-size:13px;color:var(--color-text-secondary);"></span>
+          <button class="btn btn-navy" onclick="evDescargarZip()" id="ev-btn-zip" style="display:none;">
+            <i class="ti ti-download"></i> Descargar ZIP
+          </button>
+        </div>
+
+        <div id="ev-loading" style="display:none;text-align:center;padding:32px;color:var(--color-text-secondary);">
+          <i class="ti ti-loader" style="font-size:28px;"></i><br>Cargando fotos…
+        </div>
+
+        <div id="ev-grid" style="
+          display:grid;
+          grid-template-columns:repeat(auto-fill,minmax(160px,1fr));
+          gap:12px;
+          margin-top:8px;
+        "></div>
+
+        <div id="ev-pagination" style="display:flex;gap:8px;margin-top:16px;align-items:center;flex-wrap:wrap;"></div>
+
+        <!-- Lightbox -->
+        <div id="ev-lightbox" style="
+          display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);
+          z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:12px;
+        " onclick="evCloseLightbox(event)">
+          <img id="ev-lb-img" style="max-width:92vw;max-height:82vh;border-radius:8px;object-fit:contain;" />
+          <span id="ev-lb-caption" style="color:#e8f0ff;font-size:13px;"></span>
+        </div>
+      </div>
+
     </div>
 
     <script>
@@ -1648,10 +1687,145 @@ async def admin():
 
     // -- Pestañas ---------------------------------------------
     function showTab(t) {
-        ['actividades','usuarios','unidades','sql'].forEach(s=>{
+        ['actividades','usuarios','unidades','sql','evidencias'].forEach(s=>{
             document.getElementById('sec-'+s).classList.toggle('active',s===t);
             document.getElementById('tab-'+s).classList.toggle('active',s===t);
         });
+        if (t === 'evidencias') evInicializar();
+    }
+
+    // ── GALERÍA DE EVIDENCIAS ─────────────────────────────────
+    let evPaginaActual = 1;
+    let evTotalPages   = 1;
+    let evCargado      = false;
+
+    async function evInicializar() {
+        if (evCargado) return;
+        evCargado = true;
+        const sel = document.getElementById('ev-select-unidad');
+        try {
+            const res = await fetchAuth('/api/evidencias/unidades-con-fotos');
+            if (!res.ok) return;
+            const data = await res.json();
+            data.forEach(u => {
+                const opt = document.createElement('option');
+                opt.value = u.unit_number;
+                opt.textContent = `${u.unit_number}  (${u.total} foto${u.total===1?'':'s'})`;
+                sel.appendChild(opt);
+            });
+        } catch(e) { console.error('evInicializar', e); }
+    }
+
+    async function evCargarFotos(page = 1) {
+        const unidad = document.getElementById('ev-select-unidad').value;
+        const grid   = document.getElementById('ev-grid');
+        const badge  = document.getElementById('ev-total-badge');
+        const pag    = document.getElementById('ev-pagination');
+        const loading = document.getElementById('ev-loading');
+        const btnZip  = document.getElementById('ev-btn-zip');
+
+        grid.innerHTML = '';
+        pag.innerHTML  = '';
+        badge.textContent = '';
+        btnZip.style.display = 'none';
+
+        if (!unidad) return;
+
+        loading.style.display = 'block';
+        try {
+            const res  = await fetchAuth(`/api/evidencias/lista/${unidad}?page=${page}&per_page=20`);
+            loading.style.display = 'none';
+            if (!res.ok) { grid.innerHTML = '<p style="color:red">Error al cargar evidencias.</p>'; return; }
+            const data = await res.json();
+
+            evPaginaActual = data.page;
+            evTotalPages   = data.pages;
+            badge.textContent = `${data.total} foto${data.total===1?'':'s'}`;
+            btnZip.style.display = data.total > 0 ? 'inline-flex' : 'none';
+
+            if (data.fotos.length === 0) {
+                grid.innerHTML = '<p style="color:var(--color-text-secondary);padding:24px 0;">No hay fotos para esta unidad.</p>';
+                return;
+            }
+
+            data.fotos.forEach(f => {
+                const card = document.createElement('div');
+                card.style.cssText = 'background:#f4f6fb;border-radius:10px;overflow:hidden;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.07);transition:transform .15s;';
+                card.onmouseenter = ()=>card.style.transform='scale(1.03)';
+                card.onmouseleave = ()=>card.style.transform='scale(1)';
+                card.onclick = ()=>evAbrirLightbox(f.id, f.nombre, f.tecnico, f.fecha);
+
+                const img = document.createElement('img');
+                img.src   = `/api/evidencias/foto/${f.id}`;
+                img.alt   = f.nombre;
+                img.loading = 'lazy';
+                img.style.cssText = 'width:100%;height:130px;object-fit:cover;display:block;';
+                img.onerror = ()=>{ img.style.display='none'; };
+
+                const info = document.createElement('div');
+                info.style.cssText = 'padding:6px 8px;font-size:11px;color:var(--color-text-secondary);line-height:1.5;';
+                info.innerHTML = `<b style="color:var(--color-text-primary);font-size:12px;">${f.nombre.length>22?f.nombre.slice(0,19)+'…':f.nombre}</b><br>
+                  👷 ${f.tecnico||'—'}<br>
+                  ${f.fecha ? '🗓 '+f.fecha.slice(0,10) : ''}`;
+
+                card.appendChild(img);
+                card.appendChild(info);
+                grid.appendChild(card);
+            });
+
+            // Paginación
+            if (evTotalPages > 1) {
+                const makeBtn = (label, pg, disabled=false) => {
+                    const b = document.createElement('button');
+                    b.className = 'btn ' + (pg===evPaginaActual ? 'btn-navy' : 'btn-ghost');
+                    b.textContent = label;
+                    b.disabled = disabled;
+                    b.style.padding = '6px 12px';
+                    b.onclick = ()=>evCargarFotos(pg);
+                    return b;
+                };
+                pag.appendChild(makeBtn('‹', evPaginaActual-1, evPaginaActual===1));
+                const start = Math.max(1, evPaginaActual-2);
+                const end   = Math.min(evTotalPages, start+4);
+                for (let p=start; p<=end; p++) pag.appendChild(makeBtn(p, p));
+                pag.appendChild(makeBtn('›', evPaginaActual+1, evPaginaActual===evTotalPages));
+                const lbl = document.createElement('span');
+                lbl.style.cssText='font-size:12px;color:var(--color-text-secondary);';
+                lbl.textContent = `Página ${evPaginaActual} de ${evTotalPages}`;
+                pag.appendChild(lbl);
+            }
+        } catch(e) {
+            loading.style.display = 'none';
+            grid.innerHTML = '<p style="color:red">Error de red.</p>';
+            console.error('evCargarFotos', e);
+        }
+    }
+
+    function evAbrirLightbox(id, nombre, tecnico, fecha) {
+        const lb  = document.getElementById('ev-lightbox');
+        const img = document.getElementById('ev-lb-img');
+        const cap = document.getElementById('ev-lb-caption');
+        img.src   = `/api/evidencias/foto/${id}`;
+        cap.textContent = `${nombre}  ·  👷 ${tecnico||'—'}  ·  ${fecha?fecha.slice(0,10):''}`;
+        lb.style.display = 'flex';
+    }
+
+    function evCloseLightbox(e) {
+        if (e.target.id === 'ev-lightbox' || e.target.id === 'ev-lb-img') {
+            document.getElementById('ev-lightbox').style.display = 'none';
+        }
+    }
+
+    async function evDescargarZip() {
+        const unidad = document.getElementById('ev-select-unidad').value;
+        if (!unidad) return;
+        const res = await fetchAuth(`/api/evidencias/download/${unidad}`);
+        if (!res.ok) { alert('Error al descargar el ZIP'); return; }
+        const blob = await res.blob();
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href = url; a.download = `evidencias_${unidad}.zip`; a.click();
+        URL.revokeObjectURL(url);
     }
 
     // -- Editar Actividades -----------------------------------

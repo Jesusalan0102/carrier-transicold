@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from fastapi.concurrency import run_in_threadpool
 from auth import verify_token
 from db import execute_read, execute_write
@@ -9,6 +9,12 @@ import io
 import logging
 import asyncio
 from PIL import Image
+
+
+def require_admin_or_visor(current_user=Depends(verify_token)):
+    if current_user["role"] not in ("admin", "visor"):
+        raise HTTPException(status_code=403, detail="Acceso restringido a administradores y visores")
+    return current_user
 
 # ── Importación opcional de OneDrive ────────────────────────────────────────
 try:
@@ -172,7 +178,7 @@ async def subir_evidencias(
 
 # ── DESCARGAR ZIP DE TODAS LAS FOTOS DE UNA UNIDAD ───────────────────────
 @router.get("/download/{unit_number}")
-def descargar_evidencias(unit_number: str, current_user=Depends(verify_token)):
+def descargar_evidencias(unit_number: str, current_user=Depends(require_admin_or_visor)):
     meta = execute_read(
         "SELECT id, nombre_archivo FROM evidencias WHERE unit_number=%s",
         (unit_number,)
@@ -264,3 +270,82 @@ def sync_unidad_onedrive(unit_number: str, current_user=Depends(verify_token)):
         "subidas": subidas,
         "errores": errores,
     }
+
+
+# ── LISTAR FOTOS DE UNA UNIDAD (sin binarios) — solo admin/visor ──────────
+@router.get("/lista/{unit_number}")
+def listar_evidencias(
+    unit_number: str,
+    page: int = 1,
+    per_page: int = 20,
+    current_user=Depends(require_admin_or_visor)
+):
+    offset = (page - 1) * per_page
+    total_res = execute_read(
+        "SELECT COUNT(*) AS total FROM evidencias WHERE unit_number=%s",
+        (unit_number,)
+    )
+    total = total_res[0]["total"] if total_res else 0
+
+    rows = execute_read(
+        """SELECT id, nombre_archivo, tecnico,
+                  COALESCE(created_at, '') AS fecha
+           FROM evidencias
+           WHERE unit_number=%s
+           ORDER BY id DESC
+           LIMIT %s OFFSET %s""",
+        (unit_number, per_page, offset)
+    )
+    fotos = []
+    for r in (rows or []):
+        fotos.append({
+            "id": r["id"],
+            "nombre": r["nombre_archivo"] or f"foto_{r['id']}.jpg",
+            "tecnico": r["tecnico"] or "",
+            "fecha": str(r["fecha"]) if r["fecha"] else "",
+        })
+
+    return {
+        "unit_number": unit_number,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "pages": max(1, -(-total // per_page)),
+        "fotos": fotos,
+    }
+
+
+# ── LISTAR TODAS LAS UNIDADES CON EVIDENCIAS — solo admin/visor ───────────
+@router.get("/unidades-con-fotos")
+def unidades_con_fotos(current_user=Depends(require_admin_or_visor)):
+    rows = execute_read(
+        """SELECT unit_number, COUNT(*) AS total
+           FROM evidencias
+           GROUP BY unit_number
+           ORDER BY total DESC"""
+    )
+    return [{"unit_number": r["unit_number"], "total": r["total"]} for r in (rows or [])]
+
+
+# ── SERVIR UNA FOTO INDIVIDUAL — solo admin/visor ─────────────────────────
+@router.get("/foto/{foto_id}")
+def ver_foto(foto_id: int, current_user=Depends(require_admin_or_visor)):
+    rows = execute_read(
+        "SELECT nombre_archivo, contenido FROM evidencias WHERE id=%s",
+        (foto_id,)
+    )
+    if not rows or not rows[0]["contenido"]:
+        raise HTTPException(status_code=404, detail="Foto no encontrada")
+
+    contenido = rows[0]["contenido"]
+    nombre = rows[0]["nombre_archivo"] or "foto.jpg"
+    ext = nombre.rsplit(".", 1)[-1].lower() if "." in nombre else "jpg"
+    media_map = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+                 "gif": "image/gif", "webp": "image/webp"}
+    media_type = media_map.get(ext, "image/jpeg")
+
+    return Response(
+        content=bytes(contenido) if not isinstance(contenido, bytes) else contenido,
+        media_type=media_type,
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
