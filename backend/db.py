@@ -41,6 +41,21 @@ def _run_migrations():
                 )
                 conn.commit()
                 print("✅ Migración: columna fecha_registro añadida a unidades")
+            # ── created_at en evidencias ──────────────────────────────────────
+            cur.execute("""
+                SELECT COUNT(*) FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME   = 'evidencias'
+                  AND COLUMN_NAME  = 'created_at'
+            """)
+            row3 = cur.fetchone()
+            count3 = row3[0] if isinstance(row3, tuple) else list(row3.values())[0]
+            if count3 == 0:
+                cur.execute(
+                    "ALTER TABLE evidencias ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"
+                )
+                conn.commit()
+                print("✅ Migración: columna created_at añadida a evidencias")
     except Exception as e:
         print(f"⚠️  Migración omitida: {e}")
     finally:
