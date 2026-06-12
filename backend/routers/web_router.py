@@ -1826,11 +1826,14 @@ async def admin():
                 };
 
                 const img = document.createElement('img');
-                img.src   = `/api/evidencias/foto/${f.id}`;
                 img.alt   = f.nombre;
                 img.loading = 'lazy';
                 img.style.cssText = 'width:100%;height:130px;object-fit:cover;display:block;';
                 img.onerror = ()=>{ img.style.display='none'; };
+                fetchAuth(`/api/evidencias/foto/${f.id}`)
+                    .then(r => r.ok ? r.blob() : Promise.reject())
+                    .then(blob => { img.src = URL.createObjectURL(blob); })
+                    .catch(() => { img.style.display='none'; });
 
                 const info = document.createElement('div');
                 info.style.cssText = 'padding:6px 8px;font-size:11px;color:var(--color-text-secondary);line-height:1.5;';
@@ -1889,9 +1892,13 @@ async def admin():
         const lb  = document.getElementById('ev-lightbox');
         const img = document.getElementById('ev-lb-img');
         const cap = document.getElementById('ev-lb-caption');
-        img.src   = `/api/evidencias/foto/${id}`;
+        img.src   = '';
         cap.textContent = `${nombre}  ·  👷 ${tecnico||'—'}  ·  ${fecha?fecha.slice(0,10):''}`;
         lb.style.display = 'flex';
+        fetchAuth(`/api/evidencias/foto/${id}`)
+            .then(r => r.ok ? r.blob() : Promise.reject())
+            .then(blob => { img.src = URL.createObjectURL(blob); })
+            .catch(() => { img.alt = 'Error al cargar imagen'; });
     }
 
     function evCloseLightbox(e) {

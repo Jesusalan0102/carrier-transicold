@@ -178,7 +178,7 @@ async def subir_evidencias(
 
 # ── DESCARGAR ZIP DE TODAS LAS FOTOS DE UNA UNIDAD ───────────────────────
 @router.get("/download/{unit_number}")
-def descargar_evidencias(unit_number: str, current_user=Depends(require_admin_or_visor)):
+async def descargar_evidencias(unit_number: str, current_user=Depends(require_admin_or_visor)):
     meta = execute_read(
         "SELECT id, nombre_archivo FROM evidencias WHERE unit_number=%s",
         (unit_number,)
@@ -218,7 +218,7 @@ def descargar_evidencias(unit_number: str, current_user=Depends(require_admin_or
     zip_bytes = buf.getvalue()
 
     if ONEDRIVE_ENABLED:
-        asyncio.create_task(
+        asyncio.ensure_future(
             run_in_threadpool(sync_zip_evidencias, unit_number, zip_bytes)
         )
 
