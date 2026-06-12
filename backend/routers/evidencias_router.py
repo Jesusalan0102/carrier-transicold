@@ -349,3 +349,21 @@ def ver_foto(foto_id: int, current_user=Depends(require_admin_or_visor)):
         media_type=media_type,
         headers={"Cache-Control": "private, max-age=3600"},
     )
+
+
+# ── ELIMINAR FOTOS SELECCIONADAS — solo admin ─────────────────────────────
+@router.post("/eliminar")
+def eliminar_evidencias(data: dict, current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores pueden eliminar evidencias")
+
+    ids = data.get("ids") or []
+    ids = [int(i) for i in ids if str(i).isdigit()]
+    if not ids:
+        raise HTTPException(status_code=400, detail="No se proporcionaron IDs válidos")
+
+    placeholders = ",".join(["%s"] * len(ids))
+    execute_write(
+        f"DELETE FROM evidencias WHERE id IN ({placeholders})", tuple(ids)
+    )
+    return {"mensaje": f"{len(ids)} foto(s) eliminada(s)", "ids": ids}

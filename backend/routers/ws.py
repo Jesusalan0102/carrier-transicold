@@ -80,6 +80,7 @@ async def notify(event: str, payload: dict = None):
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, token: str = Query(default=None)):
     if not token:
+        await websocket.accept()
         await websocket.close(code=1008)
         return
     try:
@@ -87,6 +88,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(default=No
         if not payload.get("sub"):
             raise ValueError("Token sin usuario")
     except (JWTError, ValueError):
+        await websocket.accept()
         await websocket.close(code=1008)
         return
 
