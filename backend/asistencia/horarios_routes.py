@@ -279,22 +279,60 @@ DIAS_COLS = [
 
 
 def _parse_hora(val) -> Optional[str]:
-    """Convierte cualquier representación de hora a HH:MM o None."""
+    """Convierte cualquier representacion de hora a HH:MM o None.
+
+    Soporta:
+      - Fraccion decimal de dia de Excel  (0.333... -> 08:00)
+      - timedelta de pymysql              (timedelta(seconds=28800) -> 08:00)
+      - Strings HH:MM o HH:MM:SS
+      - "Descansa" / "-" / None           -> None
+    """
     if val is None:
         return None
-    s = str(val).strip()
-    if not s or s in ("-", ""):
+
+    # timedelta (TIME columns from pymysql)
+    import datetime as _dt
+    if isinstance(val, _dt.timedelta):
+        total = int(val.total_seconds())
+        h, remainder = divmod(total, 3600)
+        m = remainder // 60
+        return f"{h:02d}:{m:02d}"
+
+    # Numero flotante / entero -> fraccion de dia de Excel
+    if isinstance(val, (int, float)):
+        total_min = round(val * 24 * 60)
+        h, m = divmod(total_min, 60)
+        if 0 <= h < 24:
+            return f"{h:02d}:{m:02d}"
         return None
+
+    s = str(val).strip()
+    if not s or s.lower() in ("-", "descansa", "libre", ""):
+        return None
+
     # Formato HH:MM:SS o HH:MM
     parts = s.split(":")
     if len(parts) >= 2:
         try:
             h = int(parts[0])
             m = int(parts[1])
-            return f"{h:02d}:{m:02d}"
+            if 0 <= h < 24 and 0 <= m < 60:
+                return f"{h:02d}:{m:02d}"
         except Exception:
             pass
+
+    # Ultimo intento: numero como string ("0.333")
+    try:
+        frac = float(s)
+        total_min = round(frac * 24 * 60)
+        h, m = divmod(total_min, 60)
+        if 0 <= h < 24:
+            return f"{h:02d}:{m:02d}"
+    except Exception:
+        pass
+
     return None
+
 
 
 @router.post("/importar-excel")
@@ -355,8 +393,24 @@ async def _importar_excel_impl(semana: str, file):
                 return i
         return None
 
-    idx_username = col_idx("Técnico (username)")
-    idx_nombre   = col_idx("Nombre Completo")
+    # Buscar columna username con nombres alternativos (usar next para evitar problema con índice 0)
+    def first_col(*names):
+        for name in names:
+            idx = col_idx(name)
+            if idx is not None:
+                return idx
+        return None
+
+    idx_username = first_col(
+        "Técnico (username)", "Tecnico (username)",
+        "Username", "usuario", "user"
+    )
+    idx_nombre = first_col(
+        "Nombre Completo", "Nombre", "nombre_completo", "nombre"
+    )
+    # Si no hay columna nombre, usar la de username como fallback
+    if idx_nombre is None and idx_username is not None:
+        idx_nombre = idx_username
 
     col_map = {}
     for dia_label, key_e, key_s in DIAS_COLS:

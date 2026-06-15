@@ -2912,7 +2912,7 @@ async def asistencia_admin():
                     fetchAuth(`/api/horarios/?semana=${semana}`),
                     fetchAuth(`/api/horarios/resumen?semana=${semana}`)
                 ]);
-                tecnicosData = (await tecRes.json()).filter(u => u.role === 'tecnico');
+                const tecRaw = await tecRes.json(); tecnicosData = (Array.isArray(tecRaw) ? tecRaw : []).filter(u => u.role === 'tecnico');
                 const horarios = await horRes.json();
                 const resumen = await resRes.json();
 
