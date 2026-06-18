@@ -390,3 +390,28 @@ def sync_zip_evidencias(unit_number: str, zip_bytes: bytes) -> str:
     except Exception as e:
         logger.error(f"[OneDrive] Error subiendo ZIP {path}: {e}")
         raise
+
+
+def sync_zip_lote(id_lote: str, zip_bytes: bytes) -> str:
+    """
+    Sube el ZIP de backup de un lote completo (antes de ocultarlo) a:
+      carrier-transicold/Reportes/Backups_Lotes/<id_lote>_backup_<fecha>.zip
+    """
+    fecha  = datetime.now(TZ).strftime("%Y-%m-%d_%H%M")
+    nombre = f"{_sanitize_folder_name(id_lote)}_backup_{fecha}.zip"
+    folder_path = f"{REPORTES_DIR}/Backups_Lotes"
+    try:
+        real_folder_path = _upload_with_retry(_ensure_folder, folder_path)
+    except Exception as e:
+        logger.error(f"[OneDrive] No se pudo crear carpeta de backups '{folder_path}': {e}")
+        raise
+
+    path = f"{real_folder_path}/{nombre}"
+    try:
+        result  = _upload_with_retry(upload_large_file, zip_bytes, path, "application/zip")
+        web_url = result.get("webUrl", "")
+        logger.info(f"[OneDrive] Backup de lote subido: {path}")
+        return web_url
+    except Exception as e:
+        logger.error(f"[OneDrive] Error subiendo backup de lote {path}: {e}")
+        raise

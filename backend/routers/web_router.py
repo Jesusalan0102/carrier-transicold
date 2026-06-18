@@ -1375,6 +1375,9 @@ async def admin():
         <button class="tab-btn" onclick="showTab('evidencias')" id="tab-evidencias">
           <i class="ti ti-photo"></i> Evidencias
         </button>
+        <button class="tab-btn" onclick="showTab('lotes')" id="tab-lotes">
+          <i class="ti ti-layout-grid"></i> Lotes
+        </button>
       </div>
 
       <!-- -- ACTIVIDADES -- -->
@@ -1607,7 +1610,61 @@ async def admin():
         </div>
       </div>
 
-    </div>
+      <!-- ── LOTES ── -->
+      <div id="sec-lotes" class="section">
+        <div class="toolbar">
+          <button class="btn btn-navy" onclick="lotesCargar()">
+            <i class="ti ti-refresh"></i> Recargar
+          </button>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--color-text-secondary);cursor:pointer;">
+            <input type="checkbox" id="lotes-mostrar-ocultos" onchange="lotesCargar()" style="cursor:pointer;">
+            Mostrar lotes ocultos
+          </label>
+        </div>
+
+        <div id="lotes-loading" style="display:none;text-align:center;padding:32px;color:var(--color-text-secondary);">
+          <i class="ti ti-loader" style="font-size:24px;"></i> Cargando lotes…
+        </div>
+        <div id="lotes-empty" style="display:none;text-align:center;padding:32px;color:var(--color-text-secondary);font-size:13px;">
+          No hay lotes registrados.
+        </div>
+
+        <div id="lotes-grid" style="
+          display:grid;
+          grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
+          gap:14px;
+          margin-top:4px;
+        "></div>
+
+        <!-- Modal confirmación ocultar lote -->
+        <div id="lotes-modal" style="
+          display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);
+          z-index:9000;align-items:center;justify-content:center;
+        ">
+          <div style="
+            background:#fff;border-radius:12px;padding:24px;max-width:400px;width:90%;
+            box-shadow:0 20px 60px rgba(0,0,0,.3);
+          ">
+            <h3 style="font-size:15px;font-weight:600;color:var(--navy);margin-bottom:8px;display:flex;align-items:center;gap:8px;">
+              <i class="ti ti-eye-off" style="color:#b7640a;"></i>
+              Ocultar lote del dashboard
+            </h3>
+            <p id="lotes-modal-texto" style="font-size:13px;color:var(--color-text-secondary);margin-bottom:16px;line-height:1.5;"></p>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:18px;cursor:pointer;">
+              <input type="checkbox" id="lotes-modal-backup" style="cursor:pointer;">
+              Hacer backup a OneDrive antes de ocultar
+            </label>
+            <div style="display:flex;gap:10px;">
+              <button class="btn btn-navy" style="flex:1;justify-content:center;" onclick="lotesConfirmarOcultar()">
+                <i class="ti ti-eye-off"></i> Ocultar
+              </button>
+              <button class="btn btn-ghost" style="flex:1;justify-content:center;" onclick="lotesModal(false)">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
     <script>
     const fetchAuth = window.fetchAuth;
@@ -1743,11 +1800,12 @@ async def admin():
 
     // -- Pestañas ---------------------------------------------
     function showTab(t) {
-        ['actividades','usuarios','unidades','sql','evidencias'].forEach(s=>{
+        ['actividades','usuarios','unidades','sql','evidencias','lotes'].forEach(s=>{
             document.getElementById('sec-'+s).classList.toggle('active',s===t);
             document.getElementById('tab-'+s).classList.toggle('active',s===t);
         });
         if (t === 'evidencias') evInicializar();
+        if (t === 'lotes') lotesCargar();
     }
 
     // ── GALERÍA DE EVIDENCIAS ─────────────────────────────────
@@ -2147,6 +2205,143 @@ async def admin():
                 res.textContent=[keys.join(' | '),'-'.repeat(60),...data.map(row=>keys.map(k=>String(row[k]??'')).join(' | '))].join('\\n');
             } else { res.textContent='Consulta ejecutada. '+JSON.stringify(data); }
         } catch(e){ res.textContent='Error: '+e.message; }
+    }
+
+    // ── GESTIÓN DE LOTES ──────────────────────────────────────
+    let _loteSeleccionado = null;
+
+    async function lotesCargar() {
+        const mostrarOcultos = document.getElementById('lotes-mostrar-ocultos').checked;
+        const grid    = document.getElementById('lotes-grid');
+        const loading = document.getElementById('lotes-loading');
+        const empty   = document.getElementById('lotes-empty');
+
+        grid.style.display = 'none';
+        empty.style.display = 'none';
+        loading.style.display = 'block';
+
+        try {
+            const res  = await fetchAuth('/api/unidades/lotes');
+            const data = await res.json();
+            loading.style.display = 'none';
+
+            const filtrados = mostrarOcultos ? data : data.filter(l => !l.oculto);
+            if (!filtrados.length) { empty.style.display = 'block'; return; }
+
+            grid.style.display = 'grid';
+            grid.innerHTML = filtrados.map(l => {
+                const oculto = l.oculto;
+                const badgeHtml = oculto
+                    ? `<span style="background:#fff3cd;color:#7a4e00;font-size:11px;font-weight:500;padding:2px 8px;border-radius:999px;"><i class="ti ti-eye-off"></i> Oculto</span>`
+                    : `<span style="background:#d4edda;color:#155724;font-size:11px;font-weight:500;padding:2px 8px;border-radius:999px;"><i class="ti ti-eye"></i> Visible</span>`;
+                return `
+                <div style="
+                  background:#fff;border:0.5px solid var(--color-border-secondary);
+                  border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:10px;
+                  ${oculto ? 'opacity:.7;' : ''}
+                ">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                    <span style="font-size:15px;font-weight:600;color:var(--navy);">
+                      <i class="ti ti-layout-grid" style="font-size:14px;"></i>
+                      ${l.id_lote}
+                    </span>
+                    ${badgeHtml}
+                  </div>
+                  <div style="font-size:13px;color:var(--color-text-secondary);">
+                    <i class="ti ti-truck"></i> ${l.total_unidades} unidad${l.total_unidades!==1?'es':''}
+                  </div>
+                  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:2px;">
+                    <a href="/api/reportes/lote/${encodeURIComponent(l.id_lote)}"
+                       onclick="event.preventDefault();lotesDescargarReporte('${l.id_lote}')"
+                       class="btn btn-ghost" style="font-size:12px;padding:5px 10px;">
+                      <i class="ti ti-file-spreadsheet"></i> Reporte Excel
+                    </a>
+                    <button class="btn btn-ghost" style="font-size:12px;padding:5px 10px;"
+                            onclick="lotesDescargarBackup('${l.id_lote}')">
+                      <i class="ti ti-download"></i> Backup ZIP
+                    </button>
+                    ${oculto
+                        ? `<button class="btn btn-navy" style="font-size:12px;padding:5px 10px;"
+                                   onclick="lotesMostrar('${l.id_lote}')">
+                             <i class="ti ti-eye"></i> Mostrar
+                           </button>`
+                        : `<button class="btn" style="font-size:12px;padding:5px 10px;background:var(--warn);color:#fff;"
+                                   onclick="lotesModal(true,'${l.id_lote}',${l.total_unidades})">
+                             <i class="ti ti-eye-off"></i> Ocultar
+                           </button>`
+                    }
+                  </div>
+                </div>`;
+            }).join('');
+        } catch(e) {
+            loading.style.display = 'none';
+            empty.style.display = 'block';
+            empty.textContent = 'Error al cargar lotes: ' + e.message;
+        }
+    }
+
+    async function lotesDescargarReporte(id_lote) {
+        const url = `/api/reportes/lote/${encodeURIComponent(id_lote)}`;
+        const res = await fetchAuth(url);
+        if (!res.ok) { alert('No se pudo generar el reporte de este lote'); return; }
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `Reporte_Lote_${id_lote}.xlsx`;
+        a.click();
+    }
+
+    async function lotesDescargarBackup(id_lote) {
+        const url = `/api/unidades/lotes/${encodeURIComponent(id_lote)}/backup`;
+        const res = await fetchAuth(url);
+        if (!res.ok) { alert('No se pudo generar el backup de este lote'); return; }
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `backup_lote_${id_lote}.zip`;
+        a.click();
+    }
+
+    function lotesModal(visible, id_lote, total) {
+        _loteSeleccionado = visible ? id_lote : null;
+        const modal = document.getElementById('lotes-modal');
+        modal.style.display = visible ? 'flex' : 'none';
+        if (visible) {
+            document.getElementById('lotes-modal-texto').textContent =
+                `¿Ocultar el lote "${id_lote}" (${total} unidad${total!==1?'es':''}) del dashboard y KPIs? Los datos se conservan en la base de datos y puedes mostrarlo nuevamente.`;
+            document.getElementById('lotes-modal-backup').checked = false;
+        }
+    }
+
+    async function lotesConfirmarOcultar() {
+        if (!_loteSeleccionado) return;
+        const backup = document.getElementById('lotes-modal-backup').checked;
+        const btn = document.querySelector('#lotes-modal .btn-navy');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="ti ti-loader"></i> Ocultando…';
+        try {
+            const url = `/api/unidades/lotes/${encodeURIComponent(_loteSeleccionado)}/ocultar?backup_onedrive=${backup}`;
+            const res = await fetchAuth(url, { method: 'POST' });
+            const data = await res.json();
+            if (!res.ok) { alert(data.detail || 'Error al ocultar lote'); return; }
+            lotesModal(false);
+            alert(data.mensaje + (data.backup_onedrive_url ? '\\nBackup guardado en OneDrive.' : ''));
+            lotesCargar();
+        } catch(e) {
+            alert('Error de red: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="ti ti-eye-off"></i> Ocultar';
+        }
+    }
+
+    async function lotesMostrar(id_lote) {
+        if (!confirm(`¿Mostrar el lote "${id_lote}" en el dashboard nuevamente?`)) return;
+        const res = await fetchAuth(`/api/unidades/lotes/${encodeURIComponent(id_lote)}/mostrar`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) { alert(data.detail || 'Error al mostrar lote'); return; }
+        alert(data.mensaje);
+        lotesCargar();
     }
 
     // -- Init -------------------------------------------------

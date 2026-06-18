@@ -56,6 +56,22 @@ def _run_migrations():
                 )
                 conn.commit()
                 print("✅ Migración: columna created_at añadida a evidencias")
+
+            # ── oculto en unidades (ocultar lote del dashboard) ───────────────
+            cur.execute("""
+                SELECT COUNT(*) FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME   = 'unidades'
+                  AND COLUMN_NAME  = 'oculto'
+            """)
+            row4 = cur.fetchone()
+            count4 = row4[0] if isinstance(row4, tuple) else list(row4.values())[0]
+            if count4 == 0:
+                cur.execute(
+                    "ALTER TABLE unidades ADD COLUMN oculto TINYINT(1) NOT NULL DEFAULT 0"
+                )
+                conn.commit()
+                print("✅ Migración: columna oculto añadida a unidades")
     except Exception as e:
         print(f"⚠️  Migración omitida: {e}")
     finally:

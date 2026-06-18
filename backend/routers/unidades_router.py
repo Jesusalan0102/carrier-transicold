@@ -1,11 +1,26 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
+from fastapi.concurrency import run_in_threadpool
 from db import execute_read, execute_write
 from auth import verify_token
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import io
+import zipfile
+import asyncio
+import logging
+
 TZ = ZoneInfo("America/Tijuana")
+logger = logging.getLogger(__name__)
+
+# ── Importación opcional de OneDrive ────────────────────────────────────────
+try:
+    from onedrive_service import sync_zip_lote
+    ONEDRIVE_ENABLED = True
+except ImportError:
+    ONEDRIVE_ENABLED = False
 
 router = APIRouter(prefix="/api/unidades", tags=["unidades"])
 
@@ -42,8 +57,12 @@ class SeriesUpdate(BaseModel):
 
 # ── LISTAR ─────────────────────────────────────────────────────────────────
 @router.get("/")
-def listar_unidades(current_user=Depends(verify_token)):
-    return execute_read("SELECT * FROM unidades ORDER BY id_lote, unit_number")
+def listar_unidades(incluir_ocultas: bool = False, current_user=Depends(verify_token)):
+    if incluir_ocultas:
+        return execute_read("SELECT * FROM unidades ORDER BY id_lote, unit_number")
+    return execute_read(
+        "SELECT * FROM unidades WHERE oculto=0 ORDER BY id_lote, unit_number"
+    )
 
 # ── CREAR / ACTUALIZAR (upsert) ────────────────────────────────────────────
 @router.post("/")
@@ -128,3 +147,159 @@ def eliminar_unidad(unidad_id: int, current_user=Depends(verify_token)):
     execute_write("DELETE FROM asignaciones WHERE unidad=%s", (unit_number,))
     execute_write("DELETE FROM unidades WHERE id=%s", (unidad_id,))
     return {"mensaje": "Unidad y sus datos relacionados eliminados"}
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# ── GESTIÓN DE VISIBILIDAD DE LOTES (ocultar / mostrar) ────────────────────
+# ═════════════════════════════════════════════════════════════════════════
+
+def _generar_zip_backup_lote(id_lote: str) -> bytes:
+    """
+    Construye un ZIP en memoria con:
+      - unidades_<lote>.csv  (series de todas las unidades del lote)
+      - evidencias/<unit_number>/<archivo>  (todas las fotos de evidencia)
+    """
+    unidades = execute_read(
+        "SELECT * FROM unidades WHERE id_lote=%s ORDER BY unit_number", (id_lote,)
+    )
+    if not unidades:
+        return b""
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as zf:
+        # ── CSV con las series de las unidades ────────────────────────────
+        columnas = [c for c in unidades[0].keys()]
+        lineas = [",".join(columnas)]
+        for u in unidades:
+            lineas.append(",".join(str(u.get(c, "") or "") for c in columnas))
+        zf.writestr(f"unidades_{id_lote}.csv", "\n".join(lineas))
+
+        # ── Evidencias de cada unidad del lote ─────────────────────────────
+        unit_numbers = [u["unit_number"] for u in unidades]
+        if unit_numbers:
+            placeholders = ",".join(["%s"] * len(unit_numbers))
+            meta = execute_read(
+                f"SELECT id, unit_number, nombre_archivo FROM evidencias WHERE unit_number IN ({placeholders})",
+                tuple(unit_numbers)
+            )
+            if meta:
+                ids = tuple(m["id"] for m in meta)
+                ph2 = ",".join(["%s"] * len(ids))
+                filas = execute_read(
+                    f"SELECT id, contenido FROM evidencias WHERE id IN ({ph2})", ids
+                )
+                contenidos = {f["id"]: f["contenido"] for f in filas if f["contenido"]}
+                nombres_vistos = {}
+                for m in meta:
+                    contenido = contenidos.get(m["id"])
+                    if not contenido:
+                        continue
+                    nombre = m["nombre_archivo"] or f"foto_{m['id']}.jpg"
+                    key = (m["unit_number"], nombre)
+                    if key in nombres_vistos:
+                        nombres_vistos[key] += 1
+                        partes = nombre.rsplit(".", 1)
+                        nombre = (
+                            f"{partes[0]}_{nombres_vistos[key]}.{partes[1]}"
+                            if len(partes) == 2
+                            else f"{nombre}_{nombres_vistos[key]}"
+                        )
+                    else:
+                        nombres_vistos[key] = 0
+                    zf.writestr(f"evidencias/{m['unit_number']}/{nombre}", contenido)
+
+    buf.seek(0)
+    return buf.getvalue()
+
+
+# ── LISTAR LOTES (con conteo de unidades y estado oculto) ─────────────────
+@router.get("/lotes")
+def listar_lotes(current_user=Depends(verify_token)):
+    return execute_read("""
+        SELECT id_lote,
+               COUNT(*) AS total_unidades,
+               MAX(oculto) AS oculto
+        FROM unidades
+        GROUP BY id_lote
+        ORDER BY oculto ASC, id_lote ASC
+    """)
+
+
+# ── DESCARGAR BACKUP ZIP DE UN LOTE (sin ocultar) ──────────────────────────
+@router.get("/lotes/{id_lote}/backup")
+async def descargar_backup_lote(id_lote: str, current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    zip_bytes = await run_in_threadpool(_generar_zip_backup_lote, id_lote)
+    if not zip_bytes:
+        raise HTTPException(status_code=404, detail="Lote no encontrado o sin unidades")
+    return StreamingResponse(
+        io.BytesIO(zip_bytes),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f"attachment; filename=backup_lote_{id_lote}.zip",
+            "Cache-Control": "no-store",
+        }
+    )
+
+
+# ── OCULTAR LOTE (con backup opcional a OneDrive) ──────────────────────────
+@router.post("/lotes/{id_lote}/ocultar")
+async def ocultar_lote(
+    id_lote: str,
+    backup_onedrive: bool = False,
+    current_user=Depends(verify_token)
+):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+
+    existentes = execute_read(
+        "SELECT id FROM unidades WHERE id_lote=%s", (id_lote,)
+    )
+    if not existentes:
+        raise HTTPException(status_code=404, detail="Lote no encontrado")
+
+    web_url = None
+    if backup_onedrive:
+        if not ONEDRIVE_ENABLED:
+            raise HTTPException(
+                status_code=503,
+                detail="Integración con OneDrive no disponible en este servidor"
+            )
+        zip_bytes = await run_in_threadpool(_generar_zip_backup_lote, id_lote)
+        if zip_bytes:
+            try:
+                web_url = await run_in_threadpool(sync_zip_lote, id_lote, zip_bytes)
+            except Exception as e:
+                logger.error(f"[ocultar_lote] Backup a OneDrive falló para '{id_lote}': {e}")
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"No se pudo subir el backup a OneDrive: {e}"
+                )
+
+    execute_write("UPDATE unidades SET oculto=1 WHERE id_lote=%s", (id_lote,))
+
+    respuesta = {
+        "mensaje": f"Lote '{id_lote}' ocultado del dashboard",
+        "unidades_afectadas": len(existentes),
+    }
+    if web_url:
+        respuesta["backup_onedrive_url"] = web_url
+    return respuesta
+
+
+# ── MOSTRAR LOTE (revertir ocultamiento) ───────────────────────────────────
+@router.post("/lotes/{id_lote}/mostrar")
+def mostrar_lote(id_lote: str, current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    existentes = execute_read(
+        "SELECT id FROM unidades WHERE id_lote=%s", (id_lote,)
+    )
+    if not existentes:
+        raise HTTPException(status_code=404, detail="Lote no encontrado")
+    execute_write("UPDATE unidades SET oculto=0 WHERE id_lote=%s", (id_lote,))
+    return {
+        "mensaje": f"Lote '{id_lote}' visible nuevamente en el dashboard",
+        "unidades_afectadas": len(existentes),
+    }

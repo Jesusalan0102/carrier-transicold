@@ -484,6 +484,218 @@ def _sheet_usuarios(wb, conn):
     _write_sheet(ws, cols, [[_safe_str(r[c]) for c in list(r.keys())] for r in rows_db])
 
 
+# ═════════════════════════════════════════════════════════════════════════
+# ── REPORTE POR LOTE ────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════
+
+def _sheet_lote_resumen(wb, conn, id_lote):
+    ws = wb.create_sheet("Resumen_Lote")
+    ws.column_dimensions["A"].width = 32
+    ws.column_dimensions["B"].width = 20
+
+    titulo = ws.cell(1, 1, f"REPORTE DE LOTE — {id_lote}")
+    titulo.font = Font(name="Arial", size=14, bold=True, color="FFFFFF")
+    titulo.fill = PatternFill("solid", start_color=AZUL_CORP, end_color=AZUL_CORP)
+    titulo.alignment = Alignment(horizontal="center", vertical="center")
+    ws.merge_cells("A1:B1")
+    ws.row_dimensions[1].height = 28
+
+    fecha = ws.cell(2, 1, f"Generado: {datetime.now(TZ).strftime('%d/%m/%Y %H:%M')}")
+    fecha.font = Font(name="Arial", size=9, italic=True, color="595959")
+    ws.merge_cells("A2:B2")
+    ws.append([])
+
+    total_u = _query(conn, "SELECT COUNT(*) c FROM unidades WHERE id_lote=%s", (id_lote,))[0]["c"]
+    unit_numbers_rows = _query(conn, "SELECT unit_number FROM unidades WHERE id_lote=%s", (id_lote,))
+    unit_numbers = [r["unit_number"] for r in unit_numbers_rows]
+
+    if unit_numbers:
+        placeholders = ",".join(["%s"] * len(unit_numbers))
+        asigs = _query(conn, f"SELECT estado FROM asignaciones WHERE unidad IN ({placeholders})", tuple(unit_numbers)) or []
+        tickets = _query(conn, f"SELECT atendido FROM tickets WHERE unit_number IN ({placeholders})", tuple(unit_numbers)) or []
+    else:
+        asigs, tickets = [], []
+
+    completadas = sum(1 for a in asigs if a["estado"] == "completada")
+    en_proceso  = sum(1 for a in asigs if a["estado"] == "en_proceso")
+    pendientes  = sum(1 for a in asigs if a["estado"] == "pendiente")
+    total_t = len(asigs)
+    avance_pct = round(completadas / total_t * 100, 1) if total_t else 0
+    tk_total = len(tickets)
+    tk_abiertos = sum(1 for t in tickets if not t["atendido"])
+
+    kpis = [
+        ("Unidades en el Lote",       total_u),
+        ("Actividades Completadas",   completadas),
+        ("Actividades En Proceso",    en_proceso),
+        ("Actividades Pendientes",    pendientes),
+        ("% Avance del Lote",         f"{avance_pct}%"),
+        ("Tickets Totales",           tk_total),
+        ("Tickets Abiertos",          tk_abiertos),
+    ]
+    label_style = Font(name="Arial", size=10, bold=True)
+    val_style   = Font(name="Arial", size=11, bold=True, color="1F4E78")
+    for row_i, (label, val) in enumerate(kpis, 4):
+        ws.cell(row_i, 1, label).font = label_style
+        c = ws.cell(row_i, 2, val)
+        c.font = val_style
+        c.alignment = Alignment(horizontal="center")
+        if row_i % 2 == 0:
+            for col_i in (1, 2):
+                ws.cell(row_i, col_i).fill = PatternFill("solid", start_color=GRIS_FILA, end_color=GRIS_FILA)
+
+
+def _sheet_lote_unidades(wb, conn, id_lote):
+    ws = wb.create_sheet("Series_Unidades")
+    rows_db = _query(conn, """
+        SELECT
+            unit_number              AS `Número de Unidad`,
+            vin_number               AS `VIN (Chasis)`,
+            reefer_model             AS `Modelo Reefer`,
+            reefer_serial            AS `Serie Reefer`,
+            evaporator_serial_mjs11  AS `Serie Evaporador MJS11`,
+            evaporator_serial_mjd22  AS `Serie Evaporador MJD22`,
+            engine_serial            AS `Serie Motor`,
+            compressor_serial        AS `Serie Compresor`,
+            generator_serial         AS `Serie Generador`,
+            battery_charger_serial   AS `Serie Cargador Batería`,
+            fecha_registro           AS `Fecha y Hora de Registro`,
+            oculto                   AS `Oculto`
+        FROM unidades
+        WHERE id_lote=%s
+        ORDER BY unit_number
+    """, (id_lote,))
+    if not rows_db:
+        ws.cell(1, 1, "Sin unidades en este lote").font = Font(italic=True)
+        return
+    cols = list(rows_db[0].keys())
+    rows_fmt = []
+    for r in rows_db:
+        row_vals = []
+        for c in cols:
+            val = r[c]
+            if c == "Fecha y Hora de Registro" and hasattr(val, "strftime"):
+                row_vals.append(val.strftime("%d/%m/%Y %H:%M:%S"))
+            elif c == "Oculto":
+                row_vals.append("Sí" if val else "No")
+            else:
+                row_vals.append(_safe_str(val) if val not in (None, "") else "—")
+        rows_fmt.append(row_vals)
+    _write_sheet(ws, cols, rows_fmt)
+
+
+def _sheet_lote_actividades(wb, conn, id_lote):
+    ws = wb.create_sheet("Actividades")
+    rows_db = _query(conn, """
+        SELECT a.unidad AS Unidad, a.actividad_id AS Actividad, a.tecnico AS Técnico,
+               a.estado AS Estado, a.comentario AS Comentario,
+               a.fecha_asignacion AS `Fecha Asignación`,
+               a.fecha_inicio AS `Fecha Inicio`, a.fecha_fin AS `Fecha Fin`
+        FROM asignaciones a
+        INNER JOIN unidades u ON u.unit_number = a.unidad
+        WHERE u.id_lote=%s
+        ORDER BY a.unidad, a.fecha_asignacion DESC
+    """, (id_lote,))
+    if not rows_db:
+        ws.cell(1, 1, "Sin actividades registradas para este lote").font = Font(italic=True)
+        return
+    cols = list(rows_db[0].keys())
+    _write_sheet(ws, cols, [[_safe_str(r[c]) for c in cols] for r in rows_db])
+    colorear_idx = cols.index("Estado") + 1 if "Estado" in cols else None
+    if colorear_idx:
+        COLOR_MAP = {
+            "completada": ("C6EFCE", "276221"),
+            "en_proceso": ("DDEBF7", "1F4E79"),
+            "pendiente":  ("FFEB9C", "7D6608"),
+            "solicitado": ("FFEB9C", "7D6608"),
+        }
+        for row_i in range(2, len(rows_db) + 2):
+            cell = ws.cell(row_i, colorear_idx)
+            colors = COLOR_MAP.get(str(cell.value or "").lower())
+            if colors:
+                cell.fill = PatternFill("solid", start_color=colors[0], end_color=colors[0])
+                cell.font = Font(name="Arial", size=9, color=colors[1], bold=True)
+
+
+def _sheet_lote_tickets(wb, conn, id_lote):
+    ws = wb.create_sheet("Tickets")
+    rows_db = _query(conn, """
+        SELECT t.ticket_num AS `Ticket #`,
+               t.unit_number AS Unidad,
+               t.descripcion AS `Descripción / Problema`,
+               t.creado_por AS `Creado Por`,
+               t.atendido AS Atendido,
+               t.reporte_enviado AS `Reporte Enviado`,
+               COALESCE(t.reporte_texto, '—') AS `Reporte Final del Técnico`,
+               t.fecha_creacion AS `Fecha Creación`,
+               t.fecha_atencion AS `Fecha Atención`
+        FROM tickets t
+        INNER JOIN unidades u ON u.unit_number = t.unit_number
+        WHERE u.id_lote=%s
+        ORDER BY t.ticket_num DESC
+    """, (id_lote,))
+    if not rows_db:
+        ws.cell(1, 1, "Sin tickets registrados para este lote").font = Font(italic=True)
+        return
+    cols = list(rows_db[0].keys())
+    _write_sheet(ws, cols, [[_safe_str(r[c]) for c in cols] for r in rows_db])
+
+
+@router.get("/lote/{id_lote}")
+def exportar_reporte_lote(id_lote: str, current_user=Depends(verify_token)):
+    """
+    Exporta un reporte Excel enfocado únicamente en las unidades de un lote:
+    resumen de avance, series, actividades y tickets de ese lote.
+    """
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(status_code=500, detail="No hay conexión con la base de datos")
+
+    try:
+        existe = _query(connection, "SELECT COUNT(*) c FROM unidades WHERE id_lote=%s", (id_lote,))
+        if not existe or existe[0]["c"] == 0:
+            raise HTTPException(status_code=404, detail=f"No se encontró el lote '{id_lote}'")
+
+        wb = Workbook()
+        wb.remove(wb.active)
+
+        builders = [
+            ("Resumen_Lote",    lambda wb, conn: _sheet_lote_resumen(wb, conn, id_lote)),
+            ("Series_Unidades", lambda wb, conn: _sheet_lote_unidades(wb, conn, id_lote)),
+            ("Actividades",     lambda wb, conn: _sheet_lote_actividades(wb, conn, id_lote)),
+            ("Tickets",         lambda wb, conn: _sheet_lote_tickets(wb, conn, id_lote)),
+        ]
+
+        for name, fn in builders:
+            try:
+                fn(wb, connection)
+            except Exception as e:
+                ws = wb.create_sheet(name)
+                ws.cell(1, 1, f"Error al generar esta hoja: {e}").font = Font(italic=True, color="FF0000")
+                print(f"[reporte_lote] Hoja '{name}' falló: {e}")
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        fecha_hoy = datetime.now(TZ).strftime("%Y%m%d_%H%M")
+        nombre_seguro = "".join(c for c in id_lote if c.isalnum() or c in ("-", "_")) or "lote"
+        filename = f"Reporte_Lote_{nombre_seguro}_{fecha_hoy}.xlsx"
+
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error al generar reporte de lote '{id_lote}': {e}")
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
+    finally:
+        connection.close()
+
+
 # ── Endpoint principal ────────────────────────────────────────────────────────
 @router.get("/exportar-maestro")
 def exportar_sistema_completo(current_user=Depends(verify_token)):

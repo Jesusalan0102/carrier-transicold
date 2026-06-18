@@ -30,8 +30,11 @@ ACTIVIDADES_CARRIER = [
 # ── KPIs PRINCIPALES ───────────────────────────────────────────────────────
 @router.get("/kpis")
 def get_kpis(current_user: dict = Depends(verify_token)):
-    total_u = len(execute_read("SELECT id FROM unidades"))
-    estados = execute_read("SELECT estado FROM asignaciones")
+    total_u = len(execute_read("SELECT id FROM unidades WHERE oculto=0"))
+    unidades_visibles = execute_read("SELECT unit_number FROM unidades WHERE oculto=0")
+    visibles_set = set(u["unit_number"] for u in unidades_visibles)
+    estados_rows = execute_read("SELECT estado, unidad FROM asignaciones")
+    estados = [e for e in estados_rows if e["unidad"] in visibles_set]
     completadas = sum(1 for e in estados if e["estado"] == "completada")
     en_proceso  = sum(1 for e in estados if e["estado"] == "en_proceso")
     pendientes  = sum(1 for e in estados if e["estado"] == "pendiente")
@@ -69,7 +72,7 @@ def get_stats_tecnicos(current_user: dict = Depends(verify_token)):
 def get_estatus_unidades(current_user: dict = Depends(verify_token)):
     completadas = execute_read("SELECT unidad, actividad_id FROM asignaciones WHERE estado='completada'")
     completed_set = set((c["unidad"], c["actividad_id"]) for c in completadas)
-    unidades = execute_read("SELECT unit_number, id_lote FROM unidades ORDER BY id_lote, unit_number")
+    unidades = execute_read("SELECT unit_number, id_lote FROM unidades WHERE oculto=0 ORDER BY id_lote, unit_number")
     resultado = []
     for u in unidades:
         row = {"LOTE": u["id_lote"], "#Económico": u["unit_number"]}
