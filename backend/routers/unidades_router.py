@@ -226,13 +226,25 @@ def listar_lotes(current_user=Depends(verify_token)):
 
 
 # ── DESCARGAR BACKUP ZIP DE UN LOTE (sin ocultar) ──────────────────────────
-@router.get("/lotes/{id_lote}/backup")
+@router.get("/lotes/{id_lote:path}/backup")
 async def descargar_backup_lote(id_lote: str, current_user=Depends(verify_token)):
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo administradores")
+    logger.info(f"[backup_lote] Solicitado backup para id_lote='{id_lote}'")
+    # Verificar que el lote existe antes de generar el ZIP
+    existentes = execute_read(
+        "SELECT unit_number FROM unidades WHERE id_lote=%s", (id_lote,)
+    )
+    logger.info(f"[backup_lote] Unidades encontradas: {len(existentes) if existentes else 0}")
+    if not existentes:
+        # Mostrar lotes disponibles para debug
+        todos = execute_read("SELECT DISTINCT id_lote FROM unidades")
+        lotes_str = ", ".join(r["id_lote"] for r in todos) if todos else "(ninguno)"
+        logger.warning(f"[backup_lote] Lote '{id_lote}' no encontrado. Lotes en DB: {lotes_str}")
+        raise HTTPException(status_code=404, detail=f"Lote '{id_lote}' no encontrado. Lotes disponibles: {lotes_str}")
     zip_bytes = await run_in_threadpool(_generar_zip_backup_lote, id_lote)
     if not zip_bytes:
-        raise HTTPException(status_code=404, detail="Lote no encontrado o sin unidades")
+        raise HTTPException(status_code=500, detail="Error al generar el ZIP")
     return StreamingResponse(
         io.BytesIO(zip_bytes),
         media_type="application/zip",
@@ -244,7 +256,7 @@ async def descargar_backup_lote(id_lote: str, current_user=Depends(verify_token)
 
 
 # ── OCULTAR LOTE (con backup opcional a OneDrive) ──────────────────────────
-@router.post("/lotes/{id_lote}/ocultar")
+@router.post("/lotes/{id_lote:path}/ocultar")
 async def ocultar_lote(
     id_lote: str,
     backup_onedrive: bool = False,
@@ -289,7 +301,7 @@ async def ocultar_lote(
 
 
 # ── MOSTRAR LOTE (revertir ocultamiento) ───────────────────────────────────
-@router.post("/lotes/{id_lote}/mostrar")
+@router.post("/lotes/{id_lote:path}/mostrar")
 def mostrar_lote(id_lote: str, current_user=Depends(verify_token)):
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo administradores")
