@@ -18,3 +18,4 @@ echo "🔥 Delegando control de ejecución a Uvicorn ASGI..."
 # CRÍTICO: Usar 'exec' para que Uvicorn tome el PID 1 del contenedor.
 # Esto previene que Clever Cloud detecte el proceso como colgado o inactivo.
 exec uvicorn main:app --host 0.0.0.0 --port 9000 --workers 1 --log-level info
+Thu Jun 18 20:48:08 UTC 2026
