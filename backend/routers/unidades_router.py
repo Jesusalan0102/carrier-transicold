@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from fastapi.concurrency import run_in_threadpool
 from db import execute_read, execute_write
@@ -190,6 +190,7 @@ async def descargar_backup_lote(
 # POST /api/unidades/lotes/ocultar?id_lote=XXX&backup_onedrive=true/false
 @router.post("/lotes/ocultar")
 async def ocultar_lote(
+    background_tasks: BackgroundTasks,
     id_lote: str = Query(...),
     backup_onedrive: bool = Query(False),
     current_user=Depends(verify_token)
@@ -201,25 +202,34 @@ async def ocultar_lote(
     if not existentes:
         raise HTTPException(status_code=404, detail=f"Lote '{id_lote}' no encontrado")
 
-    web_url = None
-    if backup_onedrive:
-        if not ONEDRIVE_ENABLED:
-            raise HTTPException(status_code=503, detail="OneDrive no disponible en este servidor")
-        zip_bytes = await run_in_threadpool(_generar_zip_backup_lote, id_lote)
-        if zip_bytes:
-            try:
-                web_url = await run_in_threadpool(sync_zip_lote, id_lote, zip_bytes)
-            except Exception as e:
-                logger.error(f"[ocultar_lote] Backup OneDrive falló para '{id_lote}': {e}")
-                raise HTTPException(status_code=502, detail=f"No se pudo subir backup a OneDrive: {e}")
-
+    # Ocultar el lote INMEDIATAMENTE — no esperar el backup
     execute_write("UPDATE unidades SET oculto=1 WHERE id_lote=%s", (id_lote,))
+
     respuesta = {
         "mensaje": f"Lote '{id_lote}' ocultado del dashboard",
         "unidades_afectadas": len(existentes),
     }
-    if web_url:
-        respuesta["backup_onedrive_url"] = web_url
+
+    if backup_onedrive:
+        if not ONEDRIVE_ENABLED:
+            respuesta["backup_aviso"] = "OneDrive no disponible en este servidor; el lote fue ocultado sin backup."
+        else:
+            # Lanzar backup en background — el cliente ya recibió confirmación
+            def _tarea_backup():
+                try:
+                    logger.info(f"[ocultar_lote] Iniciando backup background para '{id_lote}'")
+                    zip_bytes = _generar_zip_backup_lote(id_lote)
+                    if zip_bytes:
+                        web_url = sync_zip_lote(id_lote, zip_bytes)
+                        logger.info(f"[ocultar_lote] Backup OneDrive completado: {web_url}")
+                    else:
+                        logger.warning(f"[ocultar_lote] ZIP vacío para '{id_lote}', sin backup")
+                except Exception as e:
+                    logger.error(f"[ocultar_lote] Backup OneDrive falló para '{id_lote}': {e}")
+
+            background_tasks.add_task(_tarea_backup)
+            respuesta["backup_aviso"] = "El backup a OneDrive se está procesando en segundo plano."
+
     return respuesta
 
 

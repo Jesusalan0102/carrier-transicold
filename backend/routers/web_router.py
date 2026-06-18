@@ -2352,7 +2352,9 @@ async def admin():
             try { data = await res.json(); } catch(e) {}
             if (!res.ok) { alert(data.detail || `Error ${res.status} al ocultar lote`); return; }
             lotesModal(false);
-            alert(data.mensaje + (data.backup_onedrive_url ? '\\nBackup guardado en OneDrive.' : ''));
+            let msg = data.mensaje;
+            if (data.backup_aviso) msg += '\\n' + data.backup_aviso;
+            alert(msg);
             lotesCargar();
         } catch(e) {
             alert('Error de red: ' + e.message);
