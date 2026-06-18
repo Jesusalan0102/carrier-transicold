@@ -3,7 +3,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 TZ = ZoneInfo("America/Tijuana")
 import pymysql
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -641,8 +641,11 @@ def _sheet_lote_tickets(wb, conn, id_lote):
     _write_sheet(ws, cols, [[_safe_str(r[c]) for c in cols] for r in rows_db])
 
 
-@router.get("/lote/{id_lote}")
-def exportar_reporte_lote(id_lote: str, current_user=Depends(verify_token)):
+@router.get("/lote")
+def exportar_reporte_lote(
+    id_lote: str = Query(..., description="ID del lote"),
+    current_user=Depends(verify_token)
+):
     """
     Exporta un reporte Excel enfocado únicamente en las unidades de un lote:
     resumen de avance, series, actividades y tickets de ese lote.

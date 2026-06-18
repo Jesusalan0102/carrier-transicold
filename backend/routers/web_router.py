@@ -2299,7 +2299,7 @@ async def admin():
     }
 
     async function lotesDescargarReporte(id_lote) {
-        const url = `/api/reportes/lote/${id_lote}`;
+        const url = `/api/reportes/lote?id_lote=${encodeURIComponent(id_lote)}`;
         const res = await fetchAuth(url);
         if (!res.ok) {
             let detalle = 'No se pudo generar el reporte de este lote';
@@ -2314,7 +2314,7 @@ async def admin():
     }
 
     async function lotesDescargarBackup(id_lote) {
-        const url = `/api/unidades/lotes/${id_lote}/backup`;
+        const url = `/api/unidades/lotes/backup?id_lote=${encodeURIComponent(id_lote)}`;
         const res = await fetchAuth(url);
         if (!res.ok) {
             let detalle = 'No se pudo generar el backup de este lote';
@@ -2346,10 +2346,11 @@ async def admin():
         btn.disabled = true;
         btn.innerHTML = '<i class="ti ti-loader"></i> Ocultando…';
         try {
-            const url = `/api/unidades/lotes/${_loteSeleccionado}/ocultar?backup_onedrive=${backup}`;
+            const url = `/api/unidades/lotes/ocultar?id_lote=${encodeURIComponent(_loteSeleccionado)}&backup_onedrive=${backup}`;
             const res = await fetchAuth(url, { method: 'POST' });
-            const data = await res.json();
-            if (!res.ok) { alert(data.detail || 'Error al ocultar lote'); return; }
+            let data = {};
+            try { data = await res.json(); } catch(e) {}
+            if (!res.ok) { alert(data.detail || `Error ${res.status} al ocultar lote`); return; }
             lotesModal(false);
             alert(data.mensaje + (data.backup_onedrive_url ? '\nBackup guardado en OneDrive.' : ''));
             lotesCargar();
@@ -2363,9 +2364,11 @@ async def admin():
 
     async function lotesMostrar(id_lote) {
         if (!confirm(`¿Mostrar el lote "${id_lote}" en el dashboard nuevamente?`)) return;
-        const res = await fetchAuth(`/api/unidades/lotes/${id_lote}/mostrar`, { method: 'POST' });
-        const data = await res.json();
-        if (!res.ok) { alert(data.detail || 'Error al mostrar lote'); return; }
+        const url = `/api/unidades/lotes/mostrar?id_lote=${encodeURIComponent(id_lote)}`;
+        const res = await fetchAuth(url, { method: 'POST' });
+        let data = {};
+        try { data = await res.json(); } catch(e) {}
+        if (!res.ok) { alert(data.detail || `Error ${res.status} al mostrar lote`); return; }
         alert(data.mensaje);
         lotesCargar();
     }
