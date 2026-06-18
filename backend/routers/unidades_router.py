@@ -60,58 +60,84 @@ class SeriesUpdate(BaseModel):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _generar_zip_backup_lote(id_lote: str) -> bytes:
-    """ZIP en memoria: CSV de series + todas las fotos de evidencia del lote."""
-    unidades = execute_read(
-        "SELECT * FROM unidades WHERE id_lote=%s ORDER BY unit_number", (id_lote,)
-    )
-    if not unidades:
-        return b""
+    """
+    ZIP en memoria: CSV de series + todas las fotos de evidencia del lote.
+    Usa una sola conexión DB con cursor propio para evitar 'Lost connection'
+    en queries largas de blobs (evidencias).
+    """
+    import pymysql
+    from db import get_db_connection
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as zf:
-        # CSV con las series
-        columnas = list(unidades[0].keys())
-        lineas = [",".join(columnas)]
-        for u in unidades:
-            lineas.append(",".join(str(u.get(c, "") or "") for c in columnas))
-        zf.writestr(f"unidades_{id_lote}.csv", "\n".join(lineas))
+    conn = get_db_connection()
+    if not conn:
+        raise RuntimeError("No hay conexión con la base de datos")
 
-        # Fotos de evidencia
-        unit_numbers = [u["unit_number"] for u in unidades]
-        if unit_numbers:
-            ph = ",".join(["%s"] * len(unit_numbers))
-            meta = execute_read(
-                f"SELECT id, unit_number, nombre_archivo FROM evidencias WHERE unit_number IN ({ph})",
-                tuple(unit_numbers)
-            )
-            if meta:
-                ids = tuple(m["id"] for m in meta)
-                ph2 = ",".join(["%s"] * len(ids))
-                filas = execute_read(
-                    f"SELECT id, contenido FROM evidencias WHERE id IN ({ph2})", ids
-                )
-                contenidos = {f["id"]: f["contenido"] for f in filas if f["contenido"]}
-                nombres_vistos = {}
-                for m in meta:
-                    contenido = contenidos.get(m["id"])
-                    if not contenido:
-                        continue
-                    nombre = m["nombre_archivo"] or f"foto_{m['id']}.jpg"
-                    key = (m["unit_number"], nombre)
-                    if key in nombres_vistos:
-                        nombres_vistos[key] += 1
-                        partes = nombre.rsplit(".", 1)
-                        nombre = (
-                            f"{partes[0]}_{nombres_vistos[key]}.{partes[1]}"
-                            if len(partes) == 2
-                            else f"{nombre}_{nombres_vistos[key]}"
-                        )
-                    else:
-                        nombres_vistos[key] = 0
-                    zf.writestr(f"evidencias/{m['unit_number']}/{nombre}", contenido)
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            # 1. Obtener unidades del lote
+            cur.execute("SELECT * FROM unidades WHERE id_lote=%s ORDER BY unit_number", (id_lote,))
+            unidades = cur.fetchall()
+            if not unidades:
+                return b""
 
-    buf.seek(0)
-    return buf.getvalue()
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as zf:
+                # CSV con las series
+                columnas = list(unidades[0].keys())
+                lineas = [",".join(columnas)]
+                for u in unidades:
+                    lineas.append(",".join(str(u.get(c, "") or "") for c in columnas))
+                zf.writestr(f"unidades_{id_lote}.csv", "\n".join(lineas))
+
+                # Fotos de evidencia (meta primero, luego contenido en bloques)
+                unit_numbers = [u["unit_number"] for u in unidades]
+                if unit_numbers:
+                    ph = ",".join(["%s"] * len(unit_numbers))
+                    cur.execute(
+                        f"SELECT id, unit_number, nombre_archivo FROM evidencias WHERE unit_number IN ({ph})",
+                        tuple(unit_numbers)
+                    )
+                    meta = cur.fetchall()
+
+                    if meta:
+                        # Traer contenido de fotos en lotes de 50 para no saturar la conexión
+                        LOTE_SIZE = 50
+                        contenidos = {}
+                        ids_lista = [m["id"] for m in meta]
+                        for i in range(0, len(ids_lista), LOTE_SIZE):
+                            bloque = ids_lista[i:i + LOTE_SIZE]
+                            ph2 = ",".join(["%s"] * len(bloque))
+                            cur.execute(
+                                f"SELECT id, contenido FROM evidencias WHERE id IN ({ph2})",
+                                tuple(bloque)
+                            )
+                            for fila in cur.fetchall():
+                                if fila["contenido"]:
+                                    contenidos[fila["id"]] = fila["contenido"]
+
+                        nombres_vistos = {}
+                        for m in meta:
+                            contenido = contenidos.get(m["id"])
+                            if not contenido:
+                                continue
+                            nombre = m["nombre_archivo"] or f"foto_{m['id']}.jpg"
+                            key = (m["unit_number"], nombre)
+                            if key in nombres_vistos:
+                                nombres_vistos[key] += 1
+                                partes = nombre.rsplit(".", 1)
+                                nombre = (
+                                    f"{partes[0]}_{nombres_vistos[key]}.{partes[1]}"
+                                    if len(partes) == 2
+                                    else f"{nombre}_{nombres_vistos[key]}"
+                                )
+                            else:
+                                nombres_vistos[key] = 0
+                            zf.writestr(f"evidencias/{m['unit_number']}/{nombre}", contenido)
+
+            buf.seek(0)
+            return buf.getvalue()
+    finally:
+        conn.close()
 
 
 # GET /api/unidades/lotes  — listar lotes con conteo y estado oculto
