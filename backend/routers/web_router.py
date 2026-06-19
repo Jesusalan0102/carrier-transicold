@@ -4130,7 +4130,7 @@ async def checkin_tecnico():
 
       btn.textContent = '⏳ Enviando...';
 
-      var lat = 0, lon = 0, accuracy = null;
+      var lat = null, lon = null, accuracy = null;
       if (_ctGeocoords) {
         lat      = _ctGeocoords.lat;
         lon      = _ctGeocoords.lon;
