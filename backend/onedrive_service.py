@@ -231,9 +231,9 @@ def sync_evidencia(unit_number: str, nombre_archivo: str, contenido: bytes, unit
     Sube una foto de evidencia a OneDrive.
 
     Estructura de carpetas:
-      carrier-transicold/Evidencias/<id_lote>/<unit_number> - <reefer_model>/
+      carrier-transicold/Evidencias/<id_lote>/<unit_number>_<reefer_serial>/
 
-    Si unit_meta es None, consulta la DB para obtener id_lote y reefer_model.
+    Si unit_meta es None, consulta la DB para obtener id_lote y reefer_serial.
     Si la unidad no tiene esos datos, usa solo unit_number como nombre de carpeta.
 
     Crea la jerarquía de carpetas si no existe antes de subir el archivo.
@@ -244,7 +244,7 @@ def sync_evidencia(unit_number: str, nombre_archivo: str, contenido: bytes, unit
         try:
             from db import execute_read
             rows = execute_read(
-                "SELECT id_lote, reefer_model FROM unidades WHERE unit_number=%s LIMIT 1",
+                "SELECT id_lote, reefer_serial FROM unidades WHERE unit_number=%s LIMIT 1",
                 (unit_number,)
             )
             unit_meta = rows[0] if rows else {}
@@ -252,12 +252,19 @@ def sync_evidencia(unit_number: str, nombre_archivo: str, contenido: bytes, unit
             logger.warning(f"[OneDrive] No se pudo obtener metadata de unidad {unit_number}: {e}")
             unit_meta = {}
 
-    id_lote     = (unit_meta.get("id_lote") or "").strip()
-    reefer_model = (unit_meta.get("reefer_model") or "").strip()
+    id_lote       = (unit_meta.get("id_lote") or "").strip()
+    reefer_serial = (unit_meta.get("reefer_serial") or "").strip()
 
     # ── 2. Construir ruta de carpeta ──────────────────────────────────────
-    # Nombre de subcarpeta: "<unit_number> - <reefer_model>" o solo "<unit_number>"
-    subfolder_name = f"{unit_number} - {reefer_model}" if reefer_model else unit_number
+    # Nombre de subcarpeta: "<unit_number>_<reefer_serial>" o solo "<unit_number>"
+    #
+    # IMPORTANTE: se usa reefer_serial (no reefer_model) porque es un dato
+    # inmutable una vez capturado. Antes se usaba reefer_model, que puede
+    # estar vacío al subir la primera foto y llenarse después al editar la
+    # unidad — eso generaba una carpeta NUEVA con nombre distinto para la
+    # misma unidad cada vez que cambiaba el modelo, duplicando carpetas.
+    # Con reefer_serial el path siempre resuelve igual para la misma unidad.
+    subfolder_name = f"{unit_number}_{reefer_serial}" if reefer_serial else unit_number
 
     if id_lote:
         folder_path = f"{EVIDENCIAS_DIR}/{id_lote}/{subfolder_name}"
@@ -303,7 +310,7 @@ def sync_evidencias_lote(unit_number: str, archivos: list[tuple[str, bytes]], ma
     try:
         from db import execute_read
         rows = execute_read(
-            "SELECT id_lote, reefer_model FROM unidades WHERE unit_number=%s LIMIT 1",
+            "SELECT id_lote, reefer_serial FROM unidades WHERE unit_number=%s LIMIT 1",
             (unit_number,)
         )
         unit_meta = rows[0] if rows else {}
@@ -357,21 +364,21 @@ def sync_reporte_maestro(excel_bytes: bytes, fecha: str = None) -> str:
 def sync_zip_evidencias(unit_number: str, zip_bytes: bytes) -> str:
     """
     Sube el ZIP de evidencias de una unidad a la misma carpeta enriquecida:
-      carrier-transicold/Evidencias/<id_lote>/<unit_number> - <reefer_model>/
+      carrier-transicold/Evidencias/<id_lote>/<unit_number>_<reefer_serial>/
     """
     try:
         from db import execute_read
         rows = execute_read(
-            "SELECT id_lote, reefer_model FROM unidades WHERE unit_number=%s LIMIT 1",
+            "SELECT id_lote, reefer_serial FROM unidades WHERE unit_number=%s LIMIT 1",
             (unit_number,)
         )
         unit_meta = rows[0] if rows else {}
     except Exception:
         unit_meta = {}
 
-    id_lote      = (unit_meta.get("id_lote") or "").strip()
-    reefer_model = (unit_meta.get("reefer_model") or "").strip()
-    subfolder_name = f"{unit_number} - {reefer_model}" if reefer_model else unit_number
+    id_lote       = (unit_meta.get("id_lote") or "").strip()
+    reefer_serial = (unit_meta.get("reefer_serial") or "").strip()
+    subfolder_name = f"{unit_number}_{reefer_serial}" if reefer_serial else unit_number
     folder_path = f"{EVIDENCIAS_DIR}/{id_lote}/{subfolder_name}" if id_lote else f"{EVIDENCIAS_DIR}/{subfolder_name}"
 
     try:
