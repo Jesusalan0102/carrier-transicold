@@ -281,6 +281,48 @@ async def auditar_carpetas_duplicadas(
     return resultado
 
 
+# POST /api/unidades/lotes/fusionar-carpeta-duplicada
+# Fusiona DOS carpetas de evidencias detectadas como duplicadas para la
+# misma unidad: mueve el contenido de la carpeta pequeña/vieja (sin sufijo)
+# dentro de la carpeta grande/nueva, renombra el resultado al patrón
+# unit_number_reefer_serial, y borra la carpeta vieja ya vacía.
+#
+# Requiere los IDs de OneDrive de ambas carpetas (vienen del endpoint de
+# auditoría) — esto evita adivinar o volver a buscar por nombre, y previene
+# fusionar la carpeta equivocada por error de tipeo.
+@router.post("/lotes/fusionar-carpeta-duplicada")
+async def fusionar_carpeta_duplicada_endpoint(
+    unit_number: str = Query(...),
+    carpeta_chica_id: str = Query(..., description="ID de OneDrive de la carpeta con MENOS archivos"),
+    carpeta_grande_id: str = Query(..., description="ID de OneDrive de la carpeta con MÁS archivos"),
+    current_user=Depends(verify_token)
+):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+
+    filas = execute_read(
+        "SELECT reefer_serial FROM unidades WHERE unit_number=%s LIMIT 1", (unit_number,)
+    )
+    if not filas:
+        raise HTTPException(status_code=404, detail=f"Unidad '{unit_number}' no encontrada en BD")
+
+    reefer_serial = (filas[0].get("reefer_serial") or "").strip()
+    nombre_final = f"{unit_number}_{reefer_serial}" if reefer_serial else unit_number
+
+    from onedrive_service import fusionar_carpeta_duplicada
+
+    try:
+        resultado = await run_in_threadpool(
+            fusionar_carpeta_duplicada, carpeta_chica_id, carpeta_grande_id, nombre_final
+        )
+    except Exception as e:
+        logger.error(f"[fusion] Error fusionando carpetas de '{unit_number}': {e}")
+        raise HTTPException(status_code=502, detail=f"No se pudo fusionar en OneDrive: {e}")
+
+    resultado["unit_number"] = unit_number
+    return resultado
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # ── CRUD DE UNIDADES ────────────────────────────────────────────────────────
 # ═══════════════════════════════════════════════════════════════════════════

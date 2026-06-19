@@ -556,3 +556,142 @@ def auditar_todos_los_lotes() -> dict:
         "detalle": detalle,
     }
 
+
+# ── Fusión de carpetas duplicadas ─────────────────────────────────────────────
+
+def _listar_archivos(folder_id: str) -> list[dict]:
+    """Lista los archivos (no carpetas) hijos directos de una carpeta por su ID."""
+    headers = {"Authorization": f"Bearer {_get_token()}"}
+    url = f"{GRAPH_BASE}/me/drive/items/{folder_id}/children?$top=999"
+    archivos = []
+    while url:
+        resp = requests.get(url, headers=headers, timeout=20)
+        resp.raise_for_status()
+        data = resp.json()
+        for item in data.get("value", []):
+            if "file" in item:
+                archivos.append({"id": item["id"], "name": item["name"]})
+        url = data.get("@odata.nextLink")
+        headers = {"Authorization": f"Bearer {_get_token()}"}
+    return archivos
+
+
+def _mover_archivo(file_id: str, destino_folder_id: str, nuevo_nombre: str = None) -> dict:
+    """
+    Mueve un archivo a otra carpeta usando el endpoint nativo de Graph API
+    (PATCH con parentReference). No descarga/re-sube — es instantáneo y no
+    consume memoria del servidor. Si nuevo_nombre se da, lo renombra a la vez.
+    """
+    headers = {
+        "Authorization": f"Bearer {_get_token()}",
+        "Content-Type": "application/json",
+    }
+    url = f"{GRAPH_BASE}/me/drive/items/{file_id}"
+    body = {"parentReference": {"id": destino_folder_id}}
+    if nuevo_nombre:
+        body["name"] = nuevo_nombre
+    resp = requests.patch(url, headers=headers, json=body, timeout=20)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _renombrar_item(item_id: str, nuevo_nombre: str) -> dict:
+    """Renombra una carpeta o archivo por su ID."""
+    headers = {
+        "Authorization": f"Bearer {_get_token()}",
+        "Content-Type": "application/json",
+    }
+    url = f"{GRAPH_BASE}/me/drive/items/{item_id}"
+    resp = requests.patch(url, headers=headers, json={"name": nuevo_nombre}, timeout=20)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _borrar_item(item_id: str) -> None:
+    """Elimina una carpeta o archivo por su ID (va a la papelera de OneDrive, no se pierde)."""
+    headers = {"Authorization": f"Bearer {_get_token()}"}
+    url = f"{GRAPH_BASE}/me/drive/items/{item_id}"
+    resp = requests.delete(url, headers=headers, timeout=20)
+    if resp.status_code not in (204, 404):
+        resp.raise_for_status()
+
+
+def fusionar_carpeta_duplicada(
+    carpeta_origen_id: str,
+    carpeta_destino_id: str,
+    nombre_final_destino: str,
+) -> dict:
+    """
+    Fusiona el contenido de carpeta_origen (la más pequeña/antigua, sin sufijo)
+    dentro de carpeta_destino (la más grande, con sufijo), renombrando el
+    destino al patrón nuevo unit_number_reefer_serial al final.
+
+    Pasos, con seguridad ante colisión de nombres:
+      1. Lista archivos de origen y destino.
+      2. Por cada archivo en origen: si su nombre YA existe en destino,
+         se mueve con sufijo "_dup1", "_dup2"... para no sobrescribir nada.
+         Si no hay colisión, se mueve con su nombre original.
+      3. Verifica que origen quedó vacío (childCount == 0) antes de borrar.
+      4. Borra la carpeta origen (va a la papelera de OneDrive — recuperable).
+      5. Renombra la carpeta destino al patrón nuevo.
+
+    Devuelve un reporte detallado de qué se movió, qué tuvo colisión,
+    y si se pudo borrar la carpeta origen al final.
+    """
+    archivos_origen  = _listar_archivos(carpeta_origen_id)
+    archivos_destino = _listar_archivos(carpeta_destino_id)
+    nombres_destino = {a["name"] for a in archivos_destino}
+
+    movidos = []
+    renombrados_por_colision = []
+    errores = []
+
+    for archivo in archivos_origen:
+        nombre = archivo["name"]
+        nombre_final = nombre
+        if nombre in nombres_destino:
+            base, ext = (nombre.rsplit(".", 1) + [""])[:2] if "." in nombre else (nombre, "")
+            n = 1
+            while nombre_final in nombres_destino:
+                nombre_final = f"{base}_dup{n}.{ext}" if ext else f"{base}_dup{n}"
+                n += 1
+            renombrados_por_colision.append({"original": nombre, "renombrado": nombre_final})
+
+        try:
+            _upload_with_retry(_mover_archivo, archivo["id"], carpeta_destino_id, nombre_final)
+            nombres_destino.add(nombre_final)
+            movidos.append(nombre_final)
+        except Exception as e:
+            errores.append({"archivo": nombre, "error": str(e)})
+            logger.error(f"[OneDrive][fusion] No se pudo mover '{nombre}': {e}")
+
+    # Verificar que origen quedó vacío antes de borrar
+    origen_vacio = len(_listar_archivos(carpeta_origen_id)) == 0
+    borrado_origen = False
+    if origen_vacio and not errores:
+        try:
+            _borrar_item(carpeta_origen_id)
+            borrado_origen = True
+        except Exception as e:
+            logger.error(f"[OneDrive][fusion] No se pudo borrar carpeta origen vacía: {e}")
+
+    renombrado_destino = False
+    if borrado_origen:
+        try:
+            _renombrar_item(carpeta_destino_id, nombre_final_destino)
+            renombrado_destino = True
+        except Exception as e:
+            logger.error(f"[OneDrive][fusion] No se pudo renombrar carpeta destino: {e}")
+
+    return {
+        "archivos_movidos": len(movidos),
+        "nombres_movidos": movidos,
+        "colisiones_renombradas": renombrados_por_colision,
+        "errores": errores,
+        "origen_quedo_vacio": origen_vacio,
+        "origen_borrado": borrado_origen,
+        "destino_renombrado": renombrado_destino,
+        "nombre_final": nombre_final_destino if renombrado_destino else None,
+    }
+
+
