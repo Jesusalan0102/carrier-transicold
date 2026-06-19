@@ -251,6 +251,36 @@ def mostrar_lote(
     }
 
 
+# GET /api/unidades/lotes/auditar-carpetas-duplicadas
+# Solo lectura: revisa OneDrive y reporta carpetas de evidencias duplicadas
+# por unidad (causadas por el bug histórico de reefer_model mutable).
+# No mueve ni borra nada — es insumo para decidir la fusión manual.
+@router.get("/lotes/auditar-carpetas-duplicadas")
+async def auditar_carpetas_duplicadas(
+    id_lote: Optional[str] = Query(None, description="Si se omite, audita todos los lotes"),
+    current_user=Depends(verify_token)
+):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+
+    from onedrive_service import auditar_carpetas_duplicadas_lote, auditar_todos_los_lotes
+
+    try:
+        if id_lote:
+            resultado = await run_in_threadpool(auditar_carpetas_duplicadas_lote, id_lote)
+            resultado["lotes_revisados"] = 1
+            resultado["lotes_con_duplicados"] = 1 if resultado["duplicados"] else 0
+            resultado["total_unidades_duplicadas"] = len(resultado["duplicados"])
+            resultado["detalle"] = [resultado] if resultado["duplicados"] else []
+        else:
+            resultado = await run_in_threadpool(auditar_todos_los_lotes)
+    except Exception as e:
+        logger.error(f"[auditoria] Error auditando carpetas: {e}")
+        raise HTTPException(status_code=502, detail=f"No se pudo auditar OneDrive: {e}")
+
+    return resultado
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # ── CRUD DE UNIDADES ────────────────────────────────────────────────────────
 # ═══════════════════════════════════════════════════════════════════════════

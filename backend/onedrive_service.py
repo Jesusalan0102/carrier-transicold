@@ -422,3 +422,137 @@ def sync_zip_lote(id_lote: str, zip_bytes: bytes) -> str:
     except Exception as e:
         logger.error(f"[OneDrive] Error subiendo backup de lote {path}: {e}")
         raise
+
+
+# ── Auditoría: carpetas de evidencias duplicadas ──────────────────────────────
+
+def _listar_subcarpetas(folder_path: str) -> list[dict]:
+    """
+    Lista las carpetas hijas directas de folder_path en OneDrive.
+    Devuelve [] si la carpeta no existe o no tiene hijos.
+    Cada item: {"name": str, "id": str, "childCount": int, "webUrl": str}
+    """
+    headers = {"Authorization": f"Bearer {_get_token()}"}
+    folder_path = folder_path.strip("/")
+    url = f"{GRAPH_BASE}/me/drive/root:/{folder_path}:/children?$top=999"
+
+    items = []
+    while url:
+        resp = requests.get(url, headers=headers, timeout=20)
+        if resp.status_code == 404:
+            return []  # la carpeta padre no existe aún
+        resp.raise_for_status()
+        data = resp.json()
+        for item in data.get("value", []):
+            if "folder" in item:
+                items.append({
+                    "name": item["name"],
+                    "id": item["id"],
+                    "childCount": item["folder"].get("childCount", 0),
+                    "webUrl": item.get("webUrl", ""),
+                })
+        url = data.get("@odata.nextLink")  # paginación si hay muchas carpetas
+        headers = {"Authorization": f"Bearer {_get_token()}"}  # refrescar token por si tarda
+    return items
+
+
+def auditar_carpetas_duplicadas_lote(id_lote: str) -> dict:
+    """
+    Revisa Evidencias/<id_lote>/ y agrupa las subcarpetas por unit_number
+    (la parte del nombre antes del primer '_' o ' ' o '-'), para detectar
+    si una misma unidad terminó con más de una carpeta por el bug histórico
+    de usar reefer_model (mutable) en vez de reefer_serial (inmutable).
+
+    Esta función SOLO LEE — no mueve ni borra nada en OneDrive.
+
+    Devuelve:
+      {
+        "id_lote": str,
+        "total_carpetas": int,
+        "duplicados": [
+          {
+            "unit_number": str,
+            "carpetas": [{"name", "id", "childCount", "webUrl"}, ...]
+          }, ...
+        ],
+        "sin_duplicar": int
+      }
+    """
+    folder_path = f"{EVIDENCIAS_DIR}/{_sanitize_folder_name(id_lote)}"
+    subcarpetas = _listar_subcarpetas(folder_path)
+
+    grupos: dict[str, list] = {}
+    for carpeta in subcarpetas:
+        nombre = carpeta["name"]
+        # La parte antes del primer separador es el unit_number candidato
+        unit_number = re_split_unit_number(nombre)
+        grupos.setdefault(unit_number, []).append(carpeta)
+
+    duplicados = [
+        {"unit_number": un, "carpetas": carpetas}
+        for un, carpetas in grupos.items()
+        if len(carpetas) > 1
+    ]
+    sin_duplicar = sum(1 for carpetas in grupos.values() if len(carpetas) == 1)
+
+    return {
+        "id_lote": id_lote,
+        "total_carpetas": len(subcarpetas),
+        "duplicados": duplicados,
+        "sin_duplicar": sin_duplicar,
+    }
+
+
+def re_split_unit_number(nombre_carpeta: str) -> str:
+    """
+    Extrae el unit_number candidato del nombre de una carpeta de evidencias,
+    soportando los dos patrones históricos:
+      "UNIT123_RF98765"   (patrón nuevo, reefer_serial)
+      "UNIT123 - X300"    (patrón viejo, reefer_model)
+      "UNIT123"           (sin sufijo, cualquier patrón)
+    """
+    for sep in (" - ", "_"):
+        if sep in nombre_carpeta:
+            return nombre_carpeta.split(sep, 1)[0].strip()
+    return nombre_carpeta.strip()
+
+
+def auditar_todos_los_lotes() -> dict:
+    """
+    Recorre todos los id_lote distintos registrados en la BD y audita
+    cada uno con auditar_carpetas_duplicadas_lote(). Solo lectura.
+
+    Devuelve:
+      {
+        "lotes_revisados": int,
+        "lotes_con_duplicados": int,
+        "total_unidades_duplicadas": int,
+        "detalle": [ resultado de auditar_carpetas_duplicadas_lote(...), ... ]
+                   (solo se incluyen lotes que SÍ tienen duplicados)
+      }
+    """
+    from db import execute_read
+    filas = execute_read(
+        "SELECT DISTINCT id_lote FROM unidades WHERE id_lote IS NOT NULL AND id_lote != ''"
+    )
+    lotes = [f["id_lote"] for f in filas]
+
+    detalle = []
+    total_unidades_duplicadas = 0
+    for id_lote in lotes:
+        try:
+            resultado = auditar_carpetas_duplicadas_lote(id_lote)
+        except Exception as e:
+            logger.warning(f"[OneDrive][auditoria] No se pudo auditar lote '{id_lote}': {e}")
+            continue
+        if resultado["duplicados"]:
+            detalle.append(resultado)
+            total_unidades_duplicadas += len(resultado["duplicados"])
+
+    return {
+        "lotes_revisados": len(lotes),
+        "lotes_con_duplicados": len(detalle),
+        "total_unidades_duplicadas": total_unidades_duplicadas,
+        "detalle": detalle,
+    }
+
