@@ -2385,6 +2385,114 @@ async def admin():
         lotesCargar();
     }
 
+    // -- Ficha de unidad (modal de búsqueda) -------------------
+    function mostrarModal(html) {
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.display = 'flex';
+        modal.innerHTML = html;
+        document.body.appendChild(modal);
+        return modal;
+    }
+    function cerrarModal() {
+        const modal = document.querySelector('.modal');
+        if (modal) document.body.removeChild(modal);
+    }
+
+    function buscarFichaUnidad() {
+        const q = (document.getElementById('ficha-search-input').value || '').trim();
+        if (!q) { alert('Escribe un número económico, VIN, serial u otro identificador.'); return; }
+        verFichaUnidad(q);
+    }
+
+    async function verFichaUnidad(unitNumber) {
+        mostrarModal(`<div class="modal-content" style="max-width:760px;max-height:85vh;overflow-y:auto;">
+            <h3 style="margin:0 0 12px;display:flex;align-items:center;gap:8px;">
+                <span style="font-size:22px;">🗂️</span> Cargando ficha de <code>${unitNumber}</code>…
+            </h3>
+            <p style="color:#6b7280;">Un momento…</p>
+            <button class="btn-danger" onclick="cerrarModal()" style="margin-top:12px;">Cerrar</button>
+        </div>`);
+
+        let data;
+        try {
+            const res = await fetchAuth('/api/unidades/ficha?q=' + encodeURIComponent(unitNumber));
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'Error desconocido' }));
+                cerrarModal();
+                mostrarModal(`<div class="modal-content"><h3>⚠️ No encontrado</h3><p>${err.detail || 'No se pudo cargar la ficha.'}</p><button class="btn-danger" onclick="cerrarModal()">Cerrar</button></div>`);
+                return;
+            }
+            data = await res.json();
+        } catch (e) {
+            cerrarModal();
+            mostrarModal(`<div class="modal-content"><h3>⚠️ Error de red</h3><p>${e.message}</p><button class="btn-danger" onclick="cerrarModal()">Cerrar</button></div>`);
+            return;
+        }
+
+        const u = data.unidad;
+        const seriesRows = [
+            ['VIN', u.vin_number], ['Reefer Serial', u.reefer_serial], ['Modelo Reefer', u.reefer_model],
+            ['Evap. MJS11', u.evaporator_serial_mjs11], ['Evap. MJD22', u.evaporator_serial_mjd22],
+            ['Motor', u.engine_serial], ['Compresor', u.compressor_serial],
+            ['Generador', u.generator_serial], ['Cargador Batería', u.battery_charger_serial],
+        ].filter(([,v]) => v).map(([k,v]) => `<tr><td style="color:#6b7280;padding:4px 10px 4px 0;white-space:nowrap;">${k}</td><td style="font-family:monospace;font-size:13px;">${v}</td></tr>`).join('');
+
+        const asnRows = (data.asignaciones || []).slice(0,15).map(a => `
+            <tr style="border-bottom:1px solid #f1f5f9;">
+                <td style="padding:4px 8px 4px 0;color:#6b7280;font-size:12px;">#${a.id}</td>
+                <td style="padding:4px 8px;">${a.actividad_id||'—'}</td>
+                <td style="padding:4px 8px;">${a.tecnico||'—'}</td>
+                <td style="padding:4px 8px;"><span style="background:${a.estado==='completado'?'#dcfce7':a.estado==='en_proceso'?'#fef9c3':'#f1f5f9'};color:${a.estado==='completado'?'#16a34a':a.estado==='en_proceso'?'#b45309':'#6b7280'};padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;">${a.estado||'—'}</span></td>
+                <td style="padding:4px 0;color:#6b7280;font-size:11px;">${(a.fecha_asignacion||'').slice(0,10)}</td>
+            </tr>`).join('');
+
+        const tkRows = (data.tickets || []).slice(0,10).map(t => `
+            <tr style="border-bottom:1px solid #f1f5f9;">
+                <td style="padding:4px 8px 4px 0;color:#6b7280;font-size:12px;">#${t.id}</td>
+                <td style="padding:4px 8px;">${t.tipo||'—'}</td>
+                <td style="padding:4px 8px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(t.descripcion||'').replace(/"/g,'&quot;')}">${t.descripcion||'—'}</td>
+                <td style="padding:4px 0;"><span style="background:${t.estado==='abierto'?'#fee2e2':'#dcfce7'};color:${t.estado==='abierto'?'#dc2626':'#16a34a'};padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;">${t.estado||'—'}</span></td>
+            </tr>`).join('');
+
+        const lote = u.id_lote ? `<span style="background:#e0e7ff;color:#4338ca;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;">${u.id_lote}</span>${u.oculto?'<span style="margin-left:6px;background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:999px;font-size:11px;">🙈 Oculto</span>':''}` : '<span style="color:#9ca3af">Sin lote</span>';
+
+        cerrarModal();
+        mostrarModal(`<div class="modal-content" style="max-width:760px;max-height:85vh;overflow-y:auto;padding:24px;">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;">
+                <div>
+                    <h2 style="margin:0;font-size:22px;font-family:monospace;">📋 ${u.unit_number}</h2>
+                    <div style="margin-top:6px;">${lote}</div>
+                </div>
+                <button class="btn-danger" onclick="cerrarModal()" style="flex-shrink:0;">✕ Cerrar</button>
+            </div>
+
+            <h4 style="margin:0 0 8px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:6px;">🔢 Series registradas</h4>
+            ${seriesRows ? `<table style="width:100%;margin-bottom:16px;"><tbody>${seriesRows}</tbody></table>` : '<p style="color:#9ca3af;font-size:13px;margin-bottom:16px;">Sin series registradas.</p>'}
+
+            <h4 style="margin:0 0 8px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:6px;">🔧 Actividades / Asignaciones <span style="font-weight:400;color:#6b7280;font-size:13px;">(${data.asignaciones?.length||0} total)</span></h4>
+            ${asnRows ? `<table style="width:100%;margin-bottom:16px;font-size:13px;">
+                <thead><tr style="color:#9ca3af;font-size:11px;text-transform:uppercase;">
+                    <th style="text-align:left;padding:0 8px 6px 0;">ID</th><th style="text-align:left;padding:0 8px 6px;">Actividad</th>
+                    <th style="text-align:left;padding:0 8px 6px;">Técnico</th><th style="text-align:left;padding:0 8px 6px;">Estado</th>
+                    <th style="text-align:left;padding:0 0 6px;">Fecha</th>
+                </tr></thead><tbody>${asnRows}</tbody></table>` : '<p style="color:#9ca3af;font-size:13px;margin-bottom:16px;">Sin actividades registradas.</p>'}
+
+            <h4 style="margin:0 0 8px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:6px;">🎫 Tickets <span style="font-weight:400;color:#6b7280;font-size:13px;">(${data.tickets?.length||0} total)</span></h4>
+            ${tkRows ? `<table style="width:100%;margin-bottom:16px;font-size:13px;">
+                <thead><tr style="color:#9ca3af;font-size:11px;text-transform:uppercase;">
+                    <th style="text-align:left;padding:0 8px 6px 0;">ID</th><th style="text-align:left;padding:0 8px 6px;">Tipo</th>
+                    <th style="text-align:left;padding:0 8px 6px;">Descripción</th><th style="text-align:left;padding:0 0 6px;">Estado</th>
+                </tr></thead><tbody>${tkRows}</tbody></table>` : '<p style="color:#9ca3af;font-size:13px;margin-bottom:16px;">Sin tickets.</p>'}
+
+            <h4 style="margin:0 0 8px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:6px;">📸 Evidencias</h4>
+            <p style="margin:0 0 16px;"><span style="font-size:22px;font-weight:700;color:#4f46e5;">${data.evidencias_total||0}</span> <span style="color:#6b7280;font-size:13px;">foto${data.evidencias_total!==1?'s':''} registrada${data.evidencias_total!==1?'s':''}</span></p>
+
+            ${data.toma_valores?.length ? `<h4 style="margin:0 0 8px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:6px;">📊 Toma de valores <span style="font-weight:400;color:#6b7280;font-size:13px;">(${data.toma_valores.length} registro${data.toma_valores.length!==1?'s':''})</span></h4>
+            <p style="color:#6b7280;font-size:12px;margin:0 0 16px;">Registros disponibles — ver en sección Actividades para detalle completo.</p>` : ''}
+        </div>`);
+    }
+
     // -- Init -------------------------------------------------
     recargarActividades();
     recargarUsuarios();
@@ -2415,100 +2523,6 @@ async def mis_tareas():
         function cerrarModal() {
             const modal = document.querySelector('.modal');
             if (modal) document.body.removeChild(modal);
-        }
-
-        function buscarFichaUnidad() {
-            const q = (document.getElementById('ficha-search-input').value || '').trim();
-            if (!q) { alert('Escribe un número económico, VIN, serial u otro identificador.'); return; }
-            verFichaUnidad(q);
-        }
-
-        async function verFichaUnidad(unitNumber) {
-            mostrarModal(`<div class="modal-content" style="max-width:760px;max-height:85vh;overflow-y:auto;">
-                <h3 style="margin:0 0 12px;display:flex;align-items:center;gap:8px;">
-                    <span style="font-size:22px;">🗂️</span> Cargando ficha de <code>${unitNumber}</code>…
-                </h3>
-                <p style="color:#6b7280;">Un momento…</p>
-                <button class="btn-danger" onclick="cerrarModal()" style="margin-top:12px;">Cerrar</button>
-            </div>`);
-
-            let data;
-            try {
-                const res = await fetchAuth('/api/unidades/ficha?q=' + encodeURIComponent(unitNumber));
-                if (!res.ok) {
-                    const err = await res.json().catch(() => ({ detail: 'Error desconocido' }));
-                    cerrarModal();
-                    mostrarModal(`<div class="modal-content"><h3>⚠️ No encontrado</h3><p>${err.detail || 'No se pudo cargar la ficha.'}</p><button class="btn-danger" onclick="cerrarModal()">Cerrar</button></div>`);
-                    return;
-                }
-                data = await res.json();
-            } catch (e) {
-                cerrarModal();
-                mostrarModal(`<div class="modal-content"><h3>⚠️ Error de red</h3><p>${e.message}</p><button class="btn-danger" onclick="cerrarModal()">Cerrar</button></div>`);
-                return;
-            }
-
-            const u = data.unidad;
-            const seriesRows = [
-                ['VIN', u.vin_number], ['Reefer Serial', u.reefer_serial], ['Modelo Reefer', u.reefer_model],
-                ['Evap. MJS11', u.evaporator_serial_mjs11], ['Evap. MJD22', u.evaporator_serial_mjd22],
-                ['Motor', u.engine_serial], ['Compresor', u.compressor_serial],
-                ['Generador', u.generator_serial], ['Cargador Batería', u.battery_charger_serial],
-            ].filter(([,v]) => v).map(([k,v]) => `<tr><td style="color:#6b7280;padding:4px 10px 4px 0;white-space:nowrap;">${k}</td><td style="font-family:monospace;font-size:13px;">${v}</td></tr>`).join('');
-
-            const asnRows = (data.asignaciones || []).slice(0,15).map(a => `
-                <tr style="border-bottom:1px solid #f1f5f9;">
-                    <td style="padding:4px 8px 4px 0;color:#6b7280;font-size:12px;">#${a.id}</td>
-                    <td style="padding:4px 8px;">${a.actividad_id||'—'}</td>
-                    <td style="padding:4px 8px;">${a.tecnico||'—'}</td>
-                    <td style="padding:4px 8px;"><span style="background:${a.estado==='completado'?'#dcfce7':a.estado==='en_proceso'?'#fef9c3':'#f1f5f9'};color:${a.estado==='completado'?'#16a34a':a.estado==='en_proceso'?'#b45309':'#6b7280'};padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;">${a.estado||'—'}</span></td>
-                    <td style="padding:4px 0;color:#6b7280;font-size:11px;">${(a.fecha_asignacion||'').slice(0,10)}</td>
-                </tr>`).join('');
-
-            const tkRows = (data.tickets || []).slice(0,10).map(t => `
-                <tr style="border-bottom:1px solid #f1f5f9;">
-                    <td style="padding:4px 8px 4px 0;color:#6b7280;font-size:12px;">#${t.id}</td>
-                    <td style="padding:4px 8px;">${t.tipo||'—'}</td>
-                    <td style="padding:4px 8px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(t.descripcion||'').replace(/"/g,'&quot;')}">${t.descripcion||'—'}</td>
-                    <td style="padding:4px 0;"><span style="background:${t.estado==='abierto'?'#fee2e2':'#dcfce7'};color:${t.estado==='abierto'?'#dc2626':'#16a34a'};padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;">${t.estado||'—'}</span></td>
-                </tr>`).join('');
-
-            const lote = u.id_lote ? `<span style="background:#e0e7ff;color:#4338ca;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;">${u.id_lote}</span>${u.oculto?'<span style="margin-left:6px;background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:999px;font-size:11px;">🙈 Oculto</span>':''}` : '<span style="color:#9ca3af">Sin lote</span>';
-
-            cerrarModal();
-            mostrarModal(`<div class="modal-content" style="max-width:760px;max-height:85vh;overflow-y:auto;padding:24px;">
-                <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;">
-                    <div>
-                        <h2 style="margin:0;font-size:22px;font-family:monospace;">📋 ${u.unit_number}</h2>
-                        <div style="margin-top:6px;">${lote}</div>
-                    </div>
-                    <button class="btn-danger" onclick="cerrarModal()" style="flex-shrink:0;">✕ Cerrar</button>
-                </div>
-
-                <h4 style="margin:0 0 8px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:6px;">🔢 Series registradas</h4>
-                ${seriesRows ? `<table style="width:100%;margin-bottom:16px;"><tbody>${seriesRows}</tbody></table>` : '<p style="color:#9ca3af;font-size:13px;margin-bottom:16px;">Sin series registradas.</p>'}
-
-                <h4 style="margin:0 0 8px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:6px;">🔧 Actividades / Asignaciones <span style="font-weight:400;color:#6b7280;font-size:13px;">(${data.asignaciones?.length||0} total)</span></h4>
-                ${asnRows ? `<table style="width:100%;margin-bottom:16px;font-size:13px;">
-                    <thead><tr style="color:#9ca3af;font-size:11px;text-transform:uppercase;">
-                        <th style="text-align:left;padding:0 8px 6px 0;">ID</th><th style="text-align:left;padding:0 8px 6px;">Actividad</th>
-                        <th style="text-align:left;padding:0 8px 6px;">Técnico</th><th style="text-align:left;padding:0 8px 6px;">Estado</th>
-                        <th style="text-align:left;padding:0 0 6px;">Fecha</th>
-                    </tr></thead><tbody>${asnRows}</tbody></table>` : '<p style="color:#9ca3af;font-size:13px;margin-bottom:16px;">Sin actividades registradas.</p>'}
-
-                <h4 style="margin:0 0 8px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:6px;">🎫 Tickets <span style="font-weight:400;color:#6b7280;font-size:13px;">(${data.tickets?.length||0} total)</span></h4>
-                ${tkRows ? `<table style="width:100%;margin-bottom:16px;font-size:13px;">
-                    <thead><tr style="color:#9ca3af;font-size:11px;text-transform:uppercase;">
-                        <th style="text-align:left;padding:0 8px 6px 0;">ID</th><th style="text-align:left;padding:0 8px 6px;">Tipo</th>
-                        <th style="text-align:left;padding:0 8px 6px;">Descripción</th><th style="text-align:left;padding:0 0 6px;">Estado</th>
-                    </tr></thead><tbody>${tkRows}</tbody></table>` : '<p style="color:#9ca3af;font-size:13px;margin-bottom:16px;">Sin tickets.</p>'}
-
-                <h4 style="margin:0 0 8px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:6px;">📸 Evidencias</h4>
-                <p style="margin:0 0 16px;"><span style="font-size:22px;font-weight:700;color:#4f46e5;">${data.evidencias_total||0}</span> <span style="color:#6b7280;font-size:13px;">foto${data.evidencias_total!==1?'s':''} registrada${data.evidencias_total!==1?'s':''}</span></p>
-
-                ${data.toma_valores?.length ? `<h4 style="margin:0 0 8px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:6px;">📊 Toma de valores <span style="font-weight:400;color:#6b7280;font-size:13px;">(${data.toma_valores.length} registro${data.toma_valores.length!==1?'s':''})</span></h4>
-                <p style="color:#6b7280;font-size:12px;margin:0 0 16px;">Registros disponibles — ver en sección Actividades para detalle completo.</p>` : ''}
-            </div>`);
         }
 
         async function cargarTareas() {
