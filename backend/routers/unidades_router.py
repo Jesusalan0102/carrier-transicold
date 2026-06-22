@@ -335,7 +335,7 @@ async def fusionar_carpeta_duplicada_endpoint(
 # Esta ruta debe declararse ANTES de /{unidad_id} para que FastAPI no la
 # confunda con un path param.
 CAMPOS_SERIE_BUSCABLES = [
-    "unit_number", "vin_number", "reefer_serial", "reefer_model",
+    "unit_number", "id_lote", "vin_number", "reefer_serial", "reefer_model",
     "evaporator_serial_mjs11", "evaporator_serial_mjd22",
     "engine_serial", "compressor_serial", "generator_serial",
     "battery_charger_serial",
@@ -347,24 +347,46 @@ def ficha_unidad(q: str = Query(..., min_length=1), current_user=Depends(verify_
     if not q:
         raise HTTPException(status_code=400, detail="Debes indicar un valor de búsqueda")
 
-    # 1. Buscar la unidad por CUALQUIER campo de serie (coincidencia exacta
-    #    primero; si no hay, se intenta por coincidencia parcial)
+    # 1. Buscar la(s) unidad(es) por CUALQUIER campo de serie o el número de
+    #    lote (coincidencia exacta primero; si no hay, se intenta parcial).
+    #    Si el valor buscado corresponde a un lote con varias unidades,
+    #    no se elige una al azar: se devuelve la lista completa para que
+    #    el usuario seleccione cuál ficha quiere ver.
     condiciones = " OR ".join(f"{c}=%s" for c in CAMPOS_SERIE_BUSCABLES)
     params = [q] * len(CAMPOS_SERIE_BUSCABLES)
-    filas = execute_read(f"SELECT * FROM unidades WHERE {condiciones} LIMIT 1", tuple(params))
+    filas = execute_read(
+        f"SELECT * FROM unidades WHERE {condiciones} ORDER BY unit_number LIMIT 50",
+        tuple(params)
+    )
 
     if not filas:
         condiciones_like = " OR ".join(f"{c} LIKE %s" for c in CAMPOS_SERIE_BUSCABLES)
         params_like = [f"%{q}%"] * len(CAMPOS_SERIE_BUSCABLES)
         filas = execute_read(
-            f"SELECT * FROM unidades WHERE {condiciones_like} LIMIT 1", tuple(params_like)
+            f"SELECT * FROM unidades WHERE {condiciones_like} ORDER BY unit_number LIMIT 50",
+            tuple(params_like)
         )
 
     if not filas:
         raise HTTPException(
             status_code=404,
-            detail=f"No se encontró ninguna unidad con '{q}' en VIN, series o número económico"
+            detail=f"No se encontró ninguna unidad con '{q}' en VIN, series, lote o número económico"
         )
+
+    if len(filas) > 1:
+        return {
+            "seleccion_multiple": True,
+            "criterio": q,
+            "unidades": [
+                {
+                    "unit_number": f["unit_number"],
+                    "id_lote": f.get("id_lote"),
+                    "vin_number": f.get("vin_number"),
+                    "reefer_model": f.get("reefer_model"),
+                }
+                for f in filas
+            ],
+        }
 
     unidad = filas[0]
     unit_number = unidad["unit_number"]

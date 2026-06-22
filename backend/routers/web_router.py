@@ -2430,6 +2430,22 @@ async def admin():
             return;
         }
 
+        if (data.seleccion_multiple) {
+            const opciones = (data.unidades || []).map(u => `
+                <button onclick="verFichaUnidad('${u.unit_number}')" style="display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin-bottom:8px;cursor:pointer;font-size:13px;">
+                    <span><b style="font-family:monospace;">${u.unit_number}</b> · ${u.reefer_model||'—'}</span>
+                    <span style="color:#6b7280;font-family:monospace;font-size:12px;">${u.vin_number||'—'}</span>
+                </button>`).join('');
+            cerrarModal();
+            mostrarModal(`<div class="modal-content" style="max-width:560px;max-height:80vh;overflow-y:auto;">
+                <h3 style="margin:0 0 8px;">🗂️ Varias unidades encontradas</h3>
+                <p style="color:#6b7280;font-size:13px;margin:0 0 14px;">El criterio <code>${data.criterio}</code> coincide con ${data.unidades.length} unidades. Elige cuál ver:</p>
+                ${opciones}
+                <button class="btn-danger" onclick="cerrarModal()" style="margin-top:8px;">Cerrar</button>
+            </div>`);
+            return;
+        }
+
         const u = data.unidad;
         const seriesRows = [
             ['VIN', u.vin_number], ['Reefer Serial', u.reefer_serial], ['Modelo Reefer', u.reefer_model],
