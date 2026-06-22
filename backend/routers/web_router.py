@@ -1511,6 +1511,15 @@ async def admin():
             <i class="ti ti-refresh"></i> Recargar
           </button>
         </div>
+        <div style="display:flex;align-items:center;gap:10px;margin:0 0 14px;padding:12px 16px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;">
+          <i class="ti ti-search" style="color:#6366f1;font-size:18px;flex-shrink:0;"></i>
+          <input type="text" id="ficha-search-input" placeholder="Buscar ficha por #económico, VIN, Reefer Serial, Motor, Compresor…"
+            style="flex:1;border:1px solid #c7d2fe;border-radius:7px;padding:8px 12px;font-size:14px;outline:none;"
+            onkeydown="if(event.key==='Enter')buscarFichaUnidad()" />
+          <button onclick="buscarFichaUnidad()" style="background:#6366f1;color:white;border:none;border-radius:7px;padding:8px 18px;font-weight:600;cursor:pointer;font-size:14px;white-space:nowrap;">
+            🗂️ Ver ficha
+          </button>
+        </div>
         <div class="bulk-bar" id="bulk-uni">
           <i class="ti ti-checkbox"></i>
           <span id="bulk-count-uni">0</span> seleccionados
@@ -2406,6 +2415,12 @@ async def mis_tareas():
         function cerrarModal() {
             const modal = document.querySelector('.modal');
             if (modal) document.body.removeChild(modal);
+        }
+
+        function buscarFichaUnidad() {
+            const q = (document.getElementById('ficha-search-input').value || '').trim();
+            if (!q) { alert('Escribe un número económico, VIN, serial u otro identificador.'); return; }
+            verFichaUnidad(q);
         }
 
         async function verFichaUnidad(unitNumber) {
