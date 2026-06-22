@@ -406,8 +406,8 @@ def ficha_unidad(q: str = Query(..., min_length=1), current_user=Depends(verify_
         "SELECT COUNT(*) AS total FROM evidencias WHERE unit_number=%s", (unit_number,)
     )[0]["total"]
     evidencias_lista = execute_read(
-        "SELECT id, nombre_archivo, tecnico, fecha_subida FROM evidencias "
-        "WHERE unit_number=%s ORDER BY fecha_subida DESC LIMIT 200",
+        "SELECT id, nombre_archivo, tecnico, created_at FROM evidencias "
+        "WHERE unit_number=%s ORDER BY created_at DESC LIMIT 200",
         (unit_number,)
     ) if evidencias_count else []
 
