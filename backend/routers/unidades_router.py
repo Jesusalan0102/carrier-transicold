@@ -323,6 +323,124 @@ async def fusionar_carpeta_duplicada_endpoint(
     return resultado
 
 
+# GET /api/unidades/ficha?q=XXX
+# "Ficha 360°" de una unidad: busca q en CUALQUIER identificador de serie
+# (unit_number, VIN, reefer_serial, motor, compresor, generador, etc.) y
+# devuelve TODA la información relacionada: datos completos de la unidad,
+# actividades/asignaciones con su técnico y estado, comentarios de cada
+# actividad, toma de valores registrados, tickets abiertos/cerrados,
+# conteo de evidencias, y estado de lote (oculto/visible + backup OneDrive
+# si existe).
+#
+# Esta ruta debe declararse ANTES de /{unidad_id} para que FastAPI no la
+# confunda con un path param.
+CAMPOS_SERIE_BUSCABLES = [
+    "unit_number", "vin_number", "reefer_serial", "reefer_model",
+    "evaporator_serial_mjs11", "evaporator_serial_mjd22",
+    "engine_serial", "compressor_serial", "generator_serial",
+    "battery_charger_serial",
+]
+
+@router.get("/ficha")
+def ficha_unidad(q: str = Query(..., min_length=1), current_user=Depends(verify_token)):
+    q = q.strip()
+    if not q:
+        raise HTTPException(status_code=400, detail="Debes indicar un valor de búsqueda")
+
+    # 1. Buscar la unidad por CUALQUIER campo de serie (coincidencia exacta
+    #    primero; si no hay, se intenta por coincidencia parcial)
+    condiciones = " OR ".join(f"{c}=%s" for c in CAMPOS_SERIE_BUSCABLES)
+    params = [q] * len(CAMPOS_SERIE_BUSCABLES)
+    filas = execute_read(f"SELECT * FROM unidades WHERE {condiciones} LIMIT 1", tuple(params))
+
+    if not filas:
+        condiciones_like = " OR ".join(f"{c} LIKE %s" for c in CAMPOS_SERIE_BUSCABLES)
+        params_like = [f"%{q}%"] * len(CAMPOS_SERIE_BUSCABLES)
+        filas = execute_read(
+            f"SELECT * FROM unidades WHERE {condiciones_like} LIMIT 1", tuple(params_like)
+        )
+
+    if not filas:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No se encontró ninguna unidad con '{q}' en VIN, series o número económico"
+        )
+
+    unidad = filas[0]
+    unit_number = unidad["unit_number"]
+
+    # 2. Asignaciones (actividades) de esta unidad — qué se ha hecho,
+    #    quién lo hizo, en qué estado
+    asignaciones = execute_read(
+        "SELECT * FROM asignaciones WHERE unidad=%s ORDER BY id DESC", (unit_number,)
+    )
+
+    # 3. Comentarios de cada asignación de esta unidad
+    asignacion_ids = [a["id"] for a in asignaciones]
+    comentarios = []
+    if asignacion_ids:
+        placeholders = ",".join(["%s"] * len(asignacion_ids))
+        comentarios = execute_read(
+            f"SELECT * FROM comentarios_actividades WHERE asignacion_id IN ({placeholders}) "
+            f"ORDER BY fecha DESC",
+            tuple(asignacion_ids)
+        )
+
+    # 4. Toma de valores registrados en cualquiera de sus asignaciones
+    toma_valores = []
+    if asignacion_ids:
+        placeholders = ",".join(["%s"] * len(asignacion_ids))
+        toma_valores = execute_read(
+            f"SELECT * FROM toma_valores_datos WHERE asignacion_id IN ({placeholders})",
+            tuple(asignacion_ids)
+        )
+
+    # 5. Tickets de esta unidad
+    tickets = execute_read(
+        "SELECT * FROM tickets WHERE unit_number=%s ORDER BY id DESC", (unit_number,)
+    )
+
+    # 6. Evidencias — conteo total y lista de nombres (sin el contenido
+    #    binario, para no inflar la respuesta)
+    evidencias_count = execute_read(
+        "SELECT COUNT(*) AS total FROM evidencias WHERE unit_number=%s", (unit_number,)
+    )[0]["total"]
+    evidencias_lista = execute_read(
+        "SELECT id, nombre_archivo, tecnico, fecha_subida FROM evidencias "
+        "WHERE unit_number=%s ORDER BY fecha_subida DESC LIMIT 200",
+        (unit_number,)
+    ) if evidencias_count else []
+
+    # 7. Estado de lote: oculto/visible y si hay backup registrado en OneDrive
+    lote_backup = None
+    if unidad.get("id_lote"):
+        rows_backup = execute_read(
+            "SELECT * FROM lotes_backup_status WHERE id_lote=%s LIMIT 1",
+            (unidad["id_lote"],)
+        ) if _tabla_existe("lotes_backup_status") else []
+        lote_backup = rows_backup[0] if rows_backup else None
+
+    return {
+        "unidad": unidad,
+        "asignaciones": asignaciones,
+        "comentarios": comentarios,
+        "toma_valores": toma_valores,
+        "tickets": tickets,
+        "evidencias_total": evidencias_count,
+        "evidencias": evidencias_lista,
+        "lote_backup": lote_backup,
+    }
+
+
+def _tabla_existe(nombre_tabla: str) -> bool:
+    """Verifica si una tabla existe en la BD, para no romper si aún no se ha creado."""
+    try:
+        execute_read(f"SELECT 1 FROM {nombre_tabla} LIMIT 1")
+        return True
+    except Exception:
+        return False
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # ── CRUD DE UNIDADES ────────────────────────────────────────────────────────
 # ═══════════════════════════════════════════════════════════════════════════
