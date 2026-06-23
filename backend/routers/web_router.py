@@ -4410,9 +4410,10 @@ async def alarmas():
     </style>
 
     <div class="alarm-search-bar">
-        <input type="text" id="alarmQuery" placeholder="Código (ej: 00012) o término (ej: coolant, sensor…)"
+        <input type="text" id="alarmQuery" placeholder="Código (ej: 00128 o A00128) o término (ej: coolant, sensor…)"
                onkeydown="if(event.key==='Enter') buscarAlarma()">
         <button class="btn-primary" onclick="buscarAlarma()">🔍 Buscar</button>
+        <button id="btnSeed" class="btn-warning" style="width:auto;padding:12px 18px;font-size:.85rem;display:none;" onclick="seedAlarmas()">⚙️ Cargar datos</button>
     </div>
 
     <div id="alarmResults"></div>
@@ -4425,15 +4426,61 @@ async def alarmas():
     <script>
         const fetchAuth = window.fetchAuth;
 
+        // Normaliza el código: quita prefijo de letras antes de dígitos (A00128 → 00128)
+        function normalizarQuery(q) {
+            return q.trim().replace(/^[A-Za-z\s]+(?=\d)/, '').trim();
+        }
+
+        // Verificar al cargar si la tabla tiene datos
+        (async () => {
+            try {
+                const res = await fetchAuth('/api/alarmas/buscar?q=00012');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.length === 0 && window.role === 'admin') {
+                        document.getElementById('btnSeed').style.display = 'inline-block';
+                        document.getElementById('alarmResults').innerHTML =
+                            '<p style="color:#d97706;">⚠️ La base de alarmas está vacía. Haz clic en <b>⚙️ Cargar datos</b> para inicializarla.</p>';
+                    }
+                }
+            } catch(e) {}
+        })();
+
+        async function seedAlarmas() {
+            const btn = document.getElementById('btnSeed');
+            btn.disabled = true; btn.textContent = '⏳ Cargando...';
+            try {
+                const res = await fetchAuth('/api/alarmas/seed');
+                const data = await res.json();
+                if (res.ok && data.ok) {
+                    btn.style.display = 'none';
+                    document.getElementById('alarmResults').innerHTML =
+                        '<p style="color:var(--carrier-success);">✅ ' + data.mensaje + ' Ahora puedes buscar alarmas.</p>';
+                } else {
+                    alert('Error: ' + (data.detail || data.mensaje || 'No se pudo cargar'));
+                    btn.disabled = false; btn.textContent = '⚙️ Cargar datos';
+                }
+            } catch(e) {
+                alert('Error de red');
+                btn.disabled = false; btn.textContent = '⚙️ Cargar datos';
+            }
+        }
+
         async function buscarAlarma() {
-            const q = document.getElementById('alarmQuery').value.trim();
-            if (!q) { document.getElementById('alarmResults').innerHTML = '<p>Escribe un código o término de búsqueda.</p>'; return; }
+            const raw = document.getElementById('alarmQuery').value.trim();
+            if (!raw) { document.getElementById('alarmResults').innerHTML = '<p>Escribe un código o término de búsqueda.</p>'; return; }
+            const q = normalizarQuery(raw) || raw;
             document.getElementById('alarmResults').innerHTML = '<p>⏳ Buscando...</p>';
             try {
                 const res = await fetchAuth('/api/alarmas/buscar?q=' + encodeURIComponent(q));
                 if (!res.ok) { document.getElementById('alarmResults').innerHTML = '<p style="color:red;">Error al buscar.</p>'; return; }
                 const data = await res.json();
-                if (!data.length) { document.getElementById('alarmResults').innerHTML = '<p>No se encontraron alarmas para "' + q + '".</p>'; return; }
+                if (!data.length) {
+                    document.getElementById('alarmResults').innerHTML =
+                        '<p>No se encontraron alarmas para "' + raw + '"' +
+                        (raw !== q ? ' (buscado como: <b>' + q + '</b>)' : '') + '.</p>';
+                    return;
+                }
                 renderResults(data);
             } catch(e) {
                 document.getElementById('alarmResults').innerHTML = '<p style="color:red;">Error de conexión.</p>';
@@ -4443,8 +4490,10 @@ async def alarmas():
         function renderResults(alarmas) {
             let html = `<p style="font-size:.85rem;color:#6b7280;margin-bottom:12px;">${alarmas.length} resultado(s)</p>`;
             alarmas.forEach(a => {
-                const ref = a.referencia_alarma;
-                const isRef = ref && (typeof ref === 'object') && ref.codigo;
+                const ref = a.referencia_alarma && typeof a.referencia_alarma === 'string'
+                    ? (() => { try { return JSON.parse(a.referencia_alarma); } catch(e) { return null; } })()
+                    : (a.referencia_alarma || null);
+                const isRef = ref && ref.codigo;
                 html += `<div class="alarm-card ${isRef ? 'alarm-ref' : ''}" onclick='abrirAlarma(${JSON.stringify(JSON.stringify(a))})'>
                     <span class="alarm-code">${a.codigo}</span>
                     <span class="alarm-title">${a.titulo}</span>
@@ -4457,13 +4506,16 @@ async def alarmas():
         function abrirAlarma(jsonStr) {
             const a = JSON.parse(jsonStr);
             const ref = a.referencia_alarma && typeof a.referencia_alarma === 'string'
-                ? JSON.parse(a.referencia_alarma) : (a.referencia_alarma || null);
+                ? (() => { try { return JSON.parse(a.referencia_alarma); } catch(e) { return null; } })()
+                : (a.referencia_alarma || null);
 
             const acciones = a.acciones_correctivas && typeof a.acciones_correctivas === 'string'
-                ? JSON.parse(a.acciones_correctivas) : (a.acciones_correctivas || []);
+                ? (() => { try { return JSON.parse(a.acciones_correctivas); } catch(e) { return []; } })()
+                : (a.acciones_correctivas || []);
 
             const relacionadas = a.alarmas_relacionadas && typeof a.alarmas_relacionadas === 'string'
-                ? JSON.parse(a.alarmas_relacionadas) : (a.alarmas_relacionadas || []);
+                ? (() => { try { return JSON.parse(a.alarmas_relacionadas); } catch(e) { return []; } })()
+                : (a.alarmas_relacionadas || []);
 
             let html = `
             <div class="alarm-modal-header">
@@ -4514,7 +4566,6 @@ async def alarmas():
             document.getElementById('alarmModal').classList.remove('open');
         }
 
-        // Cerrar con click fuera del modal
         document.getElementById('alarmModal').addEventListener('click', function(e) {
             if (e.target === this) cerrarModal();
         });

@@ -97,6 +97,42 @@ def _run_migrations():
                 conn.commit()
                 print("✅ Migración: tabla alarmas_reefer creada")
 
+            # ── Auto-seed: cargar alarmas.json si la tabla está vacía ─────────
+            cur.execute("SELECT COUNT(*) FROM alarmas_reefer")
+            row6 = cur.fetchone()
+            count6 = row6[0] if isinstance(row6, tuple) else list(row6.values())[0]
+            if count6 == 0:
+                import json as _json, pathlib as _pl
+                _json_path = _pl.Path(__file__).parent / "alarmas.json"
+                if _json_path.exists():
+                    alarmas = _json.loads(_json_path.read_text(encoding="utf-8"))
+                    for a in alarmas:
+                        cur.execute(
+                            """
+                            INSERT INTO alarmas_reefer
+                                (codigo, titulo, activacion, control_unidad,
+                                 condicion_reset, notas, acciones_correctivas,
+                                 referencia_alarma, alarmas_relacionadas)
+                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                            ON DUPLICATE KEY UPDATE titulo=VALUES(titulo)
+                            """,
+                            (
+                                a["codigo"],
+                                a["titulo"],
+                                a.get("activacion"),
+                                a.get("control_unidad"),
+                                a.get("condicion_reset"),
+                                a.get("notas"),
+                                _json.dumps(a.get("acciones_correctivas") or [], ensure_ascii=False),
+                                _json.dumps(a.get("referencia_alarma"), ensure_ascii=False),
+                                _json.dumps(a.get("alarmas_relacionadas") or [], ensure_ascii=False),
+                            ),
+                        )
+                    conn.commit()
+                    print(f"✅ Auto-seed: {len(alarmas)} alarmas cargadas en alarmas_reefer")
+                else:
+                    print("⚠️  alarmas.json no encontrado — ejecuta cargar_alarmas.py manualmente")
+
     except Exception as e:
         print(f"⚠️  Migración omitida: {e}")
     finally:
