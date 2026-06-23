@@ -40,7 +40,7 @@ def buscar_alarma(q: str = "", current_user=Depends(verify_token)):
         SELECT
             codigo, titulo, activacion, control_unidad,
             condicion_reset, notas, acciones_correctivas,
-            referencia_alarma, alarmas_relacionadas
+            referencia_alarma, alarmas_relacionadas, figuras
         FROM alarmas_reefer
         WHERE codigo LIKE %s OR titulo LIKE %s
         ORDER BY codigo ASC
@@ -79,8 +79,8 @@ def seed_alarmas(current_user=Depends(verify_token)):
             INSERT INTO alarmas_reefer
                 (codigo, titulo, activacion, control_unidad,
                  condicion_reset, notas, acciones_correctivas,
-                 referencia_alarma, alarmas_relacionadas)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                 referencia_alarma, alarmas_relacionadas, figuras)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON DUPLICATE KEY UPDATE titulo=VALUES(titulo)
             """,
             (
@@ -93,6 +93,7 @@ def seed_alarmas(current_user=Depends(verify_token)):
                 json.dumps(a.get("acciones_correctivas") or [], ensure_ascii=False),
                 json.dumps(a.get("referencia_alarma"), ensure_ascii=False),
                 json.dumps(a.get("alarmas_relacionadas") or [], ensure_ascii=False),
+                json.dumps(a.get("figuras") or [], ensure_ascii=False),
             ),
         )
     return {"ok": True, "mensaje": f"{len(alarmas)} alarmas cargadas correctamente"}
@@ -107,7 +108,7 @@ def get_alarma(codigo: str, current_user=Depends(verify_token)):
         SELECT
             codigo, titulo, activacion, control_unidad,
             condicion_reset, notas, acciones_correctivas,
-            referencia_alarma, alarmas_relacionadas
+            referencia_alarma, alarmas_relacionadas, figuras
         FROM alarmas_reefer
         WHERE codigo = %s
         LIMIT 1

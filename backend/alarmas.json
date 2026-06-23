@@ -35,7 +35,8 @@
     "codigo": "00012",
     "titulo": "High Coolant Temperature",
     "titulo_original": "HIGH COOLANT TEMPERATURE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Compressor discharge pressure switch (HPS) contacts are open. HPS contacts open\n when the discharge pressure rises. Refer to Section 2.10.",
@@ -77,7 +78,8 @@
     "codigo": "00013",
     "titulo": "High Discharge Pressure",
     "titulo_original": "HIGH DISCHARGE PRESSURE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "AC Current Sensor 1, 2, or 3 is greater than 28.5A for 3 seconds.",
@@ -103,7 +105,8 @@
     "codigo": "00014",
     "titulo": "High A/C Amps",
     "titulo_original": "HIGH A/C AMPS",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Voltage at the main microprocessor is greater than 17 VDC.",
@@ -133,7 +136,8 @@
     "codigo": "00015",
     "titulo": "Battery Voltage Too High",
     "titulo_original": "BATTERY VOLTAGE TOO HIGH",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Voltage at the main microprocessor is less than 10 VDC (except when the engine starter is\n engaged).",
@@ -159,7 +163,8 @@
     "codigo": "00016",
     "titulo": "Battery Voltage Too Low",
     "titulo_original": "BATTERY VOLTAGE TOO LOW",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "“Check Compressor Discharge Sensor” alarm not active (if alarm is active, refer to 00125\n CHECK COMP DISCHARGE SENSOR first) and: discharge temp rises above 285.1°F (140.6°C) for 30\n seconds, or discharge temp rises above 295.0°F (146.1°C).",
@@ -197,7 +202,8 @@
     "codigo": "00017",
     "titulo": "High Comp Discharge Temp",
     "titulo_original": "HIGH COMP DISCHARGE TEMP",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Suction Pressure has been less than -6.3 psig (-0.43 bar) for the Low Suction Pressure\n Configuration time or 10 seconds (whichever is less).",
@@ -247,7 +253,8 @@
     "codigo": "00018",
     "titulo": "Low Refrigerant Pressure",
     "titulo_original": "LOW REFRIGERANT PRESSURE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The fuel level is 10% or less for more than 60 seconds AND Alarm 000126 - “Check Fuel\n Sensor Circuit” is not active.",
@@ -272,7 +279,8 @@
     "codigo": "00019",
     "titulo": "Low Fuel Shutdown",
     "titulo_original": "LOW FUEL SHUTDOWN",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "This option must be installed and alarm must be enabled by configuring the Compressor\n Alarm Shutdown to YES. Alarms 00013 HIGH DISCHARGE PRESSURE, 00017 HIGH COMP DIS-\n CHARGE TEMP, 00018 LOW REFRIGERANT PRESSURE, 00027 HIGH SUCTION PRESSURE, or\n 00028 CHECK REFRIGERATION SYSTEM individually occur 3 times within the last 2 hours.",
@@ -294,7 +302,8 @@
     "codigo": "00020",
     "titulo": "Maximum Compressor Alarms",
     "titulo_original": "MAXIMUM COMPRESSOR ALARMS",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The High Engine Temp Shutdown Configuration and/or Engine Oil Pressure Shutdown\n Configuration is/are set to YES, and either Alarm 00011 - Low Engine Oil Pressure, or Alarm 00012 -\n High Coolant Temperature has become active and shut the unit down three times within the past 2 hours.",
@@ -316,7 +325,8 @@
     "codigo": "00021",
     "titulo": "Technician Reset Required",
     "titulo_original": "TECHNICIAN RESET REQUIRED",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "“Check Suction Temperature Sensor” and/or “Check Evaporator Temperature Sensor”\n alarms are not active (refer to Alarm 000127 and/or 000131 first) and:\n Compressor suction superheat (Compressor Suction Temperature (CST) minus saturated tempera-\n ture for Compressor Suction Pressure (CSP) is less than 8°F (4.4°C) for more than 3-4 minutes.",
@@ -350,7 +360,8 @@
     "codigo": "00022",
     "titulo": "Low Suction Superheat",
     "titulo_original": "LOW SUCTION SUPERHEAT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The high voltage amp draw is over the limit shown in the following table for more than 10 sec-\n onds.\n CONDITION DRAW\n Engine High / Low Speed, Standby Cool or Pretrip / Engine Off 30A\n Any 2 compartments or 3 compartments enabled: Engine Off 10A\n Engine High Speed Heat 18A\n Engine Low Speed or Standby Heat 14A\n Engine High Speed Defrost (With heaters energized) 16A\n Engine Low Speed or Standby Heat Defrost 12A\n Engine High/Low Speed or Null 8A\n Engine Low Speed or Standby Null 8A\n Engine or Standby Natural Defrost (when heaters are de-energized) 10A",
@@ -400,7 +411,8 @@
     "codigo": "00023",
     "titulo": "A/C Current Over Limit",
     "titulo_original": "A/C CURRENT OVER LIMIT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "If the compressor compression ratio is greater than 21 for 20 seconds.",
@@ -434,7 +446,8 @@
     "codigo": "00024",
     "titulo": "Compression Ratio Exceeded",
     "titulo_original": "COMPRESSION RATIO EXCEEDED",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The refrigeration system is running and the suction pressure has been greater than 98 psig\n (6.7 bar) for more than 10 minutes.",
@@ -472,7 +485,8 @@
     "codigo": "00027",
     "titulo": "High Suction Pressure",
     "titulo_original": "HIGH SUCTION PRESSURE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The refrigeration system is running and the discharge pressure is less than 5 psig (0.34\n bar) higher than suction pressure for more than 30 seconds.",
@@ -502,7 +516,8 @@
     "codigo": "00028",
     "titulo": "Check Refrigeration System",
     "titulo_original": "CHECK REFRIGERATION SYSTEM",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "If Configured STANDARD: The unit has shutdown on an alarm 3 times without having run\n for at least 15 minutes between each shutdown (not including door switch shutdowns).",
@@ -520,7 +535,8 @@
     "codigo": "00030",
     "titulo": "Failed To Run Minimum Time",
     "titulo_original": "FAILED TO RUN MINIMUM TIME",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Engine has tried to start three times unsuccessfully in the auto start mode.",
@@ -566,7 +582,14 @@
     "codigo": "00031",
     "titulo": "Failed To Start - Auto Mode",
     "titulo_original": "FAILED TO START - AUTO MODE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.7",
+        "titulo": "Figura 2.7 — Power Control Module",
+        "url": "/static/alarmas_figuras/figura_2_7_power_control_module.png"
+      }
+    ]
   },
   {
     "activacion": "When in Engine Operation, engine is turning more than 500 RPM for 20 seconds after unit\n shutdown or cycled off. Or, Oil Pressure switch is closed longer than 20 seconds after unit shutdown or cycle\n off.",
@@ -600,7 +623,14 @@
     "codigo": "00034",
     "titulo": "Engine Failed To Stop",
     "titulo_original": "ENGINE FAILED TO STOP",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.7",
+        "titulo": "Figura 2.7 — Power Control Module",
+        "url": "/static/alarmas_figuras/figura_2_7_power_control_module.png"
+      }
+    ]
   },
   {
     "activacion": "Engine speed fails to reach 50 rpm during 2 start attempts.",
@@ -645,7 +675,14 @@
     "codigo": "00035",
     "titulo": "Check Starter Circuit",
     "titulo_original": "CHECK STARTER CIRCUIT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.7",
+        "titulo": "Figura 2.7 — Power Control Module",
+        "url": "/static/alarmas_figuras/figura_2_7_power_control_module.png"
+      }
+    ]
   },
   {
     "activacion": "Coolant temperature is below 32°F (0°C) after the engine has been running for 5 minutes.",
@@ -667,7 +704,8 @@
     "codigo": "00036",
     "titulo": "Check Coolant Temperature",
     "titulo_original": "CHECK COOLANT TEMPERATURE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The APX Control System is calling for low engine speed operation, and engine speed is\n less than 1200 rpm or greater than 1500 rpm for more than 60 seconds (120 seconds when the APX Con-\n trol System calls for a change from high to low speed, or when unit first starts).",
@@ -705,7 +743,8 @@
     "codigo": "00037",
     "titulo": "Check Low Speed Rpm",
     "titulo_original": "CHECK LOW SPEED RPM",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The APX Control System is calling for high speed operation, and engine speed is less than\n 1650 rpm, or greater than 2075 rpm for more than 60 seconds (120 seconds when the APX Control Sys-\n tem calls for a change from low to high speed, or when unit first starts).",
@@ -743,7 +782,8 @@
     "codigo": "00038",
     "titulo": "Check High Speed Rpm",
     "titulo_original": "CHECK HIGH SPEED RPM",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "In Engine Operation and Alarm 00130 is not active and Engine speed is greater than 1300\n rpm for 3 seconds and:\n Engine speed is greater than 2100 rpm for 5 minutes or\n Engine speed is less than 1250 rpm for 5 minutes or\n Engine speed is less than 1200 rpm for 10 seconds",
@@ -781,7 +821,14 @@
     "codigo": "00039",
     "titulo": "Check Engine Rpm",
     "titulo_original": "CHECK ENGINE RPM",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.7",
+        "titulo": "Figura 2.7 — Power Control Module",
+        "url": "/static/alarmas_figuras/figura_2_7_power_control_module.png"
+      }
+    ]
   },
   {
     "activacion": "Engine Operation: Intake Air Heater amperage is less than 25 Amps, or greater than 70\n Amps after 14 seconds of glow time (NOTE: This can only occur when the Engine Coolant Temperature\n is below 50°F (11°C) due to pre-heat time allowed.\n Refer to Table 4–1 for pre-heat times.\n Electric Operation: This alarm will not activate in Electric Operation.",
@@ -807,7 +854,8 @@
     "codigo": "00040",
     "titulo": "Check Engine Preheat Circuit",
     "titulo_original": "CHECK ENGINE PREHEAT CIRCUIT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The APX Control System is calling for the engine to run, Engine speed sensor is good, and\n engine speed is less than 10 rpm; or the A00130 (Check Engine RPM Sensor) alarm is ON, and the Oil\n Pressure switch contacts are open, and AL00013 (High Discharge Pressure) is not active.",
@@ -857,7 +905,14 @@
     "codigo": "00041",
     "titulo": "Engine Stalled",
     "titulo_original": "ENGINE STALLED",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.7",
+        "titulo": "Figura 2.7 — Power Control Module",
+        "url": "/static/alarmas_figuras/figura_2_7_power_control_module.png"
+      }
+    ]
   },
   {
     "activacion": "Unit is running and the current flow is less than -1.0 amps between the alternator and the\n battery for 3 continuous minutes.",
@@ -891,7 +946,14 @@
     "codigo": "00051",
     "titulo": "Alternator (Battery Charger) Not Charging",
     "titulo_original": "ALTERNATOR (BATTERY CHARGER) NOT CHARGING",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.6",
+        "titulo": "Figura 2.6 — Control and Standby Boxes",
+        "url": "/static/alarmas_figuras/figura_2_6_control_standby_boxes.png"
+      }
+    ]
   },
   {
     "activacion": "Condition One: If the unit is running in Pulldown and the SAT is not greater than 1°F (0.56°C) below\n the RAT or if the unit is running in Pull-Up and the SAT is not above the RAT, the configured action\n (Alarm only after 30 minutes or Alarm and Shutdown after 45 minutes) will be activated.\n\n NOTE\n If the Out-Of-Range Alarm Functional Parameter is set to OFF, the following conditions will not\n trigger an alarm or shutdown.\n\n Condition Two: If the refrigerated compartment temperature has been within ± 2.7°F (± 1.5°C) for\n perishable setpoints or + 2.7°F (± 1.5°C) for frozen of setpoint at least once since the unit was\n started and is now further away from setpoint than the limit set in the Out-Of-Range Alarm Func-\n tional Parameter [4°, 5°, or 7°F (2°, 3°, or 4°C)], the configured action (Alarm only after 30 minutes\n or Alarm and Shutdown after 45 minutes) will be activated.\n Condition Three: If a shutdown alarm occurs and the RAT is further away from setpoint than the\n limit set in the Out-Of-Range Alarm Functional Parameter [4°, 5°, or 7°F (2°, 3°, or 4°C)], the config-\n ured action (Alarm only after 30 minutes or Alarm and Shutdown after 45 minutes) will be activated\n regardless if the refrigerated compartment temperature has been in-range or not.",
@@ -937,7 +999,8 @@
     "codigo": "00053",
     "titulo": "Box Temp Out-Of-Range",
     "titulo_original": "BOX TEMP OUT-OF-RANGE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Defrost cycle did not complete within 45 minutes",
@@ -967,7 +1030,8 @@
     "codigo": "00054",
     "titulo": "Defrost Not Complete",
     "titulo_original": "DEFROST NOT COMPLETE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The defrost air switch has called for a defrost cycle within 8 minutes of a defrost termina-\n tion for 2 consecutive defrost cycles. (The air switch contacts were closed continuously for 15 seconds\n before the defrost cycle was started.)",
@@ -993,7 +1057,8 @@
     "codigo": "00055",
     "titulo": "Check Defrost Air Switch",
     "titulo_original": "CHECK DEFROST AIR SWITCH",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "REMS1 is set to trigger an alarm if the switch is activated (opened or closed, depending on\n switch type) for more than five seconds.",
@@ -1035,7 +1100,8 @@
     "codigo": "00057",
     "titulo": "Check Remote Switch 1 (Rems1)",
     "titulo_original": "CHECK REMOTE SWITCH 1 (REMS1)",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Remote Switch 2 is set to activate an alarm if the switch is activated (opened or closed,\n depending on switch type) for more than five seconds.\n\nNo data is being recorded by the DataLink data recorder.\n\nThe real time clock in the DataLink data recorder does not contain a valid date.",
@@ -1089,7 +1155,8 @@
     "codigo": "00058",
     "titulo": "Check Remote Switch 2 (Rems2)",
     "titulo_original": "CHECK REMOTE SWITCH 2 (REMS2)",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "DS1 is set to trigger an alarm if the switch is activated (opened or closed, depending on\n switch type) for more than five seconds.",
@@ -1131,7 +1198,8 @@
     "codigo": "00061",
     "titulo": "Door Open (Ds1)",
     "titulo_original": "DOOR OPEN (DS1)",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": null,
@@ -1147,7 +1215,8 @@
     "codigo": "00062",
     "titulo": "C2 Box Temp Out-Of-Range",
     "titulo_original": "C2 BOX TEMP OUT-OF-RANGE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": null,
@@ -1163,7 +1232,8 @@
     "codigo": "00063",
     "titulo": "C3 Box Temp Out-Of-Range",
     "titulo_original": "C3 BOX TEMP OUT-OF-RANGE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The unit has been shut off for at least 48 hours. During wake up, a temperature\n comparison of the Evaporator Temperature Sensors (RAT, SAT, DTT) is performed. If the highest and the\n lowest temperature readings are more than 3.6°F (2.0°C) apart this alarm will be activated.\n\n The Evaporator Temperature Sensors test for this alarm is only run when main power is off and the unit is\n not running. When this alarm is in the inactive alarm list, the MessageCenter will display “Check at Next\n Service Interval” instead of “Status OK”",
@@ -1185,7 +1255,8 @@
     "codigo": "00066",
     "titulo": "Check Evap Sensor Group",
     "titulo_original": "CHECK EVAP SENSOR GROUP",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The unit is set to operate in electric AND no AC power; incoming voltage at the High Volt-\n age Transformer (HVT) is less than 300VAC.",
@@ -1223,7 +1294,8 @@
     "codigo": "00073",
     "titulo": "No Power-Check Power Cord",
     "titulo_original": "NO POWER-CHECK POWER CORD",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "If the system is in electric mode and the START/RUNSTART/RUN Switch is ON and the\n system cannot properly detect the phase.",
@@ -1253,7 +1325,8 @@
     "codigo": "00074",
     "titulo": "Phase Reversed",
     "titulo_original": "PHASE REVERSED",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "If alarm 00022 LOW SUCTION SUPERHEAT, 00027 HIGH SUCTION PRESSURE and/or\n 00028 CHECK REFRIGERATION SYSTEM was triggered with current below 5.5 amps, this alarm will\n also trigger or on restart from alarm 00022, 00027 and/or 00028 trigger on if compressor current does not\n rise above 1 amp, and alarm 00013 HIGH DISCHARGE PRESSURE (High Discharge Pressure) is not\n active.",
@@ -1299,7 +1372,8 @@
     "codigo": "00075",
     "titulo": "Comp Motor Overload",
     "titulo_original": "COMP MOTOR OVERLOAD",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The condenser fan motor Internal Protectors (IP-CDM1) circuit is open and alarm 00013\n HIGH DISCHARGE PRESSURE is not active.",
@@ -1345,7 +1419,19 @@
     "codigo": "00076",
     "titulo": "Condenser Motor Overheated",
     "titulo_original": "CONDENSER MOTOR OVERHEATED",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.4",
+        "titulo": "Figura 2.4 — Remote Evaporator, Single-Cover Removed",
+        "url": "/static/alarmas_figuras/figura_2_4_remote_evaporator.png"
+      },
+      {
+        "numero": "2.6",
+        "titulo": "Figura 2.6 — Control and Standby Boxes",
+        "url": "/static/alarmas_figuras/figura_2_6_control_standby_boxes.png"
+      }
+    ]
   },
   {
     "activacion": "The evaporator fan motor Internal Protector (IP-EVM) is open and alarm 00013 HIGH DIS-\n CHARGE PRESSURE is not active.",
@@ -1387,7 +1473,8 @@
     "codigo": "00077",
     "titulo": "Evap Motor Overheated",
     "titulo_original": "EVAP MOTOR OVERHEATED",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": null,
@@ -1403,7 +1490,8 @@
     "codigo": "00084",
     "titulo": "Check Remote Alarm Light",
     "titulo_original": "CHECK REMOTE ALARM LIGHT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The Buzzer (B) circuit is shorted or open. (The Buzzer output from the microprocessor\n [PCM-23 to 3MM15] is negative, so the circuit will not be shorted to ground, but is shorted either within\n the Buzzer itself, or to a positive wire.)",
@@ -1429,7 +1517,8 @@
     "codigo": "00093",
     "titulo": "Check Startup Buzzer",
     "titulo_original": "CHECK STARTUP BUZZER",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Compressor motor contactor (CCON) circuit is shorted or open.",
@@ -1455,7 +1544,8 @@
     "codigo": "00094",
     "titulo": "Check Comp Contactor 1",
     "titulo_original": "CHECK COMP CONTACTOR 1",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Condenser fan motor contactor (CDCON) circuit is shorted or open.",
@@ -1481,7 +1571,8 @@
     "codigo": "00095",
     "titulo": "Check Cdcon1 Coil",
     "titulo_original": "CHECK CDCON1 COIL",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Generator contactor (GENCON) circuit is shorted or open.",
@@ -1507,7 +1598,8 @@
     "codigo": "00096",
     "titulo": "Check Gencoil Coil",
     "titulo_original": "CHECK GENCOIL COIL",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "With the Main Power switch toggled out of the OFF position, the EVHTS circuit is open.",
@@ -1533,7 +1625,8 @@
     "codigo": "00098",
     "titulo": "Check High Temp Thermostat",
     "titulo_original": "CHECK HIGH TEMP THERMOSTAT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Engine or Electric Operation is being called for and the overload ground fault module is\n reading more than 40 Amps on any A/C current leg OR there is A/C voltage leaking to ground of more\n than 150 Milli-amps.",
@@ -1567,7 +1660,8 @@
     "codigo": "00100",
     "titulo": "Overload/Ground Fault",
     "titulo_original": "OVERLOAD/GROUND FAULT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The 2nd compartment evaporator fan motor Internal Protector (IP-EVM) is open.",
@@ -1609,7 +1703,8 @@
     "codigo": "00101",
     "titulo": "C2 Evap Motor Overheated",
     "titulo_original": "C2 EVAP MOTOR OVERHEATED",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The 3rd compartment evaporator fan motor Internal Protector (IP-EVM) is open.",
@@ -1651,7 +1746,8 @@
     "codigo": "00102",
     "titulo": "C3 Evap Motor Overheated",
     "titulo_original": "C3 EVAP MOTOR OVERHEATED",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Heater Contactor 1 in Compartment 2 (2HTCON1) circuit is shorted or open.",
@@ -1681,7 +1777,8 @@
     "codigo": "00103",
     "titulo": "Check 2Htcon1 Coil",
     "titulo_original": "CHECK 2HTCON1 COIL",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Heater Contactor 2 in Compartment 2 (2HTCON2) circuit is shorted or open.",
@@ -1711,7 +1808,8 @@
     "codigo": "00104",
     "titulo": "Check 2Htcon2 Coil",
     "titulo_original": "CHECK 2HTCON2 COIL",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Heater Contactor 1 in Compartment 3 (3HTCON1) circuit is shorted or open.",
@@ -1741,7 +1839,8 @@
     "codigo": "00105",
     "titulo": "Check 3Htcon1 Coil",
     "titulo_original": "CHECK 3HTCON1 COIL",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Heater Contactor 2 in Compartment 3 (3HTCON2) circuit is shorted or open.",
@@ -1771,7 +1870,8 @@
     "codigo": "00106",
     "titulo": "Check 3Htcon2 Coil",
     "titulo_original": "CHECK 3HTCON2 COIL",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Evaporator fan motor contactor (1EVCON) circuit is shorted or open.",
@@ -1797,7 +1897,8 @@
     "codigo": "00109",
     "titulo": "Check 1Evcon Coil",
     "titulo_original": "CHECK 1EVCON COIL",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Evaporator fan motor contactor (2EVCON) circuit in compartment 1 is shorted or open.",
@@ -1815,7 +1916,8 @@
     "codigo": "00110",
     "titulo": "Check 2Evcon Coil",
     "titulo_original": "CHECK 2EVCON COIL",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Evaporator fan motor contactor (3EVCON) circuit in compartment 1 is shorted or open.",
@@ -1833,7 +1935,8 @@
     "codigo": "00111",
     "titulo": "Check 3Evcon Coil",
     "titulo_original": "CHECK 3EVCON COIL",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "A problem has been detected in the LIV coil circuit. If this alarm is activated while the con-\n trol system is calling for LIV to be energized, the circuit is detected shorted. If this alarm is activated at\n any other time, the circuit is detected open.",
@@ -1863,7 +1966,8 @@
     "codigo": "00114",
     "titulo": "Check Liv Circuit",
     "titulo_original": "CHECK LIV CIRCUIT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Ambient Air Temperature Sensor (AAT) is not within range of -53 to +158°F (-47° to +70° C).",
@@ -1885,7 +1989,8 @@
     "codigo": "00121",
     "titulo": "Check Ambient Air Sensor",
     "titulo_original": "CHECK AMBIENT AIR SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Return Air Temperature Sensor (RAT) is not within range of -53 to +158°F (-47 to +70° C).",
@@ -1907,7 +2012,8 @@
     "codigo": "00122",
     "titulo": "Check Return Air Sensor",
     "titulo_original": "CHECK RETURN AIR SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Supply Air Temperature Sensor (SAT) is not within range of -53 to +158°F (-47 to +70° C).",
@@ -1929,7 +2035,8 @@
     "codigo": "00123",
     "titulo": "Check Supply Air Sensor",
     "titulo_original": "CHECK SUPPLY AIR SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Defrost Termination Temperature Sensor (1DTT) is not within the range of -53° to +158°F\n (-47° to +70° C.)",
@@ -1951,7 +2058,8 @@
     "codigo": "00124",
     "titulo": "Check Defrost Term 1 Sensor",
     "titulo_original": "CHECK DEFROST TERM 1 SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Compressor Discharge Temperature Sensor (CDT) is not within the range of -40° to\n +392°F (-40° to +200°C).",
@@ -1973,7 +2081,8 @@
     "codigo": "00125",
     "titulo": "Check Comp Discharge Sensor",
     "titulo_original": "CHECK COMP DISCHARGE SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The fuel level sensor is configured “YES” and the reading (in the Unit Data) is less than 2%\n for 30 seconds.",
@@ -1995,7 +2104,8 @@
     "codigo": "00126",
     "titulo": "Check Fuel Sensor Circuit",
     "titulo_original": "CHECK FUEL SENSOR CIRCUIT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Compressor Suction Temperature Sensor (CST) is not within the range of -53 to +158°F (-\n 47 to +70° C.)",
@@ -2017,7 +2127,14 @@
     "codigo": "00127",
     "titulo": "Check Suction Temp Sensor",
     "titulo_original": "CHECK SUCTION TEMP SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.7",
+        "titulo": "Figura 2.7 — Power Control Module",
+        "url": "/static/alarmas_figuras/figura_2_7_power_control_module.png"
+      }
+    ]
   },
   {
     "activacion": "The compressor is on and AC Current Sensor 1, 2 or 3 is less than 5 amps for 10 seconds.\n OR, if the difference between AC Current 1 and AC Current 2, 2-3 and 1-3 is greater than 10 amps for 10\n seconds.",
@@ -2043,7 +2160,8 @@
     "codigo": "00128",
     "titulo": "Low/Unbalanced A/C Amps",
     "titulo_original": "LOW/UNBALANCED A/C AMPS",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Engine Coolant Temperature Sensor (ENCT) is not within the range of -58 to +266°F (-50\n to +130°C).",
@@ -2065,7 +2183,8 @@
     "codigo": "00129",
     "titulo": "Check Eng Coolant Sensor",
     "titulo_original": "CHECK ENG COOLANT SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "If ambient temperature is above 32°F (0°C), and this is the second or third start attempt,\n and the engine oil pressure switch is closed (oil pressure good), and engine speed is sensed at less than\n 1000; OR, if ambient is below 32°F (0°C) and the DC amp draw is more than 2 amps, and this is the sec-\n ond or third start attempt, and engine speed is sensed at less than 1000.",
@@ -2091,7 +2210,8 @@
     "codigo": "00130",
     "titulo": "Check Engine Rpm Sensor",
     "titulo_original": "CHECK ENGINE RPM SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Evaporator Outlet Temperature Sensor (EVOT) is not within the range of -53 to +158°F\n (-47 to +70°C)",
@@ -2117,7 +2237,8 @@
     "codigo": "00131",
     "titulo": "Check Evap Temp Sensor",
     "titulo_original": "CHECK EVAP TEMP SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Remote Temperature Sensor (REMSN1, REMSN2 or REMSN3) is not within the range of\n -53 to +158°F (-47 to +70°C.)",
@@ -2156,7 +2277,8 @@
         "codigo": "00135",
         "titulo": "CHECK REMOTE TEMP SENSOR 3"
       }
-    ]
+    ],
+    "figuras": []
   },
   {
     "activacion": "Remote Temperature Sensor (REMSN1, REMSN2 or REMSN3) is not within the range of\n -53 to +158°F (-47 to +70°C.)",
@@ -2195,7 +2317,8 @@
         "codigo": "00135",
         "titulo": "CHECK REMOTE TEMP SENSOR 3"
       }
-    ]
+    ],
+    "figuras": []
   },
   {
     "activacion": "Remote Temperature Sensor (REMSN1, REMSN2 or REMSN3) is not within the range of\n -53 to +158°F (-47 to +70°C.)",
@@ -2234,7 +2357,8 @@
         "codigo": "00134",
         "titulo": "CHECK REMOTE TEMP SENSOR 2"
       }
-    ]
+    ],
+    "figuras": []
   },
   {
     "activacion": "Compartment 2 Supply Air Temperature Sensor (SAT) is not within the range of -53 to +158°F\n (-47 to +70° C). (NOTE: Compartment 2 Supply Air Temperature Sensor (SAT) is optional and may not be\n present. If the configuration is set to INSTALLED and the sensor is not connected, this alarm will be active.)",
@@ -2260,7 +2384,8 @@
     "codigo": "00136",
     "titulo": "C2 Check Supply Air Sensor",
     "titulo_original": "C2 CHECK SUPPLY AIR SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Compartment 2 Return Temperature Sensor (RAT) is not within the range of -53 to +158°F\n (-47 to +70° C).",
@@ -2282,7 +2407,8 @@
     "codigo": "00137",
     "titulo": "C2 Check Return Air Sensor",
     "titulo_original": "C2 CHECK RETURN AIR SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Compartment 3 Return Temperature Sensor (RAT) is not within the range of -53 to +158°F (-\n 47 to +70° C).",
@@ -2304,7 +2430,8 @@
     "codigo": "00138",
     "titulo": "C3 Check Return Air Sensor",
     "titulo_original": "C3 CHECK RETURN AIR SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Defrost Termination Temperature Sensor for Compartment 2, (2DTT) is not within the range\n of -53° to +158°F (-47° to +70° C.)",
@@ -2326,7 +2453,8 @@
     "codigo": "00139",
     "titulo": "C2 Check Defrost Term 1 Sensor",
     "titulo_original": "C2 CHECK DEFROST TERM 1 SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Defrost Termination Temperature Sensor for Compartment 3, (3DTT) is not within the range\n of -53° to +158°F (-47° to +70° C.)",
@@ -2344,7 +2472,8 @@
     "codigo": "00140",
     "titulo": "C3 Check Defrost Term 1 Sensor",
     "titulo_original": "C3 CHECK DEFROST TERM 1 SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Pretrip cycle was stopped by user before the Pretrip cycle ended automatically.",
@@ -2366,7 +2495,8 @@
     "codigo": "P00141",
     "titulo": "Pretrip Stopped By User",
     "titulo_original": "PRETRIP STOPPED BY USER",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "(unit not running): Normal draw for the 2HTCON1 coil is 0.05 to 1.0 Amps (12\n VDC). The circuit tests outside this range.\n • ACTIVATION TEST 7: (unit running): Normal draw for the 2HTCON1 heaters is 1.0 to 3.5 Amps (460\n VAC). The circuit tests outside this range.",
@@ -2408,7 +2538,14 @@
     "codigo": "P00146",
     "titulo": "C2 Check Heater 1 Circuit",
     "titulo_original": "C2 CHECK HEATER 1 CIRCUIT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.6",
+        "titulo": "Figura 2.6 — Control and Standby Boxes",
+        "url": "/static/alarmas_figuras/figura_2_6_control_standby_boxes.png"
+      }
+    ]
   },
   {
     "activacion": "(unit not running): Normal draw for the 2HTCON2 coil is 0.05 to 1.0 Amps (12\n VDC). The circuit tests outside this range\n • ACTIVATION TEST 7: (unit running): Normal draw for the 2HTCON2 heaters is 1.0 to 3.5 Amps (460\n VAC). The circuit tests outside this range.\n\nThe circuit current draw is outside the normal range.",
@@ -2453,7 +2590,14 @@
     "codigo": "P00147",
     "titulo": "C2 Check Heater 2 Circuit",
     "titulo_original": "C2 CHECK HEATER 2 CIRCUIT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.6",
+        "titulo": "Figura 2.6 — Control and Standby Boxes",
+        "url": "/static/alarmas_figuras/figura_2_6_control_standby_boxes.png"
+      }
+    ]
   },
   {
     "activacion": "The circuit current draw is outside the normal range.",
@@ -2474,7 +2618,8 @@
     "codigo": "P00152",
     "titulo": "Check Fuel/Speed Actuator Circuit",
     "titulo_original": "CHECK FUEL/SPEED ACTUATOR CIRCUIT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Return Air Temperature Sensor (RAT) is not within the range of -53 to +158°F (-47 to\n +70°C).",
@@ -2495,7 +2640,8 @@
     "codigo": "P00153",
     "titulo": "Check Return Air Sensor",
     "titulo_original": "CHECK RETURN AIR SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Supply Air Temperature Sensor (SAT) is not within the range of -53 to +158°F (-47 to\n +70°C).",
@@ -2516,7 +2662,8 @@
     "codigo": "P00154",
     "titulo": "Check Supply Air Sensor",
     "titulo_original": "CHECK SUPPLY AIR SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Engine Coolant Temperature Sensor (ENCT) is not within the range of -58 to +266°F (-50\n to +130°C).",
@@ -2537,7 +2684,8 @@
     "codigo": "P00155",
     "titulo": "Check Coolant Temp Sensor",
     "titulo_original": "CHECK COOLANT TEMP SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "With all circuits off, current flow of more than +1.5 to -2.0 amps is detected in the 12 VDC\n electrical circuits.\n NOTE: If this alarm occurs, Pretrip Test #2 will be skipped and Pretrip Test #3 will start.",
@@ -2563,7 +2711,8 @@
     "codigo": "P00157",
     "titulo": "Check Battery Current",
     "titulo_original": "CHECK BATTERY CURRENT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Ambient Air Temperature Sensor (AAT) is not within the range of -53 to +158°F (-47 to\n +70°C).",
@@ -2584,7 +2733,8 @@
     "codigo": "P00158",
     "titulo": "Check Ambient Air Sensor",
     "titulo_original": "CHECK AMBIENT AIR SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Defrost Termination Temperature Sensor (1DTT) is not within the range of -53 to +158°F (-\n 47 to +70°0 C.)",
@@ -2605,7 +2755,8 @@
     "codigo": "P00159",
     "titulo": "Check Defrost Term 1 Sensor",
     "titulo_original": "CHECK DEFROST TERM 1 SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Compressor Discharge Temperature Sensor (CDT) is not within the range of -40 to +392°F\n (-40 to +200°C.)",
@@ -2626,7 +2777,8 @@
     "codigo": "P00160",
     "titulo": "Check Discharge Temp Sensor",
     "titulo_original": "CHECK DISCHARGE TEMP SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Compressor Suction Temperature Sensor (CST) is not within the range of -40 to +392°F (-\n 40 to +200°C.)",
@@ -2647,7 +2799,8 @@
     "codigo": "P00161",
     "titulo": "Check Suction Temp Sensor",
     "titulo_original": "CHECK SUCTION TEMP SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "(unit not running): Normal draw for the 3HTCON1 coil is 0.05 to 1.0 Amps (12\n VDC). The circuit tests outside this range.\n • ACTIVATION TEST 7: (unit running): Normal draw for the 3HTCON1 heaters is 1.0 to 3.5 Amps (460\n VAC). The circuit tests outside this range.",
@@ -2697,7 +2850,8 @@
     "codigo": "P00163",
     "titulo": "C3 Check Heater 1 Circuit",
     "titulo_original": "C3 CHECK HEATER 1 CIRCUIT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Compartment 2 Supply Air Temperature Sensor (SAT) is not within the range of -53 to\n +158°F (-47 to +70°C).",
@@ -2718,7 +2872,14 @@
     "codigo": "P00166",
     "titulo": "C2 Check Supply Air Sensor",
     "titulo_original": "C2 CHECK SUPPLY AIR SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.6",
+        "titulo": "Figura 2.6 — Control and Standby Boxes",
+        "url": "/static/alarmas_figuras/figura_2_6_control_standby_boxes.png"
+      }
+    ]
   },
   {
     "activacion": "(unit not running): Normal draw for the 3HTCON2 contactor coil is 0.05 to 2.0\n Amps (12 VDC). The circuit tests outside this range.\n • ACTIVATION TEST 7: (unit running): Normal draw for the 3HTCON2 heaters is 1.0 to 3.5 Amps (460\n VAC). The circuit tests outside this range.",
@@ -2768,7 +2929,8 @@
     "codigo": "P00167",
     "titulo": "C3 Check Heater 2 Circuit",
     "titulo_original": "C3 CHECK HEATER 2 CIRCUIT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "During Test #2 the LIV current draw is not in range.",
@@ -2789,7 +2951,14 @@
     "codigo": "P00170",
     "titulo": "Check Liv Circuit",
     "titulo_original": "CHECK LIV CIRCUIT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.6",
+        "titulo": "Figura 2.6 — Control and Standby Boxes",
+        "url": "/static/alarmas_figuras/figura_2_6_control_standby_boxes.png"
+      }
+    ]
   },
   {
     "activacion": "Test #12, Check Economizer Expansion Valve fails.",
@@ -2810,7 +2979,8 @@
     "codigo": "P00173",
     "titulo": "Check Economizer",
     "titulo_original": "CHECK ECONOMIZER",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Test #4: With the CAN calling for low speed, engine speed is NOT between: 1300 and 1400 rpm.\n Test #6: 15 seconds after the High Speed Pretrip Test #5, engine speed has NOT dropped back to the\n low speed range (within 15 seconds). This test will be skipped if alarm 00130 CHECK ENGINE RPM\n SENSOR is active.",
@@ -2831,7 +3001,8 @@
     "codigo": "P00174",
     "titulo": "Check Low Speed Rpm",
     "titulo_original": "CHECK LOW SPEED RPM",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "In Test #5 with the CAN calling for high speed, engine speed is NOT between: 1750 and\n 1850 rpm.",
@@ -2852,7 +3023,8 @@
     "codigo": "P00175",
     "titulo": "Check High Speed Rpm",
     "titulo_original": "CHECK HIGH SPEED RPM",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "With the unit running in Test 11, after the control system closes the EVXV to 0%, evapora-\n tor pressure fails to drop by 20 psig (1.36 bar) or fails to go below 0 psig / bar OR the EVXV appears not\n to be opening to the full capacity position.",
@@ -2885,7 +3057,8 @@
     "codigo": "P00177",
     "titulo": "Check Exv (Evxv) Superheat",
     "titulo_original": "CHECK EXV (EVXV) SUPERHEAT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "With unit running at the end of Test 13 (ECXV closed, LIV de-energized, SMV set to maxi-\n mum position and EVXV controlling normally), the LIV is energized. If the Compressor Discharge Tem-\n perature Delta (Initial Compressor Discharge Temperature - the Current Compressor Discharge\n Temperature) does not reach 95°F (35°C) within 70 seconds, it indicates that the LIV is not opening prop-\n erly and this alarm is activated.",
@@ -2906,7 +3079,8 @@
     "codigo": "P00179",
     "titulo": "Check Liv",
     "titulo_original": "CHECK LIV",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "With the unit running in Pretrip Test #10, after the microprocessor attempts to close CSMV,\n the suction pressure fails to drop below 0 psig (0 bar).",
@@ -2936,7 +3110,8 @@
     "codigo": "P00180",
     "titulo": "Check Suction Mod Valve",
     "titulo_original": "CHECK SUCTION MOD VALVE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "(unit not running): Normal draw for the 2EVCON contactor coil is 0.05 to 2.0\n Amps (12 VDC). The circuit tests outside this range.\n • ACTIVATION TEST 9: (unit running): Normal draw for the Evaporator Fan Motor is 0.7 to 3.5 Amps (460\n VAC). The circuit tests outside this range.",
@@ -2982,7 +3157,14 @@
     "codigo": "P00184",
     "titulo": "C2 Check Evaporator Fan Motor",
     "titulo_original": "C2 CHECK EVAPORATOR FAN MOTOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.6",
+        "titulo": "Figura 2.6 — Control and Standby Boxes",
+        "url": "/static/alarmas_figuras/figura_2_6_control_standby_boxes.png"
+      }
+    ]
   },
   {
     "activacion": "(unit not running): Normal draw for the 2EVCON contactor coil is 0.05 to 2.0\n Amps (12 VDC). The circuit tests outside this range.\n • ACTIVATION TEST 9: (unit running): Normal draw for the Evaporator Fan Motor is 0.7 to 3.5 Amps (460\n VAC). The circuit tests outside this range.",
@@ -3028,7 +3210,8 @@
     "codigo": "P00185",
     "titulo": "C3 Check Evaporator Fan Motor",
     "titulo_original": "C3 CHECK EVAPORATOR FAN MOTOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Evaporator Outlet Temperature Sensor (EVOT) is not within the range of -53 to +158°F\n (-47 to +70°C.)",
@@ -3049,7 +3232,14 @@
     "codigo": "P00186",
     "titulo": "Check Evap Outlet Temp",
     "titulo_original": "CHECK EVAP OUTLET TEMP",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.6",
+        "titulo": "Figura 2.6 — Control and Standby Boxes",
+        "url": "/static/alarmas_figuras/figura_2_6_control_standby_boxes.png"
+      }
+    ]
   },
   {
     "activacion": "(unit not running): Normal draw for the 1HTCON1 coil is 0.05 to 1.0 Amps (12\n VDC). The circuit tests outside this range.\n • ACTIVATION TEST 7: (unit running): Normal draw for the 1HTCON1 heaters is 1.0 to 3.5 Amps (460\n VAC). The circuit tests outside this range.",
@@ -3099,7 +3289,14 @@
     "codigo": "P00187",
     "titulo": "Check Heater 1 Circuit",
     "titulo_original": "CHECK HEATER 1 CIRCUIT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.6",
+        "titulo": "Figura 2.6 — Control and Standby Boxes",
+        "url": "/static/alarmas_figuras/figura_2_6_control_standby_boxes.png"
+      }
+    ]
   },
   {
     "activacion": "(unit not running): Normal draw for the 1HTCON2 contactor coil is 0.05 to 2.0\n Amps (12 VDC). The circuit tests outside this range.\n • ACTIVATION TEST 8: (unit running): Normal draw for the 1HTCON2 heaters is 1.0 to 3.5 Amps (460\n VAC). The circuit tests outside this range.",
@@ -3149,7 +3346,14 @@
     "codigo": "P00188",
     "titulo": "Check Heater 2 Circuit",
     "titulo_original": "CHECK HEATER 2 CIRCUIT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.6",
+        "titulo": "Figura 2.6 — Control and Standby Boxes",
+        "url": "/static/alarmas_figuras/figura_2_6_control_standby_boxes.png"
+      }
+    ]
   },
   {
     "activacion": "(unit not running): Normal draw for the 1EVCON contactor coil is 0.05 to 2.0\n Amps (12 VDC). The circuit tests outside this range.\n • ACTIVATION TEST 9: (unit running): Normal draw for the Evaporator Fan Motor is 0.7 to 3.5 Amps (460\n VAC). The circuit tests outside this range.",
@@ -3195,7 +3399,14 @@
     "codigo": "P00189",
     "titulo": "Check Evaporator Fan Motor",
     "titulo_original": "CHECK EVAPORATOR FAN MOTOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.6",
+        "titulo": "Figura 2.6 — Control and Standby Boxes",
+        "url": "/static/alarmas_figuras/figura_2_6_control_standby_boxes.png"
+      }
+    ]
   },
   {
     "activacion": "Normal draw for the condenser fan motors is 0.8 to 3.5 Amps (460 VAC). The circuit tests\n outside this range.",
@@ -3225,7 +3436,14 @@
     "codigo": "P00190",
     "titulo": "Check Condenser Fan Motor",
     "titulo_original": "CHECK CONDENSER FAN MOTOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.6",
+        "titulo": "Figura 2.6 — Control and Standby Boxes",
+        "url": "/static/alarmas_figuras/figura_2_6_control_standby_boxes.png"
+      }
+    ]
   },
   {
     "activacion": "Compartment 2 Return Air Temperature Sensor (RAT) is not within the range of -53 to\n +158°F (-47 to +70°C).",
@@ -3246,7 +3464,8 @@
     "codigo": "P00199",
     "titulo": "C2 Check Return Air Sensor",
     "titulo_original": "C2 CHECK RETURN AIR SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Normal draw for the CDCON contactor coil is 0.05 to 2.0 Amps (12 VDC). The circuit tests\n outside this range.",
@@ -3272,7 +3491,8 @@
     "codigo": "P00206",
     "titulo": "Check Condenser Fan Circuit",
     "titulo_original": "CHECK CONDENSER FAN CIRCUIT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Normal draw for the CCON contactor coil is 0.0 to 1.0 Amps (12 VDC). The circuit tests\n outside this range.",
@@ -3298,7 +3518,8 @@
     "codigo": "P00207",
     "titulo": "Check Compressor Contact Circ",
     "titulo_original": "CHECK COMPRESSOR CONTACT CIRC",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Normal draw for the GENCON coil is 0.0 to 1.0 Amps (12 VDC). The circuit tests outside\n this range.",
@@ -3324,7 +3545,8 @@
     "codigo": "P00208",
     "titulo": "Check Generator Cont Circ",
     "titulo_original": "CHECK GENERATOR CONT CIRC",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Normal amps for the PSCON or PSCON2 contactor coils 0.0 to 1.0 Amps (12 VDC). The\n circuit(s) test outside this range. (During this test either PSCON or PSCON2 will be tested depending on\n the phase reversal module.)",
@@ -3350,7 +3572,8 @@
     "codigo": "P00209",
     "titulo": "Check Standby Cont Circuit",
     "titulo_original": "CHECK STANDBY CONT CIRCUIT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Compartment 3 Return Air Temperature Sensor is not within the range of -53 to +158°F (-\n 47 to +70°C).",
@@ -3371,7 +3594,8 @@
     "codigo": "00210",
     "titulo": "C3 Check Return Air Sensor",
     "titulo_original": "C3 CHECK RETURN AIR SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Compartment 2 Defrost Termination Temperature Sensor is not within the range of -53 to\n +158°F (-47 to +70°0 C.)",
@@ -3392,7 +3616,8 @@
     "codigo": "00211",
     "titulo": "C2 Check Defrfost Sensor",
     "titulo_original": "C2 CHECK DEFRFOST SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Compartment 3 Defrost Termination Temperature Sensor is not within the range of -53 to\n +158°F (-47 to +70°0 C.)",
@@ -3413,7 +3638,8 @@
     "codigo": "00212",
     "titulo": "C3 Check Defrost Sensor",
     "titulo_original": "C3 CHECK DEFROST SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The Engine Maintenance Hour Meter time has expired.",
@@ -3439,7 +3665,8 @@
     "codigo": "00223",
     "titulo": "Engine Maintenance Due",
     "titulo_original": "ENGINE MAINTENANCE DUE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The Standby Hour Meter time has expired.",
@@ -3465,7 +3692,8 @@
     "codigo": "00224",
     "titulo": "Standby Maintenance Due",
     "titulo_original": "STANDBY MAINTENANCE DUE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The General Maintenance Hour Meter time has expired.\n\nThe Maintenance Hour Meter #1 time has expired.\n\nThe Maintenance Hour Meter #2 time has expired.\n\nThe Maintenance Hour Meter #3 time has expired.\n\nThe Maintenance Hour Meter #4 time has expired.\n\nThe Maintenance Hour Meter #4 time has expired.",
@@ -3551,7 +3779,8 @@
     "codigo": "00225",
     "titulo": "General Maintenance Due",
     "titulo_original": "GENERAL MAINTENANCE DUE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "There is an error in the setpoint that is stored in the main microprocessor memory.\n\nThere is an error in the Model Number that is stored in the main microprocessor memory",
@@ -3581,7 +3810,8 @@
     "codigo": "00232",
     "titulo": "Setpoint Error",
     "titulo_original": "SETPOINT ERROR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "There is an error in one or more of the Functional Parameters that are stored in the main\n microprocessor memory.",
@@ -3607,7 +3837,8 @@
     "codigo": "00237",
     "titulo": "Function Parameters Error",
     "titulo_original": "FUNCTION PARAMETERS ERROR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "There is an error in the Configuration settings that are stored in the main microprocessor\n memory.",
@@ -3637,7 +3868,8 @@
     "codigo": "00238",
     "titulo": "Configurations Error",
     "titulo_original": "CONFIGURATIONS ERROR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "There is an error in sending and saving new settings in the main microprocessor memory.",
@@ -3659,7 +3891,8 @@
     "codigo": "00245",
     "titulo": "Cannot Save Setting",
     "titulo_original": "CANNOT SAVE SETTING",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "There is an error in the ability to write information to be stored in the main microprocessor\n memory.",
@@ -3681,7 +3914,8 @@
     "codigo": "00246",
     "titulo": "Eeprom Write Failure",
     "titulo_original": "EEPROM WRITE FAILURE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "EEPROM Configuration is out of range.",
@@ -3707,7 +3941,8 @@
     "codigo": "00248",
     "titulo": "Config Mode / Hp2 Error",
     "titulo_original": "CONFIG MODE / HP2 ERROR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "If alarm 21100 “NO COMM FROM MICRO TO DISPLAY“ is not active and main micropro-\n cessor input and/or output board configuration is incorrect.",
@@ -3729,7 +3964,8 @@
     "codigo": "00255",
     "titulo": "Microprocessor Error",
     "titulo_original": "MICROPROCESSOR ERROR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The software version in one or more of the modules is not compatible with the remainder of\n the control system.",
@@ -3747,7 +3983,8 @@
     "codigo": "02000",
     "titulo": "Update Software",
     "titulo_original": "UPDATE SOFTWARE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "'UNIT OFF' soft key is pressed from Remote Panel.",
@@ -3765,7 +4002,8 @@
     "codigo": "02001",
     "titulo": "Rear Panel Shutdown",
     "titulo_original": "REAR PANEL SHUTDOWN",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Compressor discharge superheat is less than 68°F (20°C) after 3 minutes of engaging the\n Econ SH offset logic, the compressor is on, and Evaporator Flood back control hasn’t been active in the\n last 3 minutes and suction superheat is greater than 40°F (4.4°C)\n\n NOTE\n This alarm can be caused by a stuck open ECXV or LIV, causing too much liquid to be sent into the\n compressor at the economizer connection. An inaccurate pressure transducer or temperature sen-\n sor reading (discharge or economizer) can also cause this alarm.",
@@ -3803,7 +4041,8 @@
     "codigo": "02002",
     "titulo": "Low Discharge Superheat",
     "titulo_original": "LOW DISCHARGE SUPERHEAT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The APX Control system has detected 50 or more On/Off transitions of the SROS within a\n 4 minute period.",
@@ -3825,7 +4064,8 @@
     "codigo": "02003",
     "titulo": "Display Module Error",
     "titulo_original": "DISPLAY MODULE ERROR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The starter is drawing excessive current when it should be off for > 10 seconds.",
@@ -3851,7 +4091,8 @@
     "codigo": "02006",
     "titulo": "Starter Output Fault",
     "titulo_original": "Starter Output Fault",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Activate alarm if:\n Condition 1 = At engine start if the engine throttle sensor (Rack Position Sensor) value is less than 90%.\n Condition 2 = After start if the sensor value does not drop below 90% within 5 seconds.\n Condition 3 = At engine shutoff if the sensor value does not drop below 10% within 5 seconds.",
@@ -3877,7 +4118,8 @@
     "codigo": "03001",
     "titulo": "Engine Load Calibration",
     "titulo_original": "ENGINE LOAD CALIBRATION",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "REMS3 is set to trigger an alarm if the switch is activated (opened or closed, depending on\n switch type) for more than five seconds.",
@@ -3919,7 +4161,8 @@
     "codigo": "04000",
     "titulo": "Check Remote Switch 3 (Rems3)",
     "titulo_original": "CHECK REMOTE SWITCH 3 (REMS3)",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "REMS4 is set to trigger an alarm if the switch is activated (opened or closed, depending on\n switch type) for more than five seconds.",
@@ -3961,7 +4204,8 @@
     "codigo": "04001",
     "titulo": "Check Remote Switch 4 (Rems4)",
     "titulo_original": "CHECK REMOTE SWITCH 4 (REMS4)",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "With unit running in economized mode for 15 minutes, ECXV open greater than 99% for 5\n minutes, and a box temperature less than 14°F (-10°C); economizer superheat is above 74°F (23°C) for 5\n minutes.\n\n NOTE\n This alarm can be caused by a stuck ECXV, not letting enough liquid into the economizer circuit. An\n inaccurate economizer pressure transducer or economizer temperature sensor can also cause this\n alarm.",
@@ -3999,7 +4243,8 @@
     "codigo": "04002",
     "titulo": "High Economizer Superheat",
     "titulo_original": "HIGH ECONOMIZER SUPERHEAT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Operator failed to press '=' key after entering a setpoint change",
@@ -4026,7 +4271,8 @@
         "codigo": "04006",
         "titulo": "NO SETPOINT CHANGE C3"
       }
-    ]
+    ],
+    "figuras": []
   },
   {
     "activacion": "Operator failed to press '=' key after entering a setpoint change",
@@ -4053,7 +4299,8 @@
         "codigo": "04006",
         "titulo": "NO SETPOINT CHANGE C3"
       }
-    ]
+    ],
+    "figuras": []
   },
   {
     "activacion": "Operator failed to press '=' key after entering a setpoint change",
@@ -4080,7 +4327,8 @@
         "codigo": "04005",
         "titulo": "NO SETPOINT CHANGE C2"
       }
-    ]
+    ],
+    "figuras": []
   },
   {
     "activacion": "Incorrect configuration setting for Remote Compartment",
@@ -4103,7 +4351,8 @@
         "codigo": "04008",
         "titulo": "CHECK C3 CONFUIGURATION"
       }
-    ]
+    ],
+    "figuras": []
   },
   {
     "activacion": "Incorrect configuration setting for Remote Compartment",
@@ -4126,7 +4375,8 @@
         "codigo": "04007",
         "titulo": "CHECK C2 CONFUIGURATION"
       }
-    ]
+    ],
+    "figuras": []
   },
   {
     "activacion": "EES specific CAN messages or alarms are present and the EES is configured off",
@@ -4144,7 +4394,8 @@
     "codigo": "04016",
     "titulo": "Check Ees Configuration",
     "titulo_original": "CHECK EES CONFIGURATION",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Fuse Alarm; Feedback from Output Board indicates fuse is missing or blown. Signal must\n be present for at least 3 seconds.",
@@ -4166,7 +4417,8 @@
     "codigo": "05004",
     "titulo": "Bad F13 Fuse",
     "titulo_original": "BAD F13 FUSE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "CCB Fuse Alarm; Feedback from CCB indicates fuse is missing or blown. Signal must be\n present for at least 3 seconds.",
@@ -4184,7 +4436,14 @@
     "codigo": "05005",
     "titulo": "Bad F9 Fuse",
     "titulo_original": "BAD F9 FUSE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.7",
+        "titulo": "Figura 2.7 — Power Control Module",
+        "url": "/static/alarmas_figuras/figura_2_7_power_control_module.png"
+      }
+    ]
   },
   {
     "activacion": "Fuses 9, 10 and 13 (multi-temp only) must be in a failed state in order to trigger the Power\n Enable Relay (PER) Fuse Alarm.",
@@ -4206,7 +4465,8 @@
     "codigo": "05006",
     "titulo": "Power Enable Relay Fuse Alarm",
     "titulo_original": "POWER ENABLE RELAY FUSE ALARM",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Stepper Board Fuse Alarm; Feedback from Stepper Board indicates fuse is missing or\n blown. Signal must be present for at least 3 seconds.",
@@ -4224,7 +4484,14 @@
     "codigo": "05007",
     "titulo": "Bad F3 Fuse",
     "titulo_original": "BAD F3 FUSE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.7",
+        "titulo": "Figura 2.7 — Power Control Module",
+        "url": "/static/alarmas_figuras/figura_2_7_power_control_module.png"
+      }
+    ]
   },
   {
     "activacion": "Output Board Fuse Alarm; Feedback from Output Board indicates fuse is missing or\n blown. Signal must be present for at least 3 seconds.",
@@ -4246,7 +4513,8 @@
     "codigo": "05008",
     "titulo": "Bad F10 Fuse",
     "titulo_original": "BAD F10 FUSE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Standby contactor one (PSCON) circuit is shorted or open.",
@@ -4272,7 +4540,14 @@
     "codigo": "05009",
     "titulo": "Check Standby Contactor One (Pscon)",
     "titulo_original": "CHECK STANDBY CONTACTOR ONE (PSCON)",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.7",
+        "titulo": "Figura 2.7 — Power Control Module",
+        "url": "/static/alarmas_figuras/figura_2_7_power_control_module.png"
+      }
+    ]
   },
   {
     "activacion": "Standby contactor one (PSCON2) circuit is shorted or open.",
@@ -4298,7 +4573,8 @@
     "codigo": "05010",
     "titulo": "Check Standby Contactor Two (Pscon2)",
     "titulo_original": "CHECK STANDBY CONTACTOR TWO (PSCON2)",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "A problem has been detected in the ENCU-44 terminal circuit. If this alarm is activated while\n the circuit is energized, the circuit is detected shorted. If this alarm is activated at any other time, the circuit\n is detected open.",
@@ -4320,7 +4596,8 @@
     "codigo": "05012",
     "titulo": "Check Encu Power Circuit",
     "titulo_original": "CHECK ENCU POWER CIRCUIT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "A problem has been detected in the starter solenoid coil (SS) circuit. If this alarm is acti-\n vated while the control system is calling for SS to be energized, the circuit is detected shorted. If this\n alarm occurs at any other time, the circuit is detected open.",
@@ -4342,7 +4619,8 @@
     "codigo": "05014",
     "titulo": "Check Starter Solenoid Circuit",
     "titulo_original": "CHECK STARTER SOLENOID CIRCUIT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "A problem has been detected in the alarm (amber) light circuit (LB). If this alarm is acti-\n vated while the circuit is energized, the circuit is detected shorted. If this alarm is activated at any other\n time, the circuit is detected open.",
@@ -4364,7 +4642,14 @@
     "codigo": "05016",
     "titulo": "Check Remote Amber Light",
     "titulo_original": "CHECK REMOTE AMBER LIGHT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.7",
+        "titulo": "Figura 2.7 — Power Control Module",
+        "url": "/static/alarmas_figuras/figura_2_7_power_control_module.png"
+      }
+    ]
   },
   {
     "activacion": "A problem has been detected in the engine preheat enable circuit (EPHT). If this alarm is\n activated when the circuit is energized, the circuit is detected shorted. If this alarm is activated at any\n other time, the circuit is detected open.",
@@ -4386,7 +4671,8 @@
     "codigo": "05017",
     "titulo": "Check Eng Preheat Enable Circuit",
     "titulo_original": "CHECK ENG PREHEAT ENABLE CIRCUIT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The Power Enable Control Circuit Feedback is sensed out of range.",
@@ -4404,7 +4690,14 @@
     "codigo": "05018",
     "titulo": "Check Power Enable Control",
     "titulo_original": "CHECK POWER ENABLE CONTROL",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.7",
+        "titulo": "Figura 2.7 — Power Control Module",
+        "url": "/static/alarmas_figuras/figura_2_7_power_control_module.png"
+      }
+    ]
   },
   {
     "activacion": "Condenser fan motor contactor (CDCON2) circuit is shorted or open.",
@@ -4430,7 +4723,8 @@
     "codigo": "05019",
     "titulo": "Check Cdcon2 Coil",
     "titulo_original": "CHECK CDCON2 COIL",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Heater Contactor 1 (1HTCON1) circuit is shorted or open.",
@@ -4460,7 +4754,8 @@
     "codigo": "05020",
     "titulo": "Check Htr Cntr One",
     "titulo_original": "CHECK HTR CNTR ONE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Heater Contactor 2 (1HTCON2) circuit is shorted or open.",
@@ -4490,7 +4785,8 @@
     "codigo": "05021",
     "titulo": "Check Htr Cntr Two",
     "titulo_original": "CHECK HTR CNTR TWO",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "With the Main Power switch toggled out of the OFF position, the EVHTS circuit is open.",
@@ -4516,7 +4812,8 @@
     "codigo": "05022",
     "titulo": "C2 Check High Temp Thermostat",
     "titulo_original": "C2 CHECK HIGH TEMP THERMOSTAT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "With the Main Power switch toggled out of the OFF position, the EVHTS circuit is open.",
@@ -4542,7 +4839,8 @@
     "codigo": "05023",
     "titulo": "C3 Check High Temp Thermostat",
     "titulo_original": "C3 CHECK HIGH TEMP THERMOSTAT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "EVXV has detected an over current failing condition five times at least one minute apart in\n the last 12 minutes. Stepper must be configured and not disabled for fault to be detected.",
@@ -4568,7 +4866,8 @@
     "codigo": "05038",
     "titulo": "Compartment 2 EXVX 1 Fault",
     "titulo_original": "Compartment 2 EXVX 1 Fault",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "EVXV has detected an over current failing condition five times at least one minute apart in\n the last 12 minutes. Stepper must be configured and not disabled for fault to be detected.",
@@ -4594,7 +4893,8 @@
     "codigo": "05039",
     "titulo": "Compartment 2 EXVX 2 Fault",
     "titulo_original": "Compartment 2 EXVX 2 Fault",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "EVXV has detected an over current failing condition five times at least one minute apart in\n the last 12 minutes. Stepper must be configured and not disabled for fault to be detected.",
@@ -4620,7 +4920,8 @@
     "codigo": "05040",
     "titulo": "Compartment 3 EXVX 1 Fault",
     "titulo_original": "Compartment 3 EXVX 1 Fault",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "EVXV has detected an over current failing condition five times at least one minute apart in\n the last 12 minutes. Stepper must be configured and not disabled for fault to be detected.",
@@ -4646,7 +4947,8 @@
     "codigo": "05041",
     "titulo": "Compartment 3 EXVX 2 Fault",
     "titulo_original": "Compartment 3 EXVX 2 Fault",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The condenser fan motor Internal Protectors (IP-CDM2) circuit is open.",
@@ -4692,7 +4994,19 @@
     "codigo": "06000",
     "titulo": "Condenser Motor2 Overheated",
     "titulo_original": "CONDENSER MOTOR2 OVERHEATED",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.6",
+        "titulo": "Figura 2.6 — Control and Standby Boxes",
+        "url": "/static/alarmas_figuras/figura_2_6_control_standby_boxes.png"
+      },
+      {
+        "numero": "2.7",
+        "titulo": "Figura 2.7 — Power Control Module",
+        "url": "/static/alarmas_figuras/figura_2_7_power_control_module.png"
+      }
+    ]
   },
   {
     "activacion": "A problem has been detected in the light circuit (LB). If this alarm is activated while the cir-\n cuit is energized, the circuit is detected shorted. If this alarm is activated at any other time, the circuit is\n detected open.",
@@ -4714,7 +5028,8 @@
     "codigo": "06001",
     "titulo": "Check Light Bar",
     "titulo_original": "CHECK LIGHT BAR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Economizer temp sensor is out of range",
@@ -4736,7 +5051,14 @@
     "codigo": "07000",
     "titulo": "Economizer Temp Sensor",
     "titulo_original": "ECONOMIZER TEMP SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.7",
+        "titulo": "Figura 2.7 — Power Control Module",
+        "url": "/static/alarmas_figuras/figura_2_7_power_control_module.png"
+      }
+    ]
   },
   {
     "activacion": "Economizer Pressure (ECOP) sensor is out of range.",
@@ -4758,7 +5080,8 @@
     "codigo": "07001",
     "titulo": "Economizer Press Sensor",
     "titulo_original": "ECONOMIZER PRESS SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Supply Air Temperature Sensor (SAT) is not within the range of -53 to +158°F (-47 to +70° C).",
@@ -4784,7 +5107,8 @@
     "codigo": "07002",
     "titulo": "C3 Check Supply Air Sensor",
     "titulo_original": "C3 CHECK SUPPLY AIR SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Evaporator Outlet Temperature Sensor (EVOT) in compartment 2 is not within the range of -\n 53 to +158°F (-47 to +70°C)",
@@ -4810,7 +5134,8 @@
     "codigo": "07003",
     "titulo": "C2 Check Evac Temp Sensor",
     "titulo_original": "C2 CHECK EVAC TEMP SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Evaporator Outlet Temperature Sensor (EVOT) in compartment 3 is not within the range of -\n 53 to +158°F (-47 to +70°C)",
@@ -4836,7 +5161,8 @@
     "codigo": "07004",
     "titulo": "C3 Check Evac Temp Sensor",
     "titulo_original": "C3 CHECK EVAC TEMP SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Suction pressure sensor is out of range. If Economizer pressure < or = (Suction pressure -\n 10) for 10 seconds and suction pressure is > than 40 psig and < than 60 psig with the compressor running.",
@@ -4858,7 +5184,8 @@
     "codigo": "07006",
     "titulo": "Suction Pressure Sensor",
     "titulo_original": "SUCTION PRESSURE SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "A Redundant Return Air Temperature Sensor (RAT2) is installed, configured, and is not\n reading with (2° C).",
@@ -4880,7 +5207,8 @@
     "codigo": "07009",
     "titulo": "Return Air Sensors Out Of Range (Rat & Rat2)",
     "titulo_original": "RETURN AIR SENSORS OUT OF RANGE (RAT & RAT2)",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Normal draw for the condenser fan motors is 0.8 to 3.5 Amps (460 VAC). The circuit tests\n outside this range.",
@@ -4898,7 +5226,8 @@
     "codigo": "P11000",
     "titulo": "Check Condenser Fan Motor 2",
     "titulo_original": "CHECK CONDENSER FAN MOTOR 2",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Supply Air Temperature Sensor (SAT) in compartment 3 is not within the range of -53 to\n +158°F (-47 to +70° C).",
@@ -4924,7 +5253,8 @@
     "codigo": "P12000",
     "titulo": "C3 Check Air Supply Sensor",
     "titulo_original": "C3 CHECK AIR SUPPLY SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Evaporator Outlet Temperature Sensor (EVOT) is not within the range of -53 to +158°F (-\n 47 to +70°C.)",
@@ -4945,7 +5275,8 @@
     "codigo": "P12001",
     "titulo": "C2 Check Evap Outlet Temp",
     "titulo_original": "C2 CHECK EVAP OUTLET TEMP",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Evaporator Outlet Temperature Sensor (EVOT) is not within the range of -53 to +158°F (-\n 47 to +70°C.)",
@@ -4966,7 +5297,8 @@
     "codigo": "P12002",
     "titulo": "C3 Check Evap Outlet Temp",
     "titulo_original": "C3 CHECK EVAP OUTLET TEMP",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Normal draw for the CDCON2 contactor coil is 0.05 to 2.0 Amps (12 VDC). The circuit\n tests outside this range.",
@@ -4987,7 +5319,8 @@
     "codigo": "P13000",
     "titulo": "Check Condenser Fan 2 Circuit",
     "titulo_original": "CHECK CONDENSER FAN 2 CIRCUIT",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Compartment 2 evaporator (1 or 2) superheat and/or Compartment 2 evaporator pressure\n out of range activates this alarm.",
@@ -5013,7 +5346,8 @@
         "codigo": "P14001",
         "titulo": "C2 CHECK EVAP2 SUPERHEAT"
       }
-    ]
+    ],
+    "figuras": []
   },
   {
     "activacion": "Compartment 2 evaporator (1 or 2) superheat and/or Compartment 2 evaporator pressure\n out of range activates this alarm.",
@@ -5039,7 +5373,8 @@
         "codigo": "P14000",
         "titulo": "C2 CHECK EVAP1 SUPERHEAT"
       }
-    ]
+    ],
+    "figuras": []
   },
   {
     "activacion": "Compartment 3 evaporator (1 or 2) superheat and/or Compartment 3 evaporator pressure\n out of range activates this alarm.",
@@ -5065,7 +5400,8 @@
         "codigo": "P14003",
         "titulo": "C3 CHECK EVAP2 SUPERHEAT"
       }
-    ]
+    ],
+    "figuras": []
   },
   {
     "activacion": "Compartment 3 evaporator (1 or 2) superheat and/or Compartment 3 evaporator pressure\n out of range activates this alarm.",
@@ -5091,7 +5427,8 @@
         "codigo": "P14002",
         "titulo": "C3 CHECK EVAP1 SUPERHEAT"
       }
-    ]
+    ],
+    "figuras": []
   },
   {
     "activacion": "If alarm 21100 “NO COMM FROM ANY BOARD TO MAIN MICRO“ is not active and main\n microprocessor cannot communicate with the display module over the CAN bus.",
@@ -5109,7 +5446,8 @@
     "codigo": "20100",
     "titulo": "No Comm From Micro To Display",
     "titulo_original": "NO COMM FROM MICRO TO DISPLAY",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "If alarm 21100 “NO COMM FROM ANY BOARD TO MAIN MICRO“ is not active, and Num-\n ber of Remote Panels installed configuration is 1, and no sync responses have been received from the\n Remote Panel Module for 10 seconds.",
@@ -5143,7 +5481,8 @@
     "codigo": "20101",
     "titulo": "No Comm From Micro To Remote Display",
     "titulo_original": "NO COMM FROM MICRO TO REMOTE DISPLAY",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Main microprocessor cannot communicate with any modules over the CAN bus.",
@@ -5169,7 +5508,8 @@
     "codigo": "21100",
     "titulo": "No Comm From Any Board To Main Micro",
     "titulo_original": "NO COMM FROM ANY BOARD TO MAIN MICRO",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Alarm 21100 NO COMM FROM ANY BOARD TO MAIN MICRO is not active and the main\n microprocessor cannot communicate internally.",
@@ -5187,7 +5527,8 @@
     "codigo": "22100",
     "titulo": "No Comm From Micro To Inpbd1",
     "titulo_original": "NO COMM FROM MICRO TO INPBD1",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Voltage from main microprocessor to the components is less than 4.5 VDC",
@@ -5217,7 +5558,8 @@
     "codigo": "22101",
     "titulo": "Sensor Input Voltage Low Inp1",
     "titulo_original": "SENSOR INPUT VOLTAGE LOW INP1",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Voltage from main microprocessor to the sensors is greater than 5.5 VDC",
@@ -5243,7 +5585,8 @@
     "codigo": "22102",
     "titulo": "Sensor Input Voltage High Inp1",
     "titulo_original": "SENSOR INPUT VOLTAGE HIGH INP1",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Input Board reports an invalid configuration",
@@ -5265,7 +5608,8 @@
     "codigo": "22103",
     "titulo": "Input Lost Configuration",
     "titulo_original": "INPUT LOST CONFIGURATION",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Main microprocessor cannot communicate internally.",
@@ -5283,7 +5627,8 @@
     "codigo": "23100",
     "titulo": "No Comm From Micro To Outpbd1",
     "titulo_original": "NO COMM FROM MICRO TO OUTPBD1",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Output Board reports an invalid configuration.",
@@ -5305,7 +5650,8 @@
     "codigo": "23101",
     "titulo": "Output Lost Configuration",
     "titulo_original": "OUTPUT LOST CONFIGURATION",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Alarm 21100 is not active, and Unit is not starting in diesel. No communication from the\n CCB1 Module for 10 seconds.",
@@ -5331,7 +5677,8 @@
     "codigo": "24100",
     "titulo": "No Comm From Micro To Ccb1",
     "titulo_original": "NO COMM FROM MICRO TO CCB1",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The Voltage Supply for the Sensors on the CCB1 is below the low voltage limit 4.5V",
@@ -5357,7 +5704,14 @@
     "codigo": "24101",
     "titulo": "Sensor Input Voltage Low Ccb1",
     "titulo_original": "SENSOR INPUT VOLTAGE LOW CCB1",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.7",
+        "titulo": "Figura 2.7 — Power Control Module",
+        "url": "/static/alarmas_figuras/figura_2_7_power_control_module.png"
+      }
+    ]
   },
   {
     "activacion": "The Voltage Supply for the Sensors on the CCB1 is above High voltage limit 5.5V",
@@ -5375,7 +5729,8 @@
     "codigo": "24102",
     "titulo": "Sensor Input Voltage High Ccb1",
     "titulo_original": "SENSOR INPUT VOLTAGE HIGH CCB1",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "If Alarm 21100 is not active, and Unit is not starting in diesel. No sync responses have\n been received from the CCB2 Module for 10 seconds.",
@@ -5401,7 +5756,14 @@
     "codigo": "24200",
     "titulo": "No Comm From Micro To Ccb2",
     "titulo_original": "NO COMM FROM MICRO TO CCB2",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.7",
+        "titulo": "Figura 2.7 — Power Control Module",
+        "url": "/static/alarmas_figuras/figura_2_7_power_control_module.png"
+      }
+    ]
   },
   {
     "activacion": "The Voltage Supply for the Sensors on the CCB2 is below the low voltage limit 4.5V",
@@ -5427,7 +5789,8 @@
     "codigo": "24201",
     "titulo": "Sensor Input Voltage Low Ccb2",
     "titulo_original": "SENSOR INPUT VOLTAGE LOW CCB2",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The Voltage Supply for Sensors on the CCB2 is above the High voltage limit 5.5V",
@@ -5445,7 +5808,14 @@
     "codigo": "24202",
     "titulo": "Sensor Input Voltage High Ccb2",
     "titulo_original": "SENSOR INPUT VOLTAGE HIGH CCB2",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.7",
+        "titulo": "Figura 2.7 — Power Control Module",
+        "url": "/static/alarmas_figuras/figura_2_7_power_control_module.png"
+      }
+    ]
   },
   {
     "activacion": "Alarm 21100 is not active, and Unit is not starting in diesel. No communication from the\n CCB3 Module for 10 seconds.",
@@ -5467,7 +5837,8 @@
     "codigo": "24300",
     "titulo": "No Comm From Micro To Ccb3",
     "titulo_original": "NO COMM FROM MICRO TO CCB3",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The Voltage Supply for the Sensors on the CCB3 is below the low voltage limit 4.5V.",
@@ -5489,7 +5860,8 @@
     "codigo": "24301",
     "titulo": "Sensor Input Voltage Low Ccb3",
     "titulo_original": "SENSOR INPUT VOLTAGE LOW CCB3",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The Voltage Supply for the Sensors on the CCB3 is above the high voltage limit 5.5V.",
@@ -5507,7 +5879,8 @@
     "codigo": "24302",
     "titulo": "Sensor Input Voltage High Ccb3",
     "titulo_original": "SENSOR INPUT VOLTAGE HIGH CCB3",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "If Alarm 21100 is not active, and Unit is not starting in diesel. No sync responses have\n been received from the CCB4 Module for 10 seconds.",
@@ -5529,7 +5902,8 @@
     "codigo": "24400",
     "titulo": "No Comm From Micro To Ccb4",
     "titulo_original": "NO COMM FROM MICRO TO CCB4",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The Voltage Supply for the Sensors on the CCB4 is below the low voltage limit 4.5V.",
@@ -5551,7 +5925,8 @@
     "codigo": "24401",
     "titulo": "Sensor Input Voltage Low Ccb4",
     "titulo_original": "SENSOR INPUT VOLTAGE LOW CCB4",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The Voltage Supply for the Sensors on the CCB4 is above the high voltage limit 5.5V.",
@@ -5569,7 +5944,8 @@
     "codigo": "24402",
     "titulo": "Sensor Input Voltage High Ccb4",
     "titulo_original": "SENSOR INPUT VOLTAGE HIGH CCB4",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Main microprocessor cannot communicate with stepper valve module over the CAN bus.",
@@ -5599,7 +5975,8 @@
     "codigo": "25100",
     "titulo": "No Comm From Micro To Stp1",
     "titulo_original": "NO COMM FROM MICRO TO STP1",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The stepper current is reported to be too high by stepper board 1 (Indicated by Stepper\n Output Voltage < 5V) for 3 Seconds as timed at stepper board.",
@@ -5621,7 +5998,8 @@
     "codigo": "25101",
     "titulo": "Over Current Stp1",
     "titulo_original": "OVER CURRENT STP1",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The stepper input voltage is reported out of valid range (9V to 17V) by stepper board 1 for\n 3 seconds as times at stepper board.",
@@ -5647,7 +6025,8 @@
     "codigo": "25102",
     "titulo": "Check Input Voltage Stp1",
     "titulo_original": "CHECK INPUT VOLTAGE STP1",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Alarm 21100 is not active and No sync responses have been received from the Stepper 2\n Module for 10 seconds.",
@@ -5665,7 +6044,14 @@
     "codigo": "25200",
     "titulo": "No Comm From Micro To Stp2",
     "titulo_original": "NO COMM FROM MICRO TO STP2",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.7",
+        "titulo": "Figura 2.7 — Power Control Module",
+        "url": "/static/alarmas_figuras/figura_2_7_power_control_module.png"
+      }
+    ]
   },
   {
     "activacion": "The stepper current is reported to be too high by stepper board 2 (Indicated by Stepper\n Output Voltage < 5V) for 3 Seconds as timed at stepper board.",
@@ -5687,7 +6073,8 @@
     "codigo": "25201",
     "titulo": "Over Current Stp2",
     "titulo_original": "OVER CURRENT STP2",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The stepper input voltage is reported out of valid range (9V to 17V) by stepper board 2 for\n 3 seconds as times at stepper board.",
@@ -5709,7 +6096,8 @@
     "codigo": "25202",
     "titulo": "Check Input Voltage Stp2",
     "titulo_original": "CHECK INPUT VOLTAGE STP2",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Alarm 21100 is not active and No sync responses have been received from the Stepper 3\n Module for 10 seconds.",
@@ -5731,7 +6119,8 @@
     "codigo": "25300",
     "titulo": "No Comm From Micro To Stp3",
     "titulo_original": "NO COMM FROM MICRO TO STP3",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The stepper current is reported to be too high by stepper board 3 (Indicated by Stepper\n Output Voltage < 5V) for 3 Seconds as timed at stepper board.",
@@ -5753,7 +6142,8 @@
     "codigo": "25301",
     "titulo": "Over Current Stp3",
     "titulo_original": "OVER CURRENT STP3",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The stepper input voltage is reported out of valid range (9V to 17V) by stepper board 3 for\n 3 seconds.",
@@ -5775,7 +6165,8 @@
     "codigo": "25302",
     "titulo": "Check Input Voltage Stp3",
     "titulo_original": "CHECK INPUT VOLTAGE STP3",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Alarm 21100 is not active and No sync responses have been received from the Stepper 4\n Module for 10 seconds.",
@@ -5797,7 +6188,8 @@
     "codigo": "25400",
     "titulo": "No Comm From Micro To Stp4",
     "titulo_original": "NO COMM FROM MICRO TO STP4",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The stepper current is reported to be too high by stepper board 4 (Indicated by Stepper\n Output Voltage < 5V) for 3 Seconds.",
@@ -5819,7 +6211,8 @@
     "codigo": "25401",
     "titulo": "Over Current Stp4",
     "titulo_original": "OVER CURRENT STP4",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The stepper input voltage is reported out of valid range (9V to 17V) by stepper board 4 for\n 3 seconds.",
@@ -5841,7 +6234,8 @@
     "codigo": "25402",
     "titulo": "Check Input Voltage Stp4",
     "titulo_original": "CHECK INPUT VOLTAGE STP4",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Main microprocessor cannot communicate with the engine control unit over the CAN bus\n and AL00013 (High Discharge Pressure) is not active.",
@@ -5867,7 +6261,8 @@
     "codigo": "26100",
     "titulo": "No Comm From Micro To Encu",
     "titulo_original": "NO COMM FROM MICRO TO ENCU",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Engine water temperature > or = 262°F (128° C)",
@@ -5885,7 +6280,8 @@
     "codigo": "26101",
     "titulo": "Engine Over Heat Encu",
     "titulo_original": "ENGINE OVER HEAT ENCU",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Voltage of water temperature sensor is 0.1 V or less",
@@ -5903,7 +6299,8 @@
     "codigo": "26102",
     "titulo": "Water Temp Low Encu",
     "titulo_original": "WATER TEMP LOW ENCU",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Voltage of water temperature sensor is 4.9 V or above",
@@ -5921,7 +6318,8 @@
     "codigo": "26103",
     "titulo": "Water Temp High Encu",
     "titulo_original": "WATER TEMP HIGH ENCU",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "ECU recognition of battery voltage is above 18 V.",
@@ -5939,7 +6337,8 @@
     "codigo": "26104",
     "titulo": "Battery Voltage High Encu",
     "titulo_original": "BATTERY VOLTAGE HIGH ENCU",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Engine speed > 2070 min-1 (rpm)",
@@ -5957,7 +6356,8 @@
     "codigo": "26105",
     "titulo": "Engine Overrun Encu",
     "titulo_original": "ENGINE OVERRUN ENCU",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Voltage to sensor is below 4.00 V",
@@ -5979,7 +6379,8 @@
     "codigo": "26106",
     "titulo": "Sensor Supply Voltage 1 Low",
     "titulo_original": "SENSOR SUPPLY VOLTAGE 1 LOW",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Sensor voltage > 4.9 V or < 0.3V",
@@ -6005,7 +6406,8 @@
     "codigo": "26108",
     "titulo": "Rack Position Sensor Abnormal",
     "titulo_original": "RACK POSITION SENSOR ABNORMAL",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Actuator current >3.0A or < 80mA",
@@ -6027,7 +6429,14 @@
     "codigo": "26109",
     "titulo": "Actuator Abnormal Encu",
     "titulo_original": "ACTUATOR ABNORMAL ENCU",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": [
+      {
+        "numero": "2.7",
+        "titulo": "Figura 2.7 — Power Control Module",
+        "url": "/static/alarmas_figuras/figura_2_7_power_control_module.png"
+      }
+    ]
   },
   {
     "activacion": "Engine speed = 0 min-1 (rpm)",
@@ -6045,7 +6454,8 @@
     "codigo": "26110",
     "titulo": "Engine Speed Sensor Abnormal",
     "titulo_original": "ENGINE SPEED SENSOR ABNORMAL",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "Alarm 21100 “NO COMM FROM ANY BOARD TO MAIN MICRO“ is not active, and Num-\n ber Of Comm Modules Configuration is set to 1, and no sync responses have been received from the\n Comm Module for 10 seconds.",
@@ -6067,7 +6477,8 @@
     "codigo": "27200",
     "titulo": "No Comm From Micro To Comm Module",
     "titulo_original": "NO COMM FROM MICRO TO COMM MODULE",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The fuel sensor is configured as 3rd party and no communications have been received\n from the sensor for at least 15 minutes",
@@ -6093,7 +6504,8 @@
     "codigo": "28001",
     "titulo": "No Comm From Fuel Sensor",
     "titulo_original": "NO COMM FROM FUEL SENSOR",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The door switch configuration is configured as 3rd Party and no communications have\n been received for 15 minutes",
@@ -6115,7 +6527,8 @@
     "codigo": "28002",
     "titulo": "No Comm From Door Switch",
     "titulo_original": "NO COMM FROM DOOR SWITCH",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The Door Switch configuration is configured as 3rd Party and data received from the\n switch is invalid.",
@@ -6137,7 +6550,8 @@
     "codigo": "28003",
     "titulo": "Invalid Door Switch",
     "titulo_original": "INVALID DOOR SWITCH",
-    "alarmas_relacionadas": []
+    "alarmas_relacionadas": [],
+    "figuras": []
   },
   {
     "activacion": "The Remote Switch configuration is configured as 3rd Party and data received from the\n switch is invalid.",
@@ -6164,7 +6578,8 @@
         "codigo": "28005",
         "titulo": "INVALID REMS2"
       }
-    ]
+    ],
+    "figuras": []
   },
   {
     "activacion": "The Remote Switch configuration is configured as 3rd Party and data received from the\n switch is invalid.",
@@ -6191,6 +6606,7 @@
         "codigo": "28004",
         "titulo": "INVALID REMS1"
       }
-    ]
+    ],
+    "figuras": []
   }
 ]

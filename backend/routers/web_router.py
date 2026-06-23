@@ -4494,10 +4494,14 @@ async def alarmas():
                     ? (() => { try { return JSON.parse(a.referencia_alarma); } catch(e) { return null; } })()
                     : (a.referencia_alarma || null);
                 const isRef = ref && ref.codigo;
+                const figs = a.figuras && typeof a.figuras === 'string'
+                    ? (() => { try { return JSON.parse(a.figuras); } catch(e) { return []; } })()
+                    : (a.figuras || []);
                 html += `<div class="alarm-card ${isRef ? 'alarm-ref' : ''}" onclick='abrirAlarma(${JSON.stringify(JSON.stringify(a))})'>
                     <span class="alarm-code">${a.codigo}</span>
                     <span class="alarm-title">${a.titulo}</span>
                     ${isRef ? '<span style="font-size:.78rem;color:#d97706;margin-left:8px;">→ ver alarma ' + ref.codigo + '</span>' : ''}
+                    ${figs.length ? '<span style="font-size:.78rem;color:#7c3aed;margin-left:8px;">📐 con diagrama</span>' : ''}
                 </div>`;
             });
             document.getElementById('alarmResults').innerHTML = html;
@@ -4516,6 +4520,10 @@ async def alarmas():
             const relacionadas = a.alarmas_relacionadas && typeof a.alarmas_relacionadas === 'string'
                 ? (() => { try { return JSON.parse(a.alarmas_relacionadas); } catch(e) { return []; } })()
                 : (a.alarmas_relacionadas || []);
+
+            const figuras = a.figuras && typeof a.figuras === 'string'
+                ? (() => { try { return JSON.parse(a.figuras); } catch(e) { return []; } })()
+                : (a.figuras || []);
 
             let html = `
             <div class="alarm-modal-header">
@@ -4546,6 +4554,18 @@ async def alarmas():
                         <div class="step-num">${ac.numero}</div>
                         <div class="step-text">${ac.texto}</div>
                     </div>`;
+                });
+                html += `</div>`;
+            }
+
+            if (figuras && figuras.length) {
+                html += `<div class="alarm-section" style="border-left-color:#7c3aed;">
+                    <div class="alarm-section-title" style="color:#7c3aed;">📐 Diagrama de referencia</div>`;
+                figuras.forEach(fig => {
+                    html += `<p style="font-size:.85rem;color:#6b7280;margin-bottom:6px;">${fig.titulo || ''}</p>
+                        <img src="${fig.url}" alt="${fig.titulo || 'Figura'}"
+                             style="width:100%;max-width:520px;border:1.5px solid #c3d4f0;border-radius:10px;cursor:zoom-in;display:block;margin-bottom:14px;"
+                             onclick="window.open('${fig.url}', '_blank')">`;
                 });
                 html += `</div>`;
             }

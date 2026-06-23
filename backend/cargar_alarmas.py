@@ -47,8 +47,8 @@ def main():
                     INSERT INTO alarmas_reefer
                         (codigo, titulo, activacion, control_unidad,
                          condicion_reset, notas, acciones_correctivas,
-                         referencia_alarma, alarmas_relacionadas)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                         referencia_alarma, alarmas_relacionadas, figuras)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ON DUPLICATE KEY UPDATE
                         titulo              = VALUES(titulo),
                         activacion          = VALUES(activacion),
@@ -57,7 +57,8 @@ def main():
                         notas               = VALUES(notas),
                         acciones_correctivas= VALUES(acciones_correctivas),
                         referencia_alarma   = VALUES(referencia_alarma),
-                        alarmas_relacionadas= VALUES(alarmas_relacionadas)
+                        alarmas_relacionadas= VALUES(alarmas_relacionadas),
+                        figuras             = VALUES(figuras)
                     """,
                     (
                         a["codigo"],
@@ -69,6 +70,7 @@ def main():
                         json.dumps(a.get("acciones_correctivas") or [], ensure_ascii=False),
                         json.dumps(a.get("referencia_alarma"), ensure_ascii=False),
                         json.dumps(a.get("alarmas_relacionadas") or [], ensure_ascii=False),
+                        json.dumps(a.get("figuras") or [], ensure_ascii=False),
                     ),
                 )
                 if cur.rowcount == 1:

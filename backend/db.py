@@ -97,6 +97,22 @@ def _run_migrations():
                 conn.commit()
                 print("✅ Migración: tabla alarmas_reefer creada")
 
+            # ── figuras en alarmas_reefer (diagramas referenciados, ej. Figura 2.6) ──
+            cur.execute("""
+                SELECT COUNT(*) FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME   = 'alarmas_reefer'
+                  AND COLUMN_NAME  = 'figuras'
+            """)
+            row7 = cur.fetchone()
+            count7 = row7[0] if isinstance(row7, tuple) else list(row7.values())[0]
+            if count7 == 0:
+                cur.execute(
+                    "ALTER TABLE alarmas_reefer ADD COLUMN figuras JSON DEFAULT NULL"
+                )
+                conn.commit()
+                print("✅ Migración: columna figuras añadida a alarmas_reefer")
+
             # ── Auto-seed: cargar alarmas.json si la tabla está vacía ─────────
             cur.execute("SELECT COUNT(*) FROM alarmas_reefer")
             row6 = cur.fetchone()
@@ -112,8 +128,8 @@ def _run_migrations():
                             INSERT INTO alarmas_reefer
                                 (codigo, titulo, activacion, control_unidad,
                                  condicion_reset, notas, acciones_correctivas,
-                                 referencia_alarma, alarmas_relacionadas)
-                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                                 referencia_alarma, alarmas_relacionadas, figuras)
+                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                             ON DUPLICATE KEY UPDATE titulo=VALUES(titulo)
                             """,
                             (
@@ -126,12 +142,39 @@ def _run_migrations():
                                 _json.dumps(a.get("acciones_correctivas") or [], ensure_ascii=False),
                                 _json.dumps(a.get("referencia_alarma"), ensure_ascii=False),
                                 _json.dumps(a.get("alarmas_relacionadas") or [], ensure_ascii=False),
+                                _json.dumps(a.get("figuras") or [], ensure_ascii=False),
                             ),
                         )
                     conn.commit()
                     print(f"✅ Auto-seed: {len(alarmas)} alarmas cargadas en alarmas_reefer")
                 else:
                     print("⚠️  alarmas.json no encontrado — ejecuta cargar_alarmas.py manualmente")
+            else:
+                # Tabla ya tiene datos: sincronizar SOLO el campo figuras si está vacío/NULL
+                # en algún registro que sí tiene figuras en el JSON (no pisa ediciones manuales).
+                import json as _json, pathlib as _pl
+                _json_path = _pl.Path(__file__).parent / "alarmas.json"
+                if _json_path.exists():
+                    alarmas = _json.loads(_json_path.read_text(encoding="utf-8"))
+                    con_figuras = [a for a in alarmas if a.get("figuras")]
+                    actualizadas = 0
+                    for a in con_figuras:
+                        cur.execute(
+                            """
+                            UPDATE alarmas_reefer
+                            SET figuras = %s
+                            WHERE codigo = %s
+                              AND (figuras IS NULL OR JSON_LENGTH(figuras) = 0)
+                            """,
+                            (
+                                _json.dumps(a.get("figuras") or [], ensure_ascii=False),
+                                a["codigo"],
+                            ),
+                        )
+                        actualizadas += cur.rowcount
+                    if actualizadas:
+                        conn.commit()
+                        print(f"✅ Sync: figuras añadidas a {actualizadas} alarmas existentes")
 
     except Exception as e:
         print(f"⚠️  Migración omitida: {e}")
