@@ -72,6 +72,31 @@ def _run_migrations():
                 )
                 conn.commit()
                 print("✅ Migración: columna oculto añadida a unidades")
+            # ── alarmas_reefer (Alarm Troubleshooting Vector 8600MT) ──────────
+            cur.execute("""
+                SELECT COUNT(*) FROM information_schema.TABLES
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME   = 'alarmas_reefer'
+            """)
+            row5 = cur.fetchone()
+            count5 = row5[0] if isinstance(row5, tuple) else list(row5.values())[0]
+            if count5 == 0:
+                cur.execute("""
+                    CREATE TABLE alarmas_reefer (
+                        codigo              VARCHAR(10)  NOT NULL PRIMARY KEY,
+                        titulo              VARCHAR(255) NOT NULL,
+                        activacion          TEXT,
+                        control_unidad      TEXT,
+                        condicion_reset     TEXT,
+                        notas               TEXT,
+                        acciones_correctivas JSON,
+                        referencia_alarma   JSON,
+                        alarmas_relacionadas JSON
+                    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+                """)
+                conn.commit()
+                print("✅ Migración: tabla alarmas_reefer creada")
+
     except Exception as e:
         print(f"⚠️  Migración omitida: {e}")
     finally:

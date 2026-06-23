@@ -209,6 +209,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/cluster', label: '⚡ Asignación por Cluster' }},
                     {{ href: '/app/asistencia', label: '📍 Control de Asistencia' }},
                     {{ href: '/app/checkin', label: '🕐 Registrar Mi Asistencia' }},
+                    {{ href: '/app/alarmas', label: '🔔 Alarm Troubleshooting' }},
                     {{ href: '/app/admin', label: '🛠 Panel de Administración' }},
                 ];
                 const visorMenu = [
@@ -219,6 +220,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/unidades', label: '📸 Registro de Unidades' }},
                     {{ href: '/app/usuarios', label: '👥 Gestión de Usuarios' }},
                     {{ href: '/app/asistencia', label: '📍 Control de Asistencia' }},
+                    {{ href: '/app/alarmas', label: '🔔 Alarm Troubleshooting' }},
                 ];
                 const techMenu = [
                     {{ href: '/app/mis-tareas', label: '🎯 Mis Tareas' }},
@@ -4327,3 +4329,195 @@ async def checkin_tecnico():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("📍 Registrar Asistencia", contenido, "checkin"))
+
+# ------------------------------------------------------------
+# ALARM TROUBLESHOOTING (admin, visor, tecnico)
+# ------------------------------------------------------------
+@router.get("/app/alarmas", response_class=HTMLResponse)
+async def alarmas():
+    contenido = """
+    <style>
+        .alarm-search-bar {
+            display: flex; gap: 12px; margin-bottom: 20px; align-items: center; flex-wrap: wrap;
+        }
+        .alarm-search-bar input {
+            flex: 1; min-width: 200px; padding: 12px 16px; border: 1.5px solid #c3d4f0;
+            border-radius: 10px; font-size: 1rem; margin-bottom: 0;
+        }
+        .alarm-search-bar input:focus { border-color: var(--carrier-accent); }
+        .alarm-search-bar button { width: auto; padding: 12px 24px; }
+        .alarm-card {
+            background: white; border-radius: 14px; padding: 20px 22px; margin-bottom: 14px;
+            box-shadow: 0 2px 12px rgba(0,43,91,0.07); border-left: 6px solid var(--carrier-accent);
+            cursor: pointer; transition: box-shadow 0.2s, transform 0.15s;
+        }
+        .alarm-card:hover { box-shadow: 0 6px 24px rgba(0,43,91,0.13); transform: translateY(-2px); }
+        .alarm-code {
+            font-family: monospace; font-size: 1.05rem; font-weight: 800;
+            color: var(--carrier-blue); background: var(--carrier-light);
+            padding: 3px 10px; border-radius: 6px; margin-right: 10px;
+        }
+        .alarm-title { font-size: 1rem; font-weight: 700; color: var(--carrier-blue); }
+        .alarm-ref { border-left-color: #d97706; }
+        .alarm-ref .alarm-code { color: #d97706; background: #fef3c7; }
+        /* Detail modal */
+        .alarm-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.52); z-index: 400;
+            display: none; justify-content: center; align-items: flex-start;
+            padding: 24px 12px; overflow-y: auto;
+        }
+        .alarm-modal.open { display: flex; }
+        .alarm-modal-content {
+            background: white; border-radius: 18px; width: 100%; max-width: 720px;
+            padding: 28px 30px; box-shadow: 0 12px 48px rgba(0,43,91,0.22);
+            animation: modalIn 0.22s ease; margin: auto;
+        }
+        @keyframes modalIn { from { opacity:0; transform: translateY(20px); } to { opacity:1; transform:none; } }
+        .alarm-modal-header {
+            display: flex; align-items: flex-start; justify-content: space-between;
+            gap: 12px; margin-bottom: 18px;
+        }
+        .alarm-modal-close {
+            background: #f1f5f9; border: none; border-radius: 8px; padding: 8px 14px;
+            font-size: 1rem; cursor: pointer; color: #374151; flex-shrink: 0;
+        }
+        .alarm-section {
+            background: #f8fafc; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px;
+            border-left: 4px solid var(--carrier-accent);
+        }
+        .alarm-section-title {
+            font-size: 0.78rem; font-weight: 700; color: var(--carrier-accent);
+            text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px;
+        }
+        .alarm-section p { margin: 0; font-size: 0.9rem; line-height: 1.6; white-space: pre-wrap; }
+        .corrective-step {
+            display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid #e5e7eb;
+        }
+        .corrective-step:last-child { border-bottom: none; }
+        .step-num {
+            background: var(--carrier-blue); color: white; border-radius: 50%;
+            width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+            font-size: 0.78rem; font-weight: 700; flex-shrink: 0; margin-top: 1px;
+        }
+        .step-text { font-size: 0.88rem; line-height: 1.65; }
+        .ref-banner {
+            background: #fef3c7; border: 1.5px solid #f59e0b; border-radius: 10px;
+            padding: 14px 18px; font-size: 0.9rem; color: #92400e; margin-bottom: 14px;
+        }
+        .ref-banner a { color: #d97706; font-weight: 700; cursor: pointer; text-decoration: underline; }
+        #alarmResults p { color: #6b7280; padding: 16px 0; }
+    </style>
+
+    <div class="alarm-search-bar">
+        <input type="text" id="alarmQuery" placeholder="Código (ej: 00012) o término (ej: coolant, sensor…)"
+               onkeydown="if(event.key==='Enter') buscarAlarma()">
+        <button class="btn-primary" onclick="buscarAlarma()">🔍 Buscar</button>
+    </div>
+
+    <div id="alarmResults"></div>
+
+    <!-- Detail modal -->
+    <div class="alarm-modal" id="alarmModal">
+        <div class="alarm-modal-content" id="alarmModalContent"></div>
+    </div>
+
+    <script>
+        const fetchAuth = window.fetchAuth;
+
+        async function buscarAlarma() {
+            const q = document.getElementById('alarmQuery').value.trim();
+            if (!q) { document.getElementById('alarmResults').innerHTML = '<p>Escribe un código o término de búsqueda.</p>'; return; }
+            document.getElementById('alarmResults').innerHTML = '<p>⏳ Buscando...</p>';
+            try {
+                const res = await fetchAuth('/api/alarmas/buscar?q=' + encodeURIComponent(q));
+                if (!res.ok) { document.getElementById('alarmResults').innerHTML = '<p style="color:red;">Error al buscar.</p>'; return; }
+                const data = await res.json();
+                if (!data.length) { document.getElementById('alarmResults').innerHTML = '<p>No se encontraron alarmas para "' + q + '".</p>'; return; }
+                renderResults(data);
+            } catch(e) {
+                document.getElementById('alarmResults').innerHTML = '<p style="color:red;">Error de conexión.</p>';
+            }
+        }
+
+        function renderResults(alarmas) {
+            let html = `<p style="font-size:.85rem;color:#6b7280;margin-bottom:12px;">${alarmas.length} resultado(s)</p>`;
+            alarmas.forEach(a => {
+                const ref = a.referencia_alarma;
+                const isRef = ref && (typeof ref === 'object') && ref.codigo;
+                html += `<div class="alarm-card ${isRef ? 'alarm-ref' : ''}" onclick='abrirAlarma(${JSON.stringify(JSON.stringify(a))})'>
+                    <span class="alarm-code">${a.codigo}</span>
+                    <span class="alarm-title">${a.titulo}</span>
+                    ${isRef ? '<span style="font-size:.78rem;color:#d97706;margin-left:8px;">→ ver alarma ' + ref.codigo + '</span>' : ''}
+                </div>`;
+            });
+            document.getElementById('alarmResults').innerHTML = html;
+        }
+
+        function abrirAlarma(jsonStr) {
+            const a = JSON.parse(jsonStr);
+            const ref = a.referencia_alarma && typeof a.referencia_alarma === 'string'
+                ? JSON.parse(a.referencia_alarma) : (a.referencia_alarma || null);
+
+            const acciones = a.acciones_correctivas && typeof a.acciones_correctivas === 'string'
+                ? JSON.parse(a.acciones_correctivas) : (a.acciones_correctivas || []);
+
+            const relacionadas = a.alarmas_relacionadas && typeof a.alarmas_relacionadas === 'string'
+                ? JSON.parse(a.alarmas_relacionadas) : (a.alarmas_relacionadas || []);
+
+            let html = `
+            <div class="alarm-modal-header">
+                <div>
+                    <span class="alarm-code" style="font-size:1.2rem;">${a.codigo}</span>
+                    <h2 style="margin:10px 0 4px;color:var(--carrier-blue);font-size:1.25rem;">${a.titulo}</h2>
+                    ${relacionadas.length ? '<p style="font-size:.82rem;color:#6b7280;">También cubre: ' + relacionadas.join(', ') + '</p>' : ''}
+                </div>
+                <button class="alarm-modal-close" onclick="cerrarModal()">✕ Cerrar</button>
+            </div>`;
+
+            if (ref && ref.codigo) {
+                html += `<div class="ref-banner">⚠️ Esta alarma remite al procedimiento de la alarma
+                    <a onclick='buscarYAbrir("${ref.codigo}")'>${ref.codigo} — ${ref.titulo || ''}</a>
+                </div>`;
+            }
+
+            if (a.activacion) html += `<div class="alarm-section"><div class="alarm-section-title">⚡ Condición de activación</div><p>${a.activacion}</p></div>`;
+            if (a.control_unidad) html += `<div class="alarm-section"><div class="alarm-section-title">🔧 Control de la unidad</div><p>${a.control_unidad}</p></div>`;
+            if (a.condicion_reset) html += `<div class="alarm-section"><div class="alarm-section-title">♻️ Condición de reset</div><p>${a.condicion_reset}</p></div>`;
+            if (a.notas) html += `<div class="alarm-section" style="border-left-color:#d97706;"><div class="alarm-section-title" style="color:#d97706;">📝 Notas</div><p>${a.notas}</p></div>`;
+
+            if (acciones && acciones.length) {
+                html += `<div class="alarm-section" style="border-left-color:var(--carrier-blue);">
+                    <div class="alarm-section-title">🛠 Acciones correctivas</div>`;
+                acciones.forEach(ac => {
+                    html += `<div class="corrective-step">
+                        <div class="step-num">${ac.numero}</div>
+                        <div class="step-text">${ac.texto}</div>
+                    </div>`;
+                });
+                html += `</div>`;
+            }
+
+            document.getElementById('alarmModalContent').innerHTML = html;
+            document.getElementById('alarmModal').classList.add('open');
+        }
+
+        async function buscarYAbrir(codigo) {
+            cerrarModal();
+            try {
+                const res = await fetchAuth('/api/alarmas/' + codigo);
+                if (res.ok) { abrirAlarma(JSON.stringify(await res.json())); }
+            } catch(e) {}
+        }
+
+        function cerrarModal() {
+            document.getElementById('alarmModal').classList.remove('open');
+        }
+
+        // Cerrar con click fuera del modal
+        document.getElementById('alarmModal').addEventListener('click', function(e) {
+            if (e.target === this) cerrarModal();
+        });
+    </script>
+    """
+    return HTMLResponse(content=pagina_con_menu("🔔 Alarm Troubleshooting", contenido, "alarmas"))

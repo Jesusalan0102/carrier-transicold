@@ -28,6 +28,7 @@ from routers.evidencias_router  import router as evidencias_router
 from routers.toma_valores_router import router as toma_valores_router
 from routers.comentarios_router import router as comentarios_router
 from routers.cluster_router     import router as cluster_router
+from routers.alarmas_router     import router as alarmas_router
 from routers.ws                 import router as ws_router
 from routers.push_router        import router as push_router
 
@@ -71,6 +72,7 @@ app.include_router(evidencias_router)
 app.include_router(toma_valores_router)
 app.include_router(comentarios_router)
 app.include_router(cluster_router)
+app.include_router(alarmas_router)
 app.include_router(ws_router)
 app.include_router(push_router)
 
