@@ -16,17 +16,43 @@ BASE_STYLE = """
         --carrier-success: #16a34a;
         --carrier-warn: #d97706;
         --carrier-danger: #dc2626;
+        --bg-page: #EEF2F9;
+        --bg-page-2: #F5F7FB;
+        --bg-page-3: #EAF0FB;
+        --bg-surface: #ffffff;
+        --bg-surface-2: #f8fafc;
+        --text-primary: #1f2937;
+        --text-secondary: #6b7280;
+        --border-color: #e5e7eb;
+        --border-color-soft: #f0f0f0;
+        --shadow-soft: rgba(0,43,91,0.08);
+    }
+    body.theme-dark {
+        --bg-page: #0b1220;
+        --bg-page-2: #0e1626;
+        --bg-page-3: #0c1424;
+        --bg-surface: #141d2e;
+        --bg-surface-2: #182338;
+        --text-primary: #e5e9f0;
+        --text-secondary: #9aa6b8;
+        --border-color: #283854;
+        --border-color-soft: #1f2c42;
+        --shadow-soft: rgba(0,0,0,0.4);
+        --carrier-light: #1a2b45;
     }
     * { box-sizing: border-box; font-family: 'Inter', sans-serif; }
     body {
-        background: linear-gradient(135deg, #EEF2F9 0%, #F5F7FB 60%, #EAF0FB 100%);
-        margin: 0; padding: 0;
+        background: linear-gradient(135deg, var(--bg-page) 0%, var(--bg-page-2) 60%, var(--bg-page-3) 100%);
+        margin: 0; padding: 0; transition: background 0.25s ease;
     }
     .sidebar {
         background: linear-gradient(180deg, var(--carrier-blue) 0%, #01418a 60%, #0056b3 100%);
         color: white; width: 21rem; height: 100vh; position: fixed;
         top: 0; left: 0; padding: 1.5rem 1rem; box-shadow: 4px 0 20px rgba(0,0,0,0.1);
         z-index: 100; overflow-y: auto; display: flex; flex-direction: column;
+    }
+    body.theme-dark .sidebar {
+        background: linear-gradient(180deg, #060d1a 0%, #0a1830 60%, #0c2040 100%);
     }
     .main-content { margin-left: 21rem; padding: 2rem; padding-left: calc(2rem + 58px); min-height: 100vh; transition: margin-left 0.3s ease, padding-left 0.3s ease; }
     body.sidebar-hidden .main-content { padding-left: 2rem; }
@@ -35,30 +61,32 @@ BASE_STYLE = """
         border-bottom: 3px solid var(--carrier-accent); padding-bottom: 12px; margin-bottom: 24px;
         display: flex; align-items: center; gap: 12px;
     }
+    body.theme-dark .main-header { color: #cfe0ff; }
     .section-title {
         font-size: 0.92rem; font-weight: 700; color: var(--carrier-blue);
         border-left: 4px solid var(--carrier-accent); padding: 9px 14px;
-        margin: 22px 0 14px 0; background: white; border-radius: 0 8px 8px 0;
-        box-shadow: 0 2px 8px rgba(0,43,91,0.07);
+        margin: 22px 0 14px 0; background: var(--bg-surface); border-radius: 0 8px 8px 0;
+        box-shadow: 0 2px 8px var(--shadow-soft);
     }
+    body.theme-dark .section-title { color: #cfe0ff; }
     .time-badge {
         background: var(--carrier-blue); color: white; padding: 6px 16px;
         border-radius: 24px; font-size: 0.82rem; font-weight: 600;
         box-shadow: 0 2px 8px rgba(0,43,91,0.25); display: inline-block;
     }
-    .kpi-wrap { background: white; border-radius: 16px; padding: 20px 22px 18px; text-align: center; box-shadow: 0 4px 20px rgba(0,43,91,0.08); border-top: 5px solid var(--carrier-accent); transition: transform 0.2s; position: relative; overflow: hidden; }
+    .kpi-wrap { background: var(--bg-surface); border-radius: 16px; padding: 20px 22px 18px; text-align: center; box-shadow: 0 4px 20px var(--shadow-soft); border-top: 5px solid var(--carrier-accent); transition: transform 0.2s, background 0.25s; position: relative; overflow: hidden; }
     .kpi-wrap::after { content: ''; position: absolute; top: 0; right: 0; width: 60px; height: 60px; background: rgba(0,87,168,0.04); border-radius: 0 0 0 60px; }
-    .kpi-wrap:hover { transform: translateY(-3px); box-shadow: 0 8px 28px rgba(0,43,91,0.14); }
+    .kpi-wrap:hover { transform: translateY(-3px); box-shadow: 0 8px 28px var(--shadow-soft); }
     .kpi-wrap.green  { border-top-color: var(--carrier-success); }
     .kpi-wrap.amber  { border-top-color: var(--carrier-warn); }
     .kpi-wrap.red    { border-top-color: var(--carrier-danger); }
     .kpi-wrap.purple { border-top-color: #7c3aed; }
-    .kpi-num { font-size: 2.4rem; font-weight: 800; line-height: 1.1; }
+    .kpi-num { font-size: 2.4rem; font-weight: 800; line-height: 1.1; color: var(--text-primary); }
     .kpi-wrap.green  .kpi-num { color: var(--carrier-success); }
     .kpi-wrap.amber  .kpi-num { color: var(--carrier-warn); }
     .kpi-wrap.red    .kpi-num { color: var(--carrier-danger); }
     .kpi-wrap.purple .kpi-num { color: #7c3aed; }
-    .kpi-lbl { font-size: 0.73rem; color: #6b7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; margin-top: 6px; }
+    .kpi-lbl { font-size: 0.73rem; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; margin-top: 6px; }
     .nav-item { display: block; padding: 12px 16px; border-radius: 8px; color: #e0eaff; font-weight: 600; margin-bottom: 6px; text-decoration: none; transition: background 0.2s; }
     .nav-item:hover, .nav-item.active { background: rgba(255,255,255,0.15); color: white; }
     .btn-primary { background: linear-gradient(135deg, var(--carrier-blue) 0%, var(--carrier-accent) 100%); color: white; border: none; border-radius: 10px; padding: 14px 20px; font-weight: 600; font-size: 1rem; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; width: 100%; text-align: center; }
@@ -66,23 +94,25 @@ BASE_STYLE = """
     .btn-danger { background: var(--carrier-danger); color: white; border: none; border-radius: 10px; padding: 14px 20px; font-weight: 600; font-size: 1rem; cursor: pointer; width: 100%; text-align: center; }
     .btn-success { background: var(--carrier-success); color: white; border: none; border-radius: 10px; padding: 14px 20px; font-weight: 600; font-size: 1rem; cursor: pointer; width: 100%; text-align: center; }
     .btn-warning { background: var(--carrier-warn); color: white; border: none; border-radius: 10px; padding: 14px 20px; font-weight: 600; font-size: 1rem; cursor: pointer; width: 100%; text-align: center; }
-    input, textarea, select { border: 1px solid #d1d5db; border-radius: 10px; padding: 12px; font-size: 16px; transition: border-color 0.2s; width: 100%; margin-bottom: 12px; }
+    input, textarea, select { border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; font-size: 16px; transition: border-color 0.2s; width: 100%; margin-bottom: 12px; background: var(--bg-surface); color: var(--text-primary); }
     input:focus, textarea:focus, select:focus { outline: none; border-color: var(--carrier-accent); box-shadow: 0 0 0 3px rgba(0,87,168,0.1); }
-    table { width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,43,91,0.08); }
-    th { background: #f8fafc; padding: 12px; text-align: left; font-weight: 600; color: var(--carrier-blue); border-bottom: 2px solid #e5e7eb; }
-    td { padding: 12px; border-bottom: 1px solid #f0f0f0; }
+    table { width: 100%; border-collapse: collapse; background: var(--bg-surface); border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px var(--shadow-soft); }
+    th { background: var(--bg-surface-2); padding: 12px; text-align: left; font-weight: 600; color: var(--carrier-blue); border-bottom: 2px solid var(--border-color); }
+    body.theme-dark th { color: #cfe0ff; }
+    td { padding: 12px; border-bottom: 1px solid var(--border-color-soft); color: var(--text-primary); }
     .badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
     .bloqueo-card { background: #fef2f2; border: 1.5px solid #fca5a5; border-left: 5px solid var(--carrier-danger); border-radius: 10px; padding: 14px 18px; margin: 8px 0; }
     .evidencia-info { background: #eff6ff; border: 1px solid #bfdbfe; border-left: 5px solid #3b82f6; border-radius: 10px; padding: 12px 18px; margin-bottom: 14px; }
     .inv-info-bar { background: linear-gradient(90deg, var(--carrier-blue) 0%, var(--carrier-accent) 100%); color: white; padding: 14px 20px; border-radius: 12px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
     .tv-field-badge { background: var(--carrier-light); border: 1px solid #c3d4f0; border-radius: 8px; padding: 6px 12px; font-size: 0.82rem; color: var(--carrier-blue); font-weight: 600; display: inline-block; margin-bottom: 8px; }
+    body.theme-dark .tv-field-badge { color: #cfe0ff; border-color: #2c4570; }
     /* Visor: ocultar botones de acción */
     body.visor-mode .btn-primary,
     body.visor-mode .btn-danger,
     body.visor-mode .btn-success,
     body.visor-mode .btn-warning,
-    body.visor-mode button:not(.logout-btn):not(.hamburger) { display: none !important; }
-    body.visor-mode input, body.visor-mode select, body.visor-mode textarea { pointer-events: none; background: #f9fafb; }
+    body.visor-mode button:not(.logout-btn):not(.hamburger):not(.theme-toggle):not(.search-trigger) { display: none !important; }
+    body.visor-mode input, body.visor-mode select, body.visor-mode textarea { pointer-events: none; background: var(--bg-surface-2); }
     body.visor-mode .admin-only { display: none !important; }
     .visor-banner { background: #fef3c7; border: 1px solid #f59e0b; color: #92400e; padding: 8px 16px; border-radius: 8px; font-size: 0.82rem; font-weight: 600; text-align: center; margin-bottom: 16px; }
     .login-card { background: white; padding: 36px 40px; border-radius: 20px; box-shadow: 0 12px 40px rgba(0,43,91,0.18); border: 1px solid #e2e8f2; }
@@ -90,7 +120,7 @@ BASE_STYLE = """
     .logout-btn { background: rgba(220,38,38,0.25); border: 1px solid rgba(220,38,38,0.5); padding: 14px 20px; border-radius: 10px; color: white; font-weight: 600; font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; transition: background 0.2s; flex-shrink: 0; }
     .logout-btn:hover { background: rgba(220,38,38,0.45); }
     .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 200; }
-    .modal-content { background: white; padding: 24px; border-radius: 16px; width: 90%; max-width: 500px; max-height: 80vh; overflow-y: auto; box-shadow: 0 12px 40px rgba(0,0,0,0.2); }
+    .modal-content { background: var(--bg-surface); color: var(--text-primary); padding: 24px; border-radius: 16px; width: 90%; max-width: 500px; max-height: 80vh; overflow-y: auto; box-shadow: 0 12px 40px rgba(0,0,0,0.2); }
     .modal-content input { margin-bottom: 10px; }
     .modal-content .btn-primary, .modal-content .btn-danger, .modal-content .btn-success { margin-top: 8px; }
     .hamburger {
@@ -106,6 +136,59 @@ BASE_STYLE = """
     body.sidebar-hidden .sidebar { transform: translateX(-100%); }
     body.sidebar-hidden .main-content { margin-left: 0; padding-top: 4rem; }
     body.sidebar-hidden .hamburger { left: 14px; }
+
+    /* ── Toggle de tema (sol/luna) ─────────────────────────────────────── */
+    .theme-toggle {
+        background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.22);
+        color: white; border-radius: 10px; padding: 10px 14px; font-size: 0.85rem;
+        font-weight: 600; cursor: pointer; width: 100%; display: flex; align-items: center;
+        justify-content: center; gap: 8px; margin-bottom: 10px; transition: background 0.2s;
+    }
+    .theme-toggle:hover { background: rgba(255,255,255,0.2); }
+
+    /* ── Búsqueda global (Cmd+K) ──────────────────────────────────────── */
+    .search-trigger {
+        background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+        color: #e0eaff; border-radius: 10px; padding: 10px 14px; font-size: 0.82rem;
+        cursor: pointer; width: 100%; display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 16px; transition: background 0.2s;
+    }
+    .search-trigger:hover { background: rgba(255,255,255,0.18); }
+    .search-trigger kbd {
+        background: rgba(255,255,255,0.15); border-radius: 5px; padding: 2px 6px;
+        font-size: 0.7rem; font-family: inherit;
+    }
+    .gsearch-overlay {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(10,15,25,0.55); backdrop-filter: blur(2px);
+        z-index: 500; display: none; align-items: flex-start; justify-content: center;
+        padding-top: 9vh;
+    }
+    .gsearch-overlay.open { display: flex; }
+    .gsearch-box {
+        background: var(--bg-surface); color: var(--text-primary); width: 92%; max-width: 560px;
+        border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+        overflow: hidden; max-height: 70vh; display: flex; flex-direction: column;
+    }
+    .gsearch-input-wrap { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border-color); }
+    .gsearch-input-wrap span { font-size: 1.1rem; opacity: 0.6; }
+    .gsearch-input-wrap input {
+        border: none; outline: none; font-size: 1.05rem; flex: 1; margin: 0; padding: 4px 0;
+        background: transparent; color: var(--text-primary);
+    }
+    .gsearch-esc { font-size: 0.7rem; color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: 5px; padding: 2px 6px; }
+    .gsearch-results { overflow-y: auto; padding: 8px; }
+    .gsearch-group-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); padding: 10px 10px 4px; }
+    .gsearch-item {
+        display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px;
+        cursor: pointer; transition: background 0.12s;
+    }
+    .gsearch-item:hover, .gsearch-item.sel { background: var(--bg-surface-2); }
+    .gsearch-item .gicon { font-size: 1.1rem; width: 26px; text-align: center; flex-shrink: 0; }
+    .gsearch-item .gtitle { font-weight: 600; font-size: 0.9rem; }
+    .gsearch-item .gsub { font-size: 0.76rem; color: var(--text-secondary); }
+    .gsearch-empty { padding: 24px 18px; text-align: center; color: var(--text-secondary); font-size: 0.85rem; }
+
     @media (max-width: 900px) {
         .main-header { font-size: 1.2rem; }
         .kpi-num { font-size: 1.6rem; }
@@ -115,6 +198,7 @@ BASE_STYLE = """
         .overlay.open { display: block; }
         .hamburger { left: 14px !important; }
         body.sidebar-hidden .main-content { padding-top: 4rem; }
+        .gsearch-overlay { padding-top: 4vh; }
     }
 </style>
 """
@@ -175,10 +259,31 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 <p style="font-weight:700;" id="sidebarUser"></p>
                 <span id="sidebarRole" class="user-chip"></span>
             </div>
+            <button class="search-trigger" id="gsearchTrigger" onclick="openGlobalSearch()">
+                <span>🔍 Buscar unidad, ticket, técnico…</span>
+                <kbd id="gsearchKbd">Ctrl K</kbd>
+            </button>
             <hr style="border-color:rgba(255,255,255,0.2);">
             <nav style="margin-top:12px; flex:1;" id="navMenu"></nav>
             <div style="margin-top:auto; padding-top:16px; border-top:1px solid rgba(255,255,255,0.2);">
+                <button class="theme-toggle" id="themeToggleBtn" onclick="toggleTheme()">
+                    <span id="themeToggleIcon">🌙</span> <span id="themeToggleLabel">Modo oscuro</span>
+                </button>
                 <button onclick="logout()" class="logout-btn">🚪 Cerrar Sesión</button>
+            </div>
+        </div>
+
+        <!-- ── Búsqueda Global (Ctrl/Cmd + K) ─────────────────────────────── -->
+        <div class="gsearch-overlay" id="gsearchOverlay" onclick="if(event.target===this) closeGlobalSearch()">
+            <div class="gsearch-box">
+                <div class="gsearch-input-wrap">
+                    <span>🔍</span>
+                    <input type="text" id="gsearchInput" placeholder="Buscar unidad, VIN, lote, ticket o técnico…" autocomplete="off">
+                    <span class="gsearch-esc">ESC</span>
+                </div>
+                <div class="gsearch-results" id="gsearchResults">
+                    <div class="gsearch-empty">Escribe al menos 2 caracteres para buscar</div>
+                </div>
             </div>
         </div>
 
@@ -191,6 +296,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
             <script>if(window.role==='visor') document.getElementById('visorBanner').style.display='block';</script>
             {contenido}
         </div>
+
 
         <script>
             document.addEventListener('DOMContentLoaded', function() {{
@@ -236,6 +342,188 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 }});
                 document.getElementById('navMenu').innerHTML = navHtml;
             }});
+
+            // ── Modo oscuro persistente ─────────────────────────────────────
+            function applyTheme(mode) {{
+                document.body.classList.toggle('theme-dark', mode === 'dark');
+                const icon  = document.getElementById('themeToggleIcon');
+                const label = document.getElementById('themeToggleLabel');
+                if (icon)  icon.textContent  = mode === 'dark' ? '☀️' : '🌙';
+                if (label) label.textContent = mode === 'dark' ? 'Modo claro' : 'Modo oscuro';
+            }}
+            function toggleTheme() {{
+                const next = document.body.classList.contains('theme-dark') ? 'light' : 'dark';
+                localStorage.setItem('theme', next);
+                applyTheme(next);
+            }}
+            applyTheme(localStorage.getItem('theme') === 'dark' ? 'dark' : 'light');
+
+            // ── Búsqueda Global (Ctrl/Cmd + K) ──────────────────────────────
+            let _gsearchTimer = null;
+            let _gsearchSelIdx = -1;
+            let _gsearchItems = [];
+
+            function openGlobalSearch() {{
+                const ov = document.getElementById('gsearchOverlay');
+                ov.classList.add('open');
+                const input = document.getElementById('gsearchInput');
+                input.value = '';
+                input.focus();
+                document.getElementById('gsearchResults').innerHTML = '<div class="gsearch-empty">Escribe al menos 2 caracteres para buscar</div>';
+                _gsearchItems = [];
+                _gsearchSelIdx = -1;
+                if (window.innerWidth <= 900) {{
+                    const sidebar = document.getElementById('sidebar');
+                    if (sidebar.classList.contains('open')) toggleSidebar();
+                }}
+            }}
+            function closeGlobalSearch() {{
+                document.getElementById('gsearchOverlay').classList.remove('open');
+            }}
+
+            document.addEventListener('keydown', function(e) {{
+                const isK = (e.key === 'k' || e.key === 'K');
+                if ((e.ctrlKey || e.metaKey) && isK) {{
+                    e.preventDefault();
+                    const ov = document.getElementById('gsearchOverlay');
+                    ov.classList.contains('open') ? closeGlobalSearch() : openGlobalSearch();
+                }} else if (e.key === 'Escape') {{
+                    closeGlobalSearch();
+                }} else if (document.getElementById('gsearchOverlay').classList.contains('open')) {{
+                    if (e.key === 'ArrowDown') {{ e.preventDefault(); _gsearchMove(1); }}
+                    else if (e.key === 'ArrowUp') {{ e.preventDefault(); _gsearchMove(-1); }}
+                    else if (e.key === 'Enter') {{ e.preventDefault(); _gsearchOpenSelected(); }}
+                }}
+            }});
+
+            // Mac muestra ⌘K en vez de Ctrl K en el botón del sidebar
+            (function() {{
+                const kbd = document.getElementById('gsearchKbd');
+                if (kbd && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) {{
+                    kbd.textContent = '⌘ K';
+                }}
+            }})();
+
+            function _gsearchMove(delta) {{
+                if (!_gsearchItems.length) return;
+                _gsearchSelIdx = (_gsearchSelIdx + delta + _gsearchItems.length) % _gsearchItems.length;
+                document.querySelectorAll('.gsearch-item').forEach((el, i) => {{
+                    el.classList.toggle('sel', i === _gsearchSelIdx);
+                }});
+                const sel = document.querySelectorAll('.gsearch-item')[_gsearchSelIdx];
+                if (sel) sel.scrollIntoView({{ block: 'nearest' }});
+            }}
+            function _gsearchOpenSelected() {{
+                const item = _gsearchItems[_gsearchSelIdx] || _gsearchItems[0];
+                if (item) window.location.href = item.href;
+            }}
+
+            document.getElementById('gsearchInput')?.addEventListener('input', function(e) {{
+                const q = e.target.value.trim();
+                clearTimeout(_gsearchTimer);
+                if (q.length < 2) {{
+                    document.getElementById('gsearchResults').innerHTML = '<div class="gsearch-empty">Escribe al menos 2 caracteres para buscar</div>';
+                    _gsearchItems = [];
+                    return;
+                }}
+                _gsearchTimer = setTimeout(() => _runGlobalSearch(q), 250);
+            }});
+
+            async function _runGlobalSearch(q) {{
+                const resultsEl = document.getElementById('gsearchResults');
+                resultsEl.innerHTML = '<div class="gsearch-empty">Buscando…</div>';
+                const groups = [];
+
+                // Unidades (ficha por VIN, serie, lote o # económico)
+                try {{
+                    const r = await window.fetchAuth('/api/unidades/ficha?q=' + encodeURIComponent(q));
+                    if (r.ok) {{
+                        const d = await r.json();
+                        const unidadesArr = d.seleccion_multiple ? d.unidades : [d];
+                        if (unidadesArr && unidadesArr.length) {{
+                            groups.push({{
+                                label: '📦 Unidades',
+                                items: unidadesArr.slice(0, 6).map(u => ({{
+                                    icon: '📦',
+                                    title: u.unit_number || u['#Económico'] || '—',
+                                    sub: 'Lote ' + (u.id_lote || '—'),
+                                    href: '/app/unidades?buscar=' + encodeURIComponent(u.unit_number || q),
+                                }}))
+                            }});
+                        }}
+                    }}
+                }} catch(e) {{}}
+
+                // Tickets (filtro local sobre el listado, ya viene acotado por rol)
+                try {{
+                    const r = await window.fetchAuth('/api/tickets/');
+                    if (r.ok) {{
+                        const all = await r.json();
+                        const ql = q.toLowerCase();
+                        const matches = all.filter(t =>
+                            (String(t.ticket_num||'').includes(ql)) ||
+                            (t.unit_number||'').toLowerCase().includes(ql) ||
+                            (t.descripcion||'').toLowerCase().includes(ql)
+                        ).slice(0, 6);
+                        if (matches.length) {{
+                            groups.push({{
+                                label: '🎫 Tickets',
+                                items: matches.map(t => ({{
+                                    icon: '🎫',
+                                    title: 'Ticket #' + t.ticket_num + ' — ' + (t.unit_number || ''),
+                                    sub: (t.descripcion || '').slice(0, 60),
+                                    href: window.role === 'admin' ? '/app/tickets' : '/app/mis-tickets',
+                                }}))
+                            }});
+                        }}
+                    }}
+                }} catch(e) {{}}
+
+                // Técnicos (solo admin/visor tienen acceso a /api/usuarios/)
+                if (window.role === 'admin' || window.role === 'visor') {{
+                    try {{
+                        const r = await window.fetchAuth('/api/usuarios/');
+                        if (r.ok) {{
+                            const all = await r.json();
+                            const ql = q.toLowerCase();
+                            const matches = all.filter(u => (u.username||'').toLowerCase().includes(ql)).slice(0, 6);
+                            if (matches.length) {{
+                                groups.push({{
+                                    label: '👤 Usuarios',
+                                    items: matches.map(u => ({{
+                                        icon: u.role === 'tecnico' ? '🔧' : (u.role === 'admin' ? '🛡' : '👁'),
+                                        title: u.username,
+                                        sub: u.role,
+                                        href: '/app/usuarios',
+                                    }}))
+                                }});
+                            }}
+                        }}
+                    }} catch(e) {{}}
+                }}
+
+                _gsearchItems = groups.flatMap(g => g.items);
+                _gsearchSelIdx = -1;
+
+                if (!groups.length) {{
+                    resultsEl.innerHTML = '<div class="gsearch-empty">Sin resultados para "' + q.replace(/</g,'') + '"</div>';
+                    return;
+                }}
+
+                let html = '';
+                let idx = 0;
+                groups.forEach(g => {{
+                    html += '<div class="gsearch-group-label">' + g.label + '</div>';
+                    g.items.forEach(it => {{
+                        html += '<div class="gsearch-item" data-idx="' + idx + '" onclick="window.location.href=\\'' + it.href + '\\'">'
+                              + '<span class="gicon">' + it.icon + '</span>'
+                              + '<div><div class="gtitle">' + it.title + '</div><div class="gsub">' + (it.sub||'') + '</div></div>'
+                              + '</div>';
+                        idx++;
+                    }});
+                }});
+                resultsEl.innerHTML = html;
+            }}
 
             function toggleSidebar() {{
                 const sidebar = document.getElementById('sidebar');
