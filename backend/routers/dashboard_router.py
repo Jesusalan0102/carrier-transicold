@@ -52,20 +52,38 @@ def get_kpis(current_user: dict = Depends(verify_token)):
         "solicitudes_pendientes": solicitudes_pendientes,
     }
 
-# ── STATS POR TÉCNICO ──────────────────────────────────────────────────────
+# ── STATS POR TÉCNICO (excluye lotes ocultos) ─────────────────────────────
 @router.get("/stats_tecnicos")
 def get_stats_tecnicos(current_user: dict = Depends(verify_token)):
     return execute_read("""
-        SELECT tecnico,
+        SELECT a.tecnico,
                COUNT(*) as total,
-               SUM(estado='completada') as completadas,
-               SUM(estado='en_proceso') as en_curso,
-               SUM(estado='pendiente') as pendientes,
-               ROUND(SUM(estado='completada') / COUNT(*) * 100) as rendimiento_pct
-        FROM asignaciones
-        GROUP BY tecnico
+               SUM(a.estado='completada') as completadas,
+               SUM(a.estado='en_proceso') as en_curso,
+               SUM(a.estado='pendiente') as pendientes,
+               ROUND(SUM(a.estado='completada') / COUNT(*) * 100) as rendimiento_pct
+        FROM asignaciones a
+        INNER JOIN unidades u ON u.unit_number = a.unidad
+        WHERE u.oculto = 0
+        GROUP BY a.tecnico
         ORDER BY completadas DESC
     """)
+
+# ── DISTRIBUCIÓN GLOBAL DE ESTADOS (excluye lotes ocultos) ────────────────
+@router.get("/distribucion_global")
+def get_distribucion_global(current_user: dict = Depends(verify_token)):
+    rows = execute_read("""
+        SELECT a.estado, COUNT(*) as total
+        FROM asignaciones a
+        INNER JOIN unidades u ON u.unit_number = a.unidad
+        WHERE u.oculto = 0
+        GROUP BY a.estado
+    """)
+    cnt = {"completada": 0, "en_proceso": 0, "pendiente": 0}
+    for r in rows:
+        if r["estado"] in cnt:
+            cnt[r["estado"]] = r["total"]
+    return cnt
 
 # ── ESTATUS POR UNIDAD ─────────────────────────────────────────────────────
 @router.get("/estatus_unidades")
