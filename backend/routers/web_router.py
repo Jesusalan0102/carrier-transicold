@@ -681,16 +681,18 @@ async def dashboard():
 
                 const asigRes = await fetchAuth('/api/asignaciones/');
                 const asignaciones = await asigRes.json();
-                if (asignaciones.length) {
-                    const cnt = {completada:0, en_proceso:0, pendiente:0};
-                    asignaciones.forEach(a => { cnt[a.estado] = (cnt[a.estado]||0)+1; });
+
+                const distRes = await fetchAuth('/api/dashboard/distribucion_global');
+                const cnt = await distRes.json();
+                if (cnt.completada + cnt.en_proceso + cnt.pendiente > 0) {
                     Plotly.newPlot('pieChart', [{
                         values:[cnt.completada,cnt.en_proceso,cnt.pendiente],
                         labels:['Completadas','En Proceso','Pendientes'],
                         marker:{colors:['#16a34a','#d97706','#dc2626']},
                         hole:0.55, type:'pie'
                     }], {title:'Distribución Global', paper_bgcolor:'transparent', font:{family:'Inter,sans-serif'}, margin:{t:40}});
-
+                }
+                if (asignaciones.length) {
                     const unidadesRes = await fetchAuth('/api/unidades/');
                     const unidades = await unidadesRes.json();
                     if (unidades.length) {
