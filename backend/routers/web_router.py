@@ -111,7 +111,7 @@ BASE_STYLE = """
     body.visor-mode .btn-danger,
     body.visor-mode .btn-success,
     body.visor-mode .btn-warning,
-    body.visor-mode button:not(.logout-btn):not(.hamburger):not(.theme-toggle):not(.search-trigger) { display: none !important; }
+    body.visor-mode button:not(.logout-btn):not(.hamburger):not(.theme-toggle) { display: none !important; }
     body.visor-mode input, body.visor-mode select, body.visor-mode textarea { pointer-events: none; background: var(--bg-surface-2); }
     body.visor-mode .admin-only { display: none !important; }
     .visor-banner { background: #fef3c7; border: 1px solid #f59e0b; color: #92400e; padding: 8px 16px; border-radius: 8px; font-size: 0.82rem; font-weight: 600; text-align: center; margin-bottom: 16px; }
@@ -146,49 +146,6 @@ BASE_STYLE = """
     }
     .theme-toggle:hover { background: rgba(255,255,255,0.2); }
 
-    /* ── Búsqueda global (Cmd+K) ──────────────────────────────────────── */
-    .search-trigger {
-        background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
-        color: #e0eaff; border-radius: 10px; padding: 10px 14px; font-size: 0.82rem;
-        cursor: pointer; width: 100%; display: flex; align-items: center; justify-content: space-between;
-        margin-bottom: 16px; transition: background 0.2s;
-    }
-    .search-trigger:hover { background: rgba(255,255,255,0.18); }
-    .search-trigger kbd {
-        background: rgba(255,255,255,0.15); border-radius: 5px; padding: 2px 6px;
-        font-size: 0.7rem; font-family: inherit;
-    }
-    .gsearch-overlay {
-        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(10,15,25,0.55); backdrop-filter: blur(2px);
-        z-index: 500; display: none; align-items: flex-start; justify-content: center;
-        padding-top: 9vh;
-    }
-    .gsearch-overlay.open { display: flex; }
-    .gsearch-box {
-        background: var(--bg-surface); color: var(--text-primary); width: 92%; max-width: 560px;
-        border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.35);
-        overflow: hidden; max-height: 70vh; display: flex; flex-direction: column;
-    }
-    .gsearch-input-wrap { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border-color); }
-    .gsearch-input-wrap span { font-size: 1.1rem; opacity: 0.6; }
-    .gsearch-input-wrap input {
-        border: none; outline: none; font-size: 1.05rem; flex: 1; margin: 0; padding: 4px 0;
-        background: transparent; color: var(--text-primary);
-    }
-    .gsearch-esc { font-size: 0.7rem; color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: 5px; padding: 2px 6px; }
-    .gsearch-results { overflow-y: auto; padding: 8px; }
-    .gsearch-group-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); padding: 10px 10px 4px; }
-    .gsearch-item {
-        display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px;
-        cursor: pointer; transition: background 0.12s;
-    }
-    .gsearch-item:hover, .gsearch-item.sel { background: var(--bg-surface-2); }
-    .gsearch-item .gicon { font-size: 1.1rem; width: 26px; text-align: center; flex-shrink: 0; }
-    .gsearch-item .gtitle { font-weight: 600; font-size: 0.9rem; }
-    .gsearch-item .gsub { font-size: 0.76rem; color: var(--text-secondary); }
-    .gsearch-empty { padding: 24px 18px; text-align: center; color: var(--text-secondary); font-size: 0.85rem; }
-
     @media (max-width: 900px) {
         .main-header { font-size: 1.2rem; }
         .kpi-num { font-size: 1.6rem; }
@@ -198,7 +155,6 @@ BASE_STYLE = """
         .overlay.open { display: block; }
         .hamburger { left: 14px !important; }
         body.sidebar-hidden .main-content { padding-top: 4rem; }
-        .gsearch-overlay { padding-top: 4vh; }
     }
 </style>
 """
@@ -259,10 +215,6 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 <p style="font-weight:700;" id="sidebarUser"></p>
                 <span id="sidebarRole" class="user-chip"></span>
             </div>
-            <button class="search-trigger" id="gsearchTrigger" onclick="openGlobalSearch()">
-                <span>🔍 Buscar unidad, ticket, técnico…</span>
-                <kbd id="gsearchKbd">Ctrl K</kbd>
-            </button>
             <hr style="border-color:rgba(255,255,255,0.2);">
             <nav style="margin-top:12px; flex:1;" id="navMenu"></nav>
             <div style="margin-top:auto; padding-top:16px; border-top:1px solid rgba(255,255,255,0.2);">
@@ -270,20 +222,6 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     <span id="themeToggleIcon">🌙</span> <span id="themeToggleLabel">Modo oscuro</span>
                 </button>
                 <button onclick="logout()" class="logout-btn">🚪 Cerrar Sesión</button>
-            </div>
-        </div>
-
-        <!-- ── Búsqueda Global (Ctrl/Cmd + K) ─────────────────────────────── -->
-        <div class="gsearch-overlay" id="gsearchOverlay" onclick="if(event.target===this) closeGlobalSearch()">
-            <div class="gsearch-box">
-                <div class="gsearch-input-wrap">
-                    <span>🔍</span>
-                    <input type="text" id="gsearchInput" placeholder="Buscar unidad, VIN, lote, ticket o técnico…" autocomplete="off">
-                    <span class="gsearch-esc">ESC</span>
-                </div>
-                <div class="gsearch-results" id="gsearchResults">
-                    <div class="gsearch-empty">Escribe al menos 2 caracteres para buscar</div>
-                </div>
             </div>
         </div>
 
@@ -357,173 +295,6 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 applyTheme(next);
             }}
             applyTheme(localStorage.getItem('theme') === 'dark' ? 'dark' : 'light');
-
-            // ── Búsqueda Global (Ctrl/Cmd + K) ──────────────────────────────
-            let _gsearchTimer = null;
-            let _gsearchSelIdx = -1;
-            let _gsearchItems = [];
-
-            function openGlobalSearch() {{
-                const ov = document.getElementById('gsearchOverlay');
-                ov.classList.add('open');
-                const input = document.getElementById('gsearchInput');
-                input.value = '';
-                input.focus();
-                document.getElementById('gsearchResults').innerHTML = '<div class="gsearch-empty">Escribe al menos 2 caracteres para buscar</div>';
-                _gsearchItems = [];
-                _gsearchSelIdx = -1;
-                if (window.innerWidth <= 900) {{
-                    const sidebar = document.getElementById('sidebar');
-                    if (sidebar.classList.contains('open')) toggleSidebar();
-                }}
-            }}
-            function closeGlobalSearch() {{
-                document.getElementById('gsearchOverlay').classList.remove('open');
-            }}
-
-            document.addEventListener('keydown', function(e) {{
-                const isK = (e.key === 'k' || e.key === 'K');
-                if ((e.ctrlKey || e.metaKey) && isK) {{
-                    e.preventDefault();
-                    const ov = document.getElementById('gsearchOverlay');
-                    ov.classList.contains('open') ? closeGlobalSearch() : openGlobalSearch();
-                }} else if (e.key === 'Escape') {{
-                    closeGlobalSearch();
-                }} else if (document.getElementById('gsearchOverlay').classList.contains('open')) {{
-                    if (e.key === 'ArrowDown') {{ e.preventDefault(); _gsearchMove(1); }}
-                    else if (e.key === 'ArrowUp') {{ e.preventDefault(); _gsearchMove(-1); }}
-                    else if (e.key === 'Enter') {{ e.preventDefault(); _gsearchOpenSelected(); }}
-                }}
-            }});
-
-            // Mac muestra ⌘K en vez de Ctrl K en el botón del sidebar
-            (function() {{
-                const kbd = document.getElementById('gsearchKbd');
-                if (kbd && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) {{
-                    kbd.textContent = '⌘ K';
-                }}
-            }})();
-
-            function _gsearchMove(delta) {{
-                if (!_gsearchItems.length) return;
-                _gsearchSelIdx = (_gsearchSelIdx + delta + _gsearchItems.length) % _gsearchItems.length;
-                document.querySelectorAll('.gsearch-item').forEach((el, i) => {{
-                    el.classList.toggle('sel', i === _gsearchSelIdx);
-                }});
-                const sel = document.querySelectorAll('.gsearch-item')[_gsearchSelIdx];
-                if (sel) sel.scrollIntoView({{ block: 'nearest' }});
-            }}
-            function _gsearchOpenSelected() {{
-                const item = _gsearchItems[_gsearchSelIdx] || _gsearchItems[0];
-                if (item) window.location.href = item.href;
-            }}
-
-            document.getElementById('gsearchInput')?.addEventListener('input', function(e) {{
-                const q = e.target.value.trim();
-                clearTimeout(_gsearchTimer);
-                if (q.length < 2) {{
-                    document.getElementById('gsearchResults').innerHTML = '<div class="gsearch-empty">Escribe al menos 2 caracteres para buscar</div>';
-                    _gsearchItems = [];
-                    return;
-                }}
-                _gsearchTimer = setTimeout(() => _runGlobalSearch(q), 250);
-            }});
-
-            async function _runGlobalSearch(q) {{
-                const resultsEl = document.getElementById('gsearchResults');
-                resultsEl.innerHTML = '<div class="gsearch-empty">Buscando…</div>';
-                const groups = [];
-
-                // Unidades (ficha por VIN, serie, lote o # económico)
-                try {{
-                    const r = await window.fetchAuth('/api/unidades/ficha?q=' + encodeURIComponent(q));
-                    if (r.ok) {{
-                        const d = await r.json();
-                        const unidadesArr = d.seleccion_multiple ? d.unidades : [d];
-                        if (unidadesArr && unidadesArr.length) {{
-                            groups.push({{
-                                label: '📦 Unidades',
-                                items: unidadesArr.slice(0, 6).map(u => ({{
-                                    icon: '📦',
-                                    title: u.unit_number || u['#Económico'] || '—',
-                                    sub: 'Lote ' + (u.id_lote || '—'),
-                                    href: '/app/unidades?buscar=' + encodeURIComponent(u.unit_number || q),
-                                }}))
-                            }});
-                        }}
-                    }}
-                }} catch(e) {{}}
-
-                // Tickets (filtro local sobre el listado, ya viene acotado por rol)
-                try {{
-                    const r = await window.fetchAuth('/api/tickets/');
-                    if (r.ok) {{
-                        const all = await r.json();
-                        const ql = q.toLowerCase();
-                        const matches = all.filter(t =>
-                            (String(t.ticket_num||'').includes(ql)) ||
-                            (t.unit_number||'').toLowerCase().includes(ql) ||
-                            (t.descripcion||'').toLowerCase().includes(ql)
-                        ).slice(0, 6);
-                        if (matches.length) {{
-                            groups.push({{
-                                label: '🎫 Tickets',
-                                items: matches.map(t => ({{
-                                    icon: '🎫',
-                                    title: 'Ticket #' + t.ticket_num + ' — ' + (t.unit_number || ''),
-                                    sub: (t.descripcion || '').slice(0, 60),
-                                    href: window.role === 'admin' ? '/app/tickets' : '/app/mis-tickets',
-                                }}))
-                            }});
-                        }}
-                    }}
-                }} catch(e) {{}}
-
-                // Técnicos (solo admin/visor tienen acceso a /api/usuarios/)
-                if (window.role === 'admin' || window.role === 'visor') {{
-                    try {{
-                        const r = await window.fetchAuth('/api/usuarios/');
-                        if (r.ok) {{
-                            const all = await r.json();
-                            const ql = q.toLowerCase();
-                            const matches = all.filter(u => (u.username||'').toLowerCase().includes(ql)).slice(0, 6);
-                            if (matches.length) {{
-                                groups.push({{
-                                    label: '👤 Usuarios',
-                                    items: matches.map(u => ({{
-                                        icon: u.role === 'tecnico' ? '🔧' : (u.role === 'admin' ? '🛡' : '👁'),
-                                        title: u.username,
-                                        sub: u.role,
-                                        href: '/app/usuarios',
-                                    }}))
-                                }});
-                            }}
-                        }}
-                    }} catch(e) {{}}
-                }}
-
-                _gsearchItems = groups.flatMap(g => g.items);
-                _gsearchSelIdx = -1;
-
-                if (!groups.length) {{
-                    resultsEl.innerHTML = '<div class="gsearch-empty">Sin resultados para "' + q.replace(/</g,'') + '"</div>';
-                    return;
-                }}
-
-                let html = '';
-                let idx = 0;
-                groups.forEach(g => {{
-                    html += '<div class="gsearch-group-label">' + g.label + '</div>';
-                    g.items.forEach(it => {{
-                        html += '<div class="gsearch-item" data-idx="' + idx + '" onclick="window.location.href=\\'' + it.href + '\\'">'
-                              + '<span class="gicon">' + it.icon + '</span>'
-                              + '<div><div class="gtitle">' + it.title + '</div><div class="gsub">' + (it.sub||'') + '</div></div>'
-                              + '</div>';
-                        idx++;
-                    }});
-                }});
-                resultsEl.innerHTML = html;
-            }}
 
             function toggleSidebar() {{
                 const sidebar = document.getElementById('sidebar');
