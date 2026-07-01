@@ -16,11 +16,27 @@ class UserCreate(BaseModel):
 class PasswordChange(BaseModel):
     new_password: str
 
+class PerfilUpdate(BaseModel):
+    foto_url: str = ""
+    puesto: str = ""
+
 @router.get("/")
 def listar_usuarios(current_user=Depends(verify_token)):
     if current_user["role"] not in ("admin", "visor"):
         raise HTTPException(status_code=403, detail="Acceso denegado")
-    return execute_read("SELECT id, username, role FROM users ORDER BY role, username")
+    return execute_read(
+        "SELECT id, username, role, foto_url, puesto FROM users ORDER BY role, username"
+    )
+
+@router.put("/{user_id}/perfil")
+def actualizar_perfil(user_id: int, data: PerfilUpdate, current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    execute_write(
+        "UPDATE users SET foto_url = %s, puesto = %s WHERE id = %s",
+        (data.foto_url or None, data.puesto or None, user_id)
+    )
+    return {"mensaje": "Perfil actualizado correctamente"}
 
 @router.post("/")
 def crear_usuario(user: UserCreate, current_user=Depends(verify_token)):

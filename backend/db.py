@@ -72,6 +72,38 @@ def _run_migrations():
                 )
                 conn.commit()
                 print("✅ Migración: columna oculto añadida a unidades")
+            # ── foto_url en users ─────────────────────────────────────────────
+            cur.execute("""
+                SELECT COUNT(*) FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME   = 'users'
+                  AND COLUMN_NAME  = 'foto_url'
+            """)
+            row_f = cur.fetchone()
+            count_f = row_f[0] if isinstance(row_f, tuple) else list(row_f.values())[0]
+            if count_f == 0:
+                cur.execute(
+                    "ALTER TABLE users ADD COLUMN foto_url VARCHAR(512) DEFAULT NULL"
+                )
+                conn.commit()
+                print("✅ Migración: columna foto_url añadida a users")
+
+            # ── puesto en users ───────────────────────────────────────────────
+            cur.execute("""
+                SELECT COUNT(*) FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME   = 'users'
+                  AND COLUMN_NAME  = 'puesto'
+            """)
+            row_p = cur.fetchone()
+            count_p = row_p[0] if isinstance(row_p, tuple) else list(row_p.values())[0]
+            if count_p == 0:
+                cur.execute(
+                    "ALTER TABLE users ADD COLUMN puesto VARCHAR(100) DEFAULT NULL"
+                )
+                conn.commit()
+                print("✅ Migración: columna puesto añadida a users")
+
             # ── alarmas_reefer (Alarm Troubleshooting Vector 8600MT) ──────────
             cur.execute("""
                 SELECT COUNT(*) FROM information_schema.TABLES

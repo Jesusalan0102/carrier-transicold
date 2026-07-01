@@ -1071,8 +1071,59 @@ async def usuarios():
     contenido = """
     <script> if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; } </script>
 
-    <div class="section-title">👥 Usuarios Registrados</div>
-    <div id="usuariosList"></div>
+    <style>
+        .team-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 28px;
+        }
+        .perfil-card {
+            background: var(--bg-surface);
+            border-radius: 14px;
+            overflow: hidden;
+            box-shadow: 0 4px 16px var(--shadow-soft);
+            border-top: 5px solid var(--carrier-accent);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .perfil-card:hover { transform: translateY(-4px); box-shadow: 0 10px 28px var(--shadow-soft); }
+        .perfil-card.role-admin  { border-top-color: var(--carrier-blue); }
+        .perfil-card.role-tecnico { border-top-color: var(--carrier-success); }
+        .perfil-card.role-visor  { border-top-color: var(--carrier-warn); }
+        .perfil-foto {
+            width: 100%; aspect-ratio: 1/1; object-fit: cover;
+            background: var(--bg-surface-2); display: block;
+        }
+        .perfil-foto-placeholder {
+            width: 100%; aspect-ratio: 1/1;
+            background: linear-gradient(135deg, var(--bg-surface-2), var(--carrier-light));
+            display: flex; align-items: center; justify-content: center;
+            font-size: 3.5rem;
+        }
+        .perfil-body { padding: 13px 13px 15px; }
+        .perfil-nombre { font-weight: 700; font-size: 0.95rem; color: var(--text-primary); margin-bottom: 4px; }
+        .perfil-puesto {
+            display: inline-block; font-size: 0.72rem; font-weight: 700;
+            letter-spacing: 0.5px; text-transform: uppercase;
+            color: white; background: var(--carrier-accent);
+            padding: 3px 10px; border-radius: 20px; margin-bottom: 10px;
+        }
+        .perfil-card.role-admin  .perfil-puesto { background: var(--carrier-blue); }
+        .perfil-card.role-tecnico .perfil-puesto { background: var(--carrier-success); }
+        .perfil-card.role-visor  .perfil-puesto { background: var(--carrier-warn); }
+        .perfil-acciones { display: flex; gap: 6px; flex-wrap: wrap; }
+        .btn-sm {
+            padding: 5px 10px; font-size: 0.75rem; font-weight: 600;
+            border: none; border-radius: 8px; cursor: pointer; transition: opacity 0.15s;
+        }
+        .btn-sm:hover { opacity: 0.82; }
+        .btn-sm-blue   { background: var(--carrier-accent); color: white; }
+        .btn-sm-amber  { background: var(--carrier-warn);   color: white; }
+        .btn-sm-red    { background: var(--carrier-danger);  color: white; }
+    </style>
+
+    <div class="section-title">👥 Equipo Operativo</div>
+    <div id="teamGrid" class="team-grid"></div>
 
     <div class="section-title admin-only" style="margin-top:28px;">➕ Crear Nuevo Usuario</div>
     <div class="admin-only" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px;">
@@ -1089,52 +1140,144 @@ async def usuarios():
     <script>
         const fetchAuth = window.fetchAuth;
 
+        const ROLE_EMOJI = { admin: '🛡', tecnico: '🔧', visor: '👁' };
+        const ROLE_LABEL = { admin: 'Administrador', tecnico: 'Técnico', visor: 'Visor' };
+
         async function cargarUsuarios() {
             try {
                 const res = await fetchAuth('/api/usuarios/');
                 const usuarios = await res.json();
-                let html = '<table><thead><tr><th>Usuario</th><th>Rol</th><th style="text-align:center;">Acciones</th></tr></thead><tbody>';
-                if (Array.isArray(usuarios)) {
-                    usuarios.forEach(u => {
-                        const rolTexto = u.role === 'admin' ? '🛡 Administrador' : (u.role === 'tecnico' ? '🔧 Técnico' : '👁 Visor');
-                        const acciones = window.role === 'admin' ? `
-                            <button class="btn-warning" onclick="abrirModalPassword(${u.id}, '${u.username}')" style="padding:6px 14px;font-size:0.82rem;margin-right:6px;">🔑 Cambiar Contraseña</button>
-                            <button class="btn-danger" onclick="eliminarUsuario(${u.id}, '${u.username}')" style="padding:6px 14px;font-size:0.82rem;">🗑️ Eliminar</button>
-                        ` : '—';
-                        html += `<tr><td><b>${u.username}</b></td><td>${rolTexto}</td><td style="text-align:center;">${acciones}</td></tr>`;
-                    });
-                }
-                html += '</tbody></table>';
-                document.getElementById('usuariosList').innerHTML = html;
+                if (!Array.isArray(usuarios)) throw new Error('respuesta inválida');
+
+                let html = '';
+                usuarios.forEach(u => {
+                    const puesto = u.puesto || ROLE_LABEL[u.role] || u.role;
+                    const fotoHtml = u.foto_url
+                        ? `<img class="perfil-foto" src="${u.foto_url}" alt="${u.username}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                           <div class="perfil-foto-placeholder" style="display:none;">👤</div>`
+                        : `<div class="perfil-foto-placeholder">👤</div>`;
+
+                    const accionesAdmin = window.role === 'admin' ? `
+                        <button class="btn-sm btn-sm-blue" onclick="abrirModalPerfil(${u.id}, '${u.username}', '${u.foto_url || ''}', '${(u.puesto || '').replace(/'/g,"\\'")}')">🖼 Perfil</button>
+                        <button class="btn-sm btn-sm-amber" onclick="abrirModalPassword(${u.id}, '${u.username}')">🔑 Pwd</button>
+                        <button class="btn-sm btn-sm-red" onclick="eliminarUsuario(${u.id}, '${u.username}')">🗑</button>
+                    ` : '';
+
+                    html += `
+                    <div class="perfil-card role-${u.role}">
+                        ${fotoHtml}
+                        <div class="perfil-body">
+                            <div class="perfil-nombre">${ROLE_EMOJI[u.role] || ''} ${u.username}</div>
+                            <div class="perfil-puesto">${puesto}</div>
+                            <div class="perfil-acciones">${accionesAdmin}</div>
+                        </div>
+                    </div>`;
+                });
+
+                document.getElementById('teamGrid').innerHTML = html || '<p style="color:var(--text-secondary);">No hay usuarios registrados.</p>';
             } catch (err) {
-                document.getElementById('usuariosList').innerHTML = '<p style="color:red;">Error al cargar usuarios</p>';
+                document.getElementById('teamGrid').innerHTML = '<p style="color:var(--carrier-danger);">Error al cargar usuarios.</p>';
             }
         }
 
+        /* ── Modal: editar foto y puesto ── */
+        function abrirModalPerfil(userId, username, fotoActual, puestoActual) {
+            const prev = document.getElementById('modalPerfil');
+            if (prev) prev.remove();
+            const modal = document.createElement('div');
+            modal.id = 'modalPerfil';
+            modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);display:flex;justify-content:center;align-items:center;z-index:500;padding:16px;';
+            modal.innerHTML = `
+                <div style="background:var(--bg-surface);border-radius:20px;padding:32px;width:100%;max-width:480px;box-shadow:0 20px 60px rgba(0,43,91,0.25);animation:fadeInP 0.2s ease;">
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+                        <div style="background:var(--carrier-light);border-radius:12px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">🖼</div>
+                        <div>
+                            <h3 style="margin:0;color:var(--carrier-blue);font-size:1.1rem;font-weight:800;">Editar Perfil</h3>
+                            <p style="margin:2px 0 0;font-size:0.82rem;color:var(--text-secondary);">Usuario: <b>${username}</b></p>
+                        </div>
+                    </div>
+                    <hr style="border:none;border-top:1px solid var(--border-color);margin:18px 0;">
+
+                    <div id="previewWrap" style="text-align:center;margin-bottom:16px;">
+                        ${fotoActual ? `<img id="fotoPreview" src="${fotoActual}" style="width:90px;height:90px;border-radius:50%;object-fit:cover;border:3px solid var(--carrier-accent);">` : `<div id="fotoPreview" style="width:90px;height:90px;border-radius:50%;background:var(--carrier-light);display:inline-flex;align-items:center;justify-content:center;font-size:2.2rem;border:3px solid var(--border-color);">👤</div>`}
+                    </div>
+
+                    <label style="font-size:0.82rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:4px;">URL de Foto de Perfil</label>
+                    <input id="inputFotoUrl" type="url" placeholder="https://ejemplo.com/foto.jpg" value="${fotoActual}"
+                        style="margin-bottom:4px;"
+                        oninput="actualizarPreview(this.value)">
+                    <p style="font-size:0.75rem;color:var(--text-secondary);margin:0 0 14px;">Pega el link directo de la imagen. Puede ser de Google Drive, OneDrive, etc.</p>
+
+                    <label style="font-size:0.82rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:4px;">Puesto / Cargo</label>
+                    <input id="inputPuesto" type="text" placeholder="Ej: Jefe de Operaciones, Técnico..." value="${puestoActual}"
+                        style="margin-bottom:4px;">
+
+                    <p id="perfilError" style="color:var(--carrier-danger);font-size:0.82rem;min-height:18px;margin:4px 0 14px;"></p>
+
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <button onclick="document.getElementById('modalPerfil').remove()" style="background:var(--bg-surface-2);color:var(--text-primary);border:1px solid var(--border-color);border-radius:10px;padding:13px;font-weight:600;font-size:0.9rem;cursor:pointer;">✖ Cancelar</button>
+                        <button id="btnGuardarPerfil" onclick="guardarPerfil(${userId})" style="background:linear-gradient(135deg,var(--carrier-blue),var(--carrier-accent));color:white;border:none;border-radius:10px;padding:13px;font-weight:700;font-size:0.9rem;cursor:pointer;">💾 Guardar</button>
+                    </div>
+                </div>
+                <style>@keyframes fadeInP{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}</style>`;
+            document.body.appendChild(modal);
+        }
+
+        function actualizarPreview(url) {
+            const wrap = document.getElementById('previewWrap');
+            if (!url) {
+                wrap.innerHTML = `<div id="fotoPreview" style="width:90px;height:90px;border-radius:50%;background:var(--carrier-light);display:inline-flex;align-items:center;justify-content:center;font-size:2.2rem;border:3px solid var(--border-color);">👤</div>`;
+                return;
+            }
+            wrap.innerHTML = `<img id="fotoPreview" src="${url}" style="width:90px;height:90px;border-radius:50%;object-fit:cover;border:3px solid var(--carrier-accent);" onerror="this.src='';this.style.display='none';">`;
+        }
+
+        async function guardarPerfil(userId) {
+            const foto_url = document.getElementById('inputFotoUrl').value.trim();
+            const puesto   = document.getElementById('inputPuesto').value.trim();
+            const btn = document.getElementById('btnGuardarPerfil');
+            btn.textContent = 'Guardando...'; btn.disabled = true;
+            const res = await fetchAuth('/api/usuarios/' + userId + '/perfil', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ foto_url, puesto })
+            });
+            if (res.ok) {
+                document.getElementById('modalPerfil').remove();
+                mostrarToast('✅ Perfil actualizado correctamente.', '#1F4E79');
+                cargarUsuarios();
+            } else {
+                const err = await res.json();
+                document.getElementById('perfilError').textContent = err.detail || 'Error al guardar.';
+                btn.textContent = '💾 Guardar'; btn.disabled = false;
+            }
+        }
+
+        /* ── Modal: cambiar contraseña (igual que antes) ── */
         function abrirModalPassword(userId, username) {
             const prev = document.getElementById('modalPassword');
             if (prev) prev.remove();
             const modal = document.createElement('div');
             modal.id = 'modalPassword';
-            modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);display:flex;justify-content:center;align-items:center;z-index:500;';
+            modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);display:flex;justify-content:center;align-items:center;z-index:500;padding:16px;';
             modal.innerHTML = `
-                <div style="background:white;border-radius:20px;padding:32px;width:90%;max-width:460px;box-shadow:0 20px 60px rgba(0,43,91,0.25);animation:fadeInP 0.2s ease;">
+                <div style="background:var(--bg-surface);border-radius:20px;padding:32px;width:100%;max-width:460px;box-shadow:0 20px 60px rgba(0,43,91,0.25);animation:fadeInP 0.2s ease;">
                     <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
                         <div style="background:#fef3c7;border-radius:12px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">🔑</div>
                         <div>
                             <h3 style="margin:0;color:var(--carrier-blue);font-size:1.1rem;font-weight:800;">Cambiar Contraseña</h3>
-                            <p style="margin:2px 0 0;font-size:0.82rem;color:#6b7280;">Usuario: <b>${username}</b></p>
+                            <p style="margin:2px 0 0;font-size:0.82rem;color:var(--text-secondary);">Usuario: <b>${username}</b></p>
                         </div>
                     </div>
-                    <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0;">
+                    <hr style="border:none;border-top:1px solid var(--border-color);margin:18px 0;">
                     <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">Nueva contraseña</label>
                     <div style="position:relative;">
-                        <input id="inputNuevaPwd" type="password" placeholder="Escribe la nueva contraseña" style="width:100%;border:1.5px solid #d1d5db;border-radius:12px;padding:12px 44px 12px 12px;font-size:0.95rem;font-family:inherit;">
-                        <span onclick="togglePwd()" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:1.1rem;" title="Mostrar/ocultar">👁</span>
+                        <input id="inputNuevaPwd" type="password" placeholder="Escribe la nueva contraseña" style="width:100%;">
+                        <span onclick="togglePwd()" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:1.1rem;">👁</span>
                     </div>
                     <p id="pwdError" style="color:var(--carrier-danger);font-size:0.82rem;min-height:18px;margin:4px 0 12px;"></p>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                        <button onclick="document.getElementById('modalPassword').remove()" style="background:#f1f5f9;color:#374151;border:none;border-radius:10px;padding:13px;font-weight:600;font-size:0.95rem;cursor:pointer;">✖ Cancelar</button>
+                        <button onclick="document.getElementById('modalPassword').remove()" style="background:var(--bg-surface-2);color:var(--text-primary);border:1px solid var(--border-color);border-radius:10px;padding:13px;font-weight:600;font-size:0.95rem;cursor:pointer;">✖ Cancelar</button>
                         <button id="btnGuardarPwd" onclick="guardarPassword(${userId})" style="background:linear-gradient(135deg,var(--carrier-blue),var(--carrier-accent));color:white;border:none;border-radius:10px;padding:13px;font-weight:700;font-size:0.95rem;cursor:pointer;">💾 Guardar</button>
                     </div>
                 </div>
@@ -1161,11 +1304,7 @@ async def usuarios():
             });
             if (res.ok) {
                 document.getElementById('modalPassword').remove();
-                const toast = document.createElement('div');
-                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#1F4E79;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
-                toast.textContent = '✅ Contraseña actualizada correctamente.';
-                document.body.appendChild(toast);
-                setTimeout(() => toast.remove(), 3000);
+                mostrarToast('✅ Contraseña actualizada correctamente.', '#1F4E79');
             } else {
                 const err = await res.json();
                 errorEl.textContent = err.detail || 'Error al guardar.';
@@ -1187,11 +1326,7 @@ async def usuarios():
                 document.getElementById('username').value = '';
                 document.getElementById('newUserPassword').value = '';
                 cargarUsuarios();
-                const toast = document.createElement('div');
-                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
-                toast.textContent = '✅ Usuario creado exitosamente.';
-                document.body.appendChild(toast);
-                setTimeout(() => toast.remove(), 3000);
+                mostrarToast('✅ Usuario creado exitosamente.', '#16a34a');
             } else {
                 const err = await res.json();
                 alert('Error: ' + (err.detail || 'No se pudo crear el usuario'));
@@ -1201,8 +1336,16 @@ async def usuarios():
         async function eliminarUsuario(id, nombre) {
             if (!confirm(`¿Eliminar al usuario "${nombre}"? Esta acción no se puede deshacer.`)) return;
             const res = await fetchAuth('/api/usuarios/' + id, { method: 'DELETE' });
-            if (res.ok) cargarUsuarios();
+            if (res.ok) { mostrarToast('🗑 Usuario eliminado.', '#dc2626'); cargarUsuarios(); }
             else alert('Error al eliminar usuario');
+        }
+
+        function mostrarToast(msg, color) {
+            const t = document.createElement('div');
+            t.style.cssText = `position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:${color};color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;white-space:nowrap;`;
+            t.textContent = msg;
+            document.body.appendChild(t);
+            setTimeout(() => t.remove(), 3000);
         }
 
         cargarUsuarios();
