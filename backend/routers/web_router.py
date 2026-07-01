@@ -211,9 +211,22 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 <img src="https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo.jpg" style="width:150px; border-radius:8px;">
                 <p style="color:#c3d4f0; font-size:0.8rem; margin-top:4px;">Sistema Operativo</p>
             </div>
-            <div style="margin-bottom:20px;">
-                <p style="font-weight:700;" id="sidebarUser"></p>
-                <span id="sidebarRole" class="user-chip"></span>
+            <div style="margin-bottom:20px;padding:14px 12px;background:rgba(255,255,255,0.07);border-radius:14px;">
+                <!-- Foto de perfil -->
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <div style="position:relative;flex-shrink:0;">
+                        <img id="sidebarFoto"
+                            src=""
+                            style="width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,0.35);display:none;">
+                        <div id="sidebarFotoPlaceholder"
+                            style="width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;font-size:1.5rem;border:2px solid rgba(255,255,255,0.25);">👤</div>
+                    </div>
+                    <div style="min-width:0;">
+                        <p style="font-weight:700;margin:0;font-size:0.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" id="sidebarUser"></p>
+                        <span id="sidebarPuesto" style="font-size:0.72rem;color:#a8c4e8;font-weight:500;display:block;margin-top:2px;"></span>
+                        <span id="sidebarRole" class="user-chip" style="margin-top:5px;display:inline-block;"></span>
+                    </div>
+                </div>
             </div>
             <hr style="border-color:rgba(255,255,255,0.2);">
             <nav style="margin-top:12px; flex:1;" id="navMenu"></nav>
@@ -239,9 +252,30 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
         <script>
             document.addEventListener('DOMContentLoaded', function() {{
                 if (window.role === 'visor') {{ document.body.classList.add('visor-mode'); }}
-                document.getElementById('sidebarUser').textContent = '👤 ' + window.username;
+                document.getElementById('sidebarUser').textContent = window.username;
                 const roleLabels = {{ admin: '🛡 Administrador', tecnico: '🔧 Técnico', visor: '👁 Visor' }};
                 document.getElementById('sidebarRole').textContent = roleLabels[window.role] || window.role;
+
+                // Cargar foto y puesto del usuario en sesión
+                (async () => {{
+                    try {{
+                        const res = await window.fetchAuth('/api/usuarios/');
+                        if (!res.ok) return;
+                        const lista = await res.json();
+                        const yo = lista.find(u => u.username === window.username);
+                        if (!yo) return;
+                        if (yo.puesto) {{
+                            document.getElementById('sidebarPuesto').textContent = yo.puesto;
+                        }}
+                        if (yo.foto_url) {{
+                            const img = document.getElementById('sidebarFoto');
+                            const ph  = document.getElementById('sidebarFotoPlaceholder');
+                            img.src = yo.foto_url;
+                            img.style.display = 'block';
+                            if (ph) ph.style.display = 'none';
+                        }}
+                    }} catch(e) {{}}
+                }})();
 
                 const adminMenu = [
                     {{ href: '/app/dashboard', label: '📊 Dashboard Ejecutivo' }},
