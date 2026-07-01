@@ -72,7 +72,7 @@ def _run_migrations():
                 )
                 conn.commit()
                 print("✅ Migración: columna oculto añadida a unidades")
-            # ── foto_url en users ─────────────────────────────────────────────
+            # ── foto_url en users (MEDIUMTEXT para base64 de imagen) ─────────
             cur.execute("""
                 SELECT COUNT(*) FROM information_schema.COLUMNS
                 WHERE TABLE_SCHEMA = DATABASE()
@@ -83,10 +83,25 @@ def _run_migrations():
             count_f = row_f[0] if isinstance(row_f, tuple) else list(row_f.values())[0]
             if count_f == 0:
                 cur.execute(
-                    "ALTER TABLE users ADD COLUMN foto_url VARCHAR(512) DEFAULT NULL"
+                    "ALTER TABLE users ADD COLUMN foto_url MEDIUMTEXT DEFAULT NULL"
                 )
                 conn.commit()
                 print("✅ Migración: columna foto_url añadida a users")
+            else:
+                cur.execute("""
+                    SELECT DATA_TYPE FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME   = 'users'
+                      AND COLUMN_NAME  = 'foto_url'
+                """)
+                row_dt = cur.fetchone()
+                dtype = (row_dt[0] if isinstance(row_dt, tuple) else list(row_dt.values())[0] or "").lower()
+                if dtype == "varchar":
+                    cur.execute(
+                        "ALTER TABLE users MODIFY COLUMN foto_url MEDIUMTEXT DEFAULT NULL"
+                    )
+                    conn.commit()
+                    print("✅ Migración: foto_url ampliada a MEDIUMTEXT")
 
             # ── puesto en users ───────────────────────────────────────────────
             cur.execute("""

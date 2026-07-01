@@ -1188,7 +1188,7 @@ async def usuarios():
             modal.id = 'modalPerfil';
             modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);display:flex;justify-content:center;align-items:center;z-index:500;padding:16px;';
             modal.innerHTML = `
-                <div style="background:var(--bg-surface);border-radius:20px;padding:32px;width:100%;max-width:480px;box-shadow:0 20px 60px rgba(0,43,91,0.25);animation:fadeInP 0.2s ease;">
+                <div style="background:var(--bg-surface);border-radius:20px;padding:28px;width:100%;max-width:460px;box-shadow:0 20px 60px rgba(0,43,91,0.25);animation:fadeInP 0.2s ease;">
                     <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
                         <div style="background:var(--carrier-light);border-radius:12px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">🖼</div>
                         <div>
@@ -1196,23 +1196,30 @@ async def usuarios():
                             <p style="margin:2px 0 0;font-size:0.82rem;color:var(--text-secondary);">Usuario: <b>${username}</b></p>
                         </div>
                     </div>
-                    <hr style="border:none;border-top:1px solid var(--border-color);margin:18px 0;">
+                    <hr style="border:none;border-top:1px solid var(--border-color);margin:16px 0;">
 
-                    <div id="previewWrap" style="text-align:center;margin-bottom:16px;">
-                        ${fotoActual ? `<img id="fotoPreview" src="${fotoActual}" style="width:90px;height:90px;border-radius:50%;object-fit:cover;border:3px solid var(--carrier-accent);">` : `<div id="fotoPreview" style="width:90px;height:90px;border-radius:50%;background:var(--carrier-light);display:inline-flex;align-items:center;justify-content:center;font-size:2.2rem;border:3px solid var(--border-color);">👤</div>`}
+                    <!-- Preview foto -->
+                    <div style="text-align:center;margin-bottom:18px;">
+                        <div style="position:relative;display:inline-block;">
+                            <img id="fotoPreview"
+                                src="${fotoActual || ''}"
+                                style="width:100px;height:100px;border-radius:50%;object-fit:cover;border:3px solid var(--carrier-accent);display:${fotoActual ? 'block' : 'none'};">
+                            <div id="fotoPlaceholder"
+                                style="width:100px;height:100px;border-radius:50%;background:var(--carrier-light);display:${fotoActual ? 'none' : 'inline-flex'};align-items:center;justify-content:center;font-size:2.6rem;border:3px solid var(--border-color);">👤</div>
+                            <!-- Botón cámara encima de la foto -->
+                            <label for="inputArchivoFoto" style="position:absolute;bottom:2px;right:2px;background:var(--carrier-blue);color:white;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.9rem;box-shadow:0 2px 6px rgba(0,0,0,0.25);" title="Cambiar foto">📷</label>
+                        </div>
+                        <p style="font-size:0.75rem;color:var(--text-secondary);margin:8px 0 0;">Toca 📷 para subir foto desde tu dispositivo</p>
                     </div>
 
-                    <label style="font-size:0.82rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:4px;">URL de Foto de Perfil</label>
-                    <input id="inputFotoUrl" type="url" placeholder="https://ejemplo.com/foto.jpg" value="${fotoActual}"
-                        style="margin-bottom:4px;"
-                        oninput="actualizarPreview(this.value)">
-                    <p style="font-size:0.75rem;color:var(--text-secondary);margin:0 0 14px;">Pega el link directo de la imagen. Puede ser de Google Drive, OneDrive, etc.</p>
+                    <!-- Input archivo oculto -->
+                    <input id="inputArchivoFoto" type="file" accept="image/*" style="display:none;" onchange="cargarFotoArchivo(this)">
 
+                    <!-- Puesto -->
                     <label style="font-size:0.82rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:4px;">Puesto / Cargo</label>
-                    <input id="inputPuesto" type="text" placeholder="Ej: Jefe de Operaciones, Técnico..." value="${puestoActual}"
-                        style="margin-bottom:4px;">
+                    <input id="inputPuesto" type="text" placeholder="Ej: Jefe de Operaciones, Técnico..." value="${puestoActual}" style="margin-bottom:4px;">
 
-                    <p id="perfilError" style="color:var(--carrier-danger);font-size:0.82rem;min-height:18px;margin:4px 0 14px;"></p>
+                    <p id="perfilError" style="color:var(--carrier-danger);font-size:0.82rem;min-height:18px;margin:6px 0 14px;"></p>
 
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                         <button onclick="document.getElementById('modalPerfil').remove()" style="background:var(--bg-surface-2);color:var(--text-primary);border:1px solid var(--border-color);border-radius:10px;padding:13px;font-weight:600;font-size:0.9rem;cursor:pointer;">✖ Cancelar</button>
@@ -1221,19 +1228,46 @@ async def usuarios():
                 </div>
                 <style>@keyframes fadeInP{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}</style>`;
             document.body.appendChild(modal);
+            // guardar base64 en variable temporal
+            window._fotoBase64 = fotoActual || '';
         }
 
-        function actualizarPreview(url) {
-            const wrap = document.getElementById('previewWrap');
-            if (!url) {
-                wrap.innerHTML = `<div id="fotoPreview" style="width:90px;height:90px;border-radius:50%;background:var(--carrier-light);display:inline-flex;align-items:center;justify-content:center;font-size:2.2rem;border:3px solid var(--border-color);">👤</div>`;
+        function cargarFotoArchivo(input) {
+            const file = input.files[0];
+            if (!file) return;
+            if (file.size > 8 * 1024 * 1024) {
+                document.getElementById('perfilError').textContent = 'La imagen no debe superar 8MB.';
                 return;
             }
-            wrap.innerHTML = `<img id="fotoPreview" src="${url}" style="width:90px;height:90px;border-radius:50%;object-fit:cover;border:3px solid var(--carrier-accent);" onerror="this.src='';this.style.display='none';">`;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    // Redimensionar a max 300x300 con canvas
+                    const MAX = 300;
+                    let w = img.width, h = img.height;
+                    if (w > h) { if (w > MAX) { h = h * MAX / w; w = MAX; } }
+                    else       { if (h > MAX) { w = w * MAX / h; h = MAX; } }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w; canvas.height = h;
+                    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                    const base64 = canvas.toDataURL('image/jpeg', 0.82);
+                    window._fotoBase64 = base64;
+                    // Mostrar preview
+                    const preview = document.getElementById('fotoPreview');
+                    const placeholder = document.getElementById('fotoPlaceholder');
+                    preview.src = base64;
+                    preview.style.display = 'block';
+                    if (placeholder) placeholder.style.display = 'none';
+                    document.getElementById('perfilError').textContent = '';
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
         }
 
         async function guardarPerfil(userId) {
-            const foto_url = document.getElementById('inputFotoUrl').value.trim();
+            const foto_url = window._fotoBase64 || '';
             const puesto   = document.getElementById('inputPuesto').value.trim();
             const btn = document.getElementById('btnGuardarPerfil');
             btn.textContent = 'Guardando...'; btn.disabled = true;
