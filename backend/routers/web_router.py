@@ -256,14 +256,12 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 const roleLabels = {{ admin: '🛡 Administrador', tecnico: '🔧 Técnico', visor: '👁 Visor' }};
                 document.getElementById('sidebarRole').textContent = roleLabels[window.role] || window.role;
 
-                // Cargar foto y puesto del usuario en sesión
+                // Cargar foto y puesto del usuario en sesión (funciona para cualquier rol)
                 (async () => {{
                     try {{
-                        const res = await window.fetchAuth('/api/usuarios/');
+                        const res = await window.fetchAuth('/api/usuarios/me');
                         if (!res.ok) return;
-                        const lista = await res.json();
-                        const yo = lista.find(u => u.username === window.username);
-                        if (!yo) return;
+                        const yo = await res.json();
                         if (yo.puesto) {{
                             document.getElementById('sidebarPuesto').textContent = yo.puesto;
                         }}
