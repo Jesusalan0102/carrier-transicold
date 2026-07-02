@@ -25,7 +25,7 @@ def mi_perfil(current_user=Depends(verify_token)):
     """Devuelve foto_url y puesto del usuario en sesion — accesible para cualquier rol."""
     rows = execute_read(
         "SELECT id, username, role, foto_url, puesto FROM users WHERE username = %s",
-        (current_user["sub"],)
+        (current_user["username"],)
     )
     if not rows:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
