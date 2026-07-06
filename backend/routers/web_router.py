@@ -708,15 +708,33 @@ async def dashboard():
         .lotes-wrap { border:1px solid #e5e7eb; border-radius:12px; overflow:hidden; margin-bottom:12px; }
         .lote-hdr { background:linear-gradient(90deg,#002B5B,#0057A8); color:white; padding:14px 20px; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:space-between; }
         .lote-body { display:none; padding:16px; overflow-x:auto; background:white; }
-        .kpi-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:16px; margin-bottom:32px; }
+        .kpi-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:16px; margin-bottom:20px; }
         @media(max-width:900px){ .kpi-grid{grid-template-columns:repeat(2,1fr);} }
+        .kpi-icon { position:absolute; top:14px; right:16px; font-size:1.3rem; opacity:0.35; }
+        .alert-strip { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:28px; }
+        .alert-chip { display:flex; align-items:center; gap:8px; background:var(--bg-surface); border-radius:10px; padding:10px 16px; font-size:0.82rem; font-weight:600; color:var(--text-secondary); box-shadow:0 2px 8px var(--shadow-soft); border-left:4px solid #d1d5db; }
+        .alert-chip.hot { border-left-color:var(--carrier-danger); color:var(--carrier-danger); }
+        .alert-chip .n { font-size:1rem; font-weight:800; }
+        .chart-card { background:var(--bg-surface); border-radius:16px; padding:20px; box-shadow:0 4px 12px var(--shadow-soft); min-height:380px; display:flex; flex-direction:column; }
+        .chart-card-hdr { font-size:0.95rem; font-weight:700; color:var(--carrier-blue); margin-bottom:8px; }
+        body.theme-dark .chart-card-hdr { color:#cfe0ff; }
+        .chart-empty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--text-secondary); text-align:center; gap:8px; }
+        .chart-empty .ico { font-size:2rem; opacity:0.4; }
+        .chart-empty .msg { font-size:0.85rem; max-width:220px; }
     </style>
 
     <div class="kpi-grid" id="kpiContainer"></div>
+    <div class="alert-strip" id="alertStrip"></div>
 
     <div style="display:grid; grid-template-columns:2fr 1fr; gap:24px; margin-bottom:32px;">
-        <div id="barChart" style="background:white; border-radius:16px; padding:20px; box-shadow:0 4px 12px rgba(0,43,91,0.08); min-height:380px;"></div>
-        <div id="pieChart" style="background:white; border-radius:16px; padding:20px; box-shadow:0 4px 12px rgba(0,43,91,0.08); min-height:380px;"></div>
+        <div class="chart-card">
+            <div class="chart-card-hdr">📈 Carga por técnico</div>
+            <div id="barChart" style="flex:1; min-height:320px;"></div>
+        </div>
+        <div class="chart-card">
+            <div class="chart-card-hdr">🥧 Distribución global</div>
+            <div id="pieChart" style="flex:1; min-height:320px;"></div>
+        </div>
     </div>
 
     <div class="section-title">📋 Estatus de Proceso por Unidad</div>
@@ -743,15 +761,22 @@ async def dashboard():
                 const kpisRes = await fetchAuth('/api/dashboard/kpis');
                 const kpis = await kpisRes.json();
                 const kpiData = [
-                    {value: kpis.total_unidades, label: 'Total Unidades', cls: ''},
-                    {value: kpis.completadas,    label: 'Completadas',    cls: 'green'},
-                    {value: kpis.en_proceso,     label: 'En Proceso',     cls: 'amber'},
-                    {value: kpis.pendientes,     label: 'Pendientes',     cls: 'red'},
-                    {value: (kpis.avance||0)+'%',label: 'Avance Global',  cls: 'purple'},
+                    {value: kpis.total_unidades, label: 'Total Unidades', cls: '',       icon:'🚚'},
+                    {value: kpis.completadas,    label: 'Completadas',    cls: 'green',  icon:'✅'},
+                    {value: kpis.en_proceso,     label: 'En Proceso',     cls: 'amber',  icon:'⚙️'},
+                    {value: kpis.pendientes,     label: 'Pendientes',     cls: 'red',    icon:'⏳'},
+                    {value: (kpis.avance||0)+'%',label: 'Avance Global',  cls: 'purple', icon:'📊'},
                 ];
                 document.getElementById('kpiContainer').innerHTML = kpiData.map(k =>
-                    `<div class="kpi-wrap ${k.cls}"><div class="kpi-num">${k.value ?? '—'}</div><div class="kpi-lbl">${k.label}</div></div>`
+                    `<div class="kpi-wrap ${k.cls}"><span class="kpi-icon">${k.icon}</span><div class="kpi-num">${k.value ?? '—'}</div><div class="kpi-lbl">${k.label}</div></div>`
                 ).join('');
+
+                const alerts = [];
+                if (kpis.tickets_sin_atender > 0) alerts.push({n:kpis.tickets_sin_atender, txt:'Tickets sin atender', hot:true});
+                if (kpis.solicitudes_pendientes > 0) alerts.push({n:kpis.solicitudes_pendientes, txt:'Solicitudes pendientes', hot:true});
+                document.getElementById('alertStrip').innerHTML = alerts.length
+                    ? alerts.map(a => `<div class="alert-chip ${a.hot?'hot':''}"><span class="n">${a.n}</span> ${a.txt}</div>`).join('')
+                    : `<div class="alert-chip">✔ Sin alertas pendientes</div>`;
 
                 const [statsRes, usuariosRes] = await Promise.all([
                     fetchAuth('/api/dashboard/stats_tecnicos'),
@@ -767,7 +792,9 @@ async def dashboard():
                         {x: stats.map(s=>s.tecnico), y: stats.map(s=>s.completadas), type:'bar', name:'Completadas', marker:{color:'#16a34a'}},
                         {x: stats.map(s=>s.tecnico), y: stats.map(s=>s.en_curso),    type:'bar', name:'En Curso',    marker:{color:'#d97706'}},
                         {x: stats.map(s=>s.tecnico), y: stats.map(s=>s.pendientes),  type:'bar', name:'Pendientes',  marker:{color:'#dc2626'}},
-                    ], {title:'Carga por Técnico', barmode:'group', paper_bgcolor:'transparent', plot_bgcolor:'transparent', font:{family:'Inter,sans-serif'}, margin:{t:40,b:80}});
+                    ], {barmode:'group', paper_bgcolor:'transparent', plot_bgcolor:'transparent', font:{family:'Inter,sans-serif'}, margin:{t:10,b:80}}, {responsive:true, displaylogo:false});
+                } else {
+                    document.getElementById('barChart').innerHTML = '<div class="chart-empty"><div class="ico">📈</div><div class="msg">Aún no hay actividades asignadas a técnicos. Esta gráfica se llenará en cuanto empiecen a registrarse asignaciones.</div></div>';
                 }
 
                 const asigRes = await fetchAuth('/api/asignaciones/');
@@ -780,8 +807,10 @@ async def dashboard():
                         values:[cnt.completada,cnt.en_proceso,cnt.pendiente],
                         labels:['Completadas','En Proceso','Pendientes'],
                         marker:{colors:['#16a34a','#d97706','#dc2626']},
-                        hole:0.55, type:'pie'
-                    }], {title:'Distribución Global', paper_bgcolor:'transparent', font:{family:'Inter,sans-serif'}, margin:{t:40}});
+                        hole:0.55, type:'pie', textinfo:'percent'
+                    }], {showlegend:true, paper_bgcolor:'transparent', font:{family:'Inter,sans-serif'}, margin:{t:10,b:10,l:10,r:10}}, {responsive:true, displaylogo:false});
+                } else {
+                    document.getElementById('pieChart').innerHTML = '<div class="chart-empty"><div class="ico">🥧</div><div class="msg">Sin unidades procesadas todavía. En cuanto haya avance verás aquí el reparto entre completadas, en proceso y pendientes.</div></div>';
                 }
                 if (asignaciones.length) {
                     const unidadesRes = await fetchAuth('/api/unidades/');
@@ -837,6 +866,10 @@ async def dashboard():
                         const sel = document.getElementById('unidadEv');
                         if (sel) sel.innerHTML = '<option value="">Selecciona unidad</option>' + unidades.map(u=>`<option value="${u.unit_number}">${u.unit_number} – ${u.id_lote||''}</option>`).join('');
                     }
+                }
+                if (!asignaciones.length) {
+                    document.getElementById('statusTable').innerHTML = '<div class="chart-card" style="min-height:120px;"><div class="chart-empty"><div class="ico">📋</div><div class="msg">No hay asignaciones registradas aún. La tabla de estatus por unidad aparecerá aquí.</div></div></div>';
+                    document.getElementById('lotesContainer').innerHTML = '<div class="chart-card" style="min-height:120px;"><div class="chart-empty"><div class="ico">📦</div><div class="msg">No hay lotes con unidades registradas todavía.</div></div></div>';
                 }
             } catch(err) {
                 console.error('Dashboard error:', err);
