@@ -3337,6 +3337,7 @@ async def asistencia_admin():
     contenido = """
     <script>if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; }</script>
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <style>
         .tab-btn { background:white; border:1.5px solid #e5e7eb; border-radius:10px; padding:10px 24px; font-weight:600; font-size:.9rem; color:#6b7280; cursor:pointer; transition:.2s; }
         .tab-btn.active { background:#002B5B; color:white; border-color:#002B5B; }
@@ -3406,8 +3407,13 @@ async def asistencia_admin():
         </div>
         <div id="tablaHorarios" style="overflow-x:auto;"></div>
 
-        <div class="section-title" style="margin-top:32px;">📊 Resumen Semanal de Asistencia</div>
-        <div id="resumenSemanal" style="overflow-x:auto;"></div>
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-top:32px; flex-wrap:wrap; gap:10px;">
+            <div class="section-title" style="margin:0;">📊 Resumen Semanal de Asistencia</div>
+            <button class="btn-primary" style="width:auto; padding:8px 18px; font-size:.85rem;" onclick="exportarResumenSemanalImagen()">🖼️ Exportar Imagen</button>
+        </div>
+        <div id="resumenSemanalWrap" style="overflow-x:auto; background:white; padding:4px;">
+            <div id="resumenSemanal" style="overflow-x:auto;"></div>
+        </div>
     </div>
 
     <!-- MODAL: Importar Horarios desde Excel -->
@@ -3628,10 +3634,15 @@ async def asistencia_admin():
             const tecnicos = [...new Set(resumen.map(r=>r.username))].sort();
             let html = '<table class="horario-tbl"><thead><tr><th>Técnico</th>';
             fechas.forEach((f,i) => { html += `<th>${diasSemana[i]}<br><small style="font-weight:400;opacity:.8;">${f.slice(5)}</small></th>`; });
-            html += '<th>Hrs. trabajadas</th><th>Horas extra</th><th>Comentarios</th></tr></thead><tbody>';
+            html += '<th>Hrs. trabajadas</th><th>Horas extra</th><th>Retardos</th><th>Comentarios</th></tr></thead><tbody>';
             tecnicos.forEach(tec => {
                 const filas = resumen.filter(r=>r.username===tec);
                 let totalHrs = 0;
+                let numRetardos = 0;
+                let minRetardos = 0;
+                filas.forEach(r => {
+                    if (r.retardo_min > 0) { numRetardos++; minRetardos += r.retardo_min; }
+                });
                 html += `<tr><td>${tec}</td>`;
                 fechas.forEach(f => {
                     const r = filas.find(x=>x.fecha===f);
@@ -3649,7 +3660,10 @@ async def asistencia_admin():
                     ? `<b style="color:#d97706;">+${horasExtra.toFixed(1)} h</b>`
                     : `<span style="color:#9ca3af;">—</span>`;
                 const comentarioVal = (comentarios[tec] || '').replace(/"/g, '&quot;');
-                html += `<td><b>${totalHrs.toFixed(1)} h</b></td><td>${extraTxt}</td>`;
+                const retardosTxt = numRetardos > 0
+                    ? `<span class="est-retardo">${numRetardos} ${numRetardos===1?'retardo':'retardos'}</span><br><small style="color:#d97706;">${minRetardos} min</small>`
+                    : `<span style="color:#9ca3af;">—</span>`;
+                html += `<td><b>${totalHrs.toFixed(1)} h</b></td><td>${extraTxt}</td><td>${retardosTxt}</td>`;
                 html += `<td><textarea class="coment-input" data-user="${tec}" data-semana="${semana}"
                             placeholder="Sin comentarios..."
                             style="width:160px;min-height:44px;font-size:0.8rem;padding:6px;border:1px solid #e2e8f0;border-radius:8px;resize:vertical;font-family:inherit;"
@@ -3657,6 +3671,30 @@ async def asistencia_admin():
             });
             html += '</tbody></table>';
             document.getElementById('resumenSemanal').innerHTML = html;
+        }
+
+        async function exportarResumenSemanalImagen() {
+            const el = document.getElementById('resumenSemanalWrap');
+            if (!el || !el.querySelector('table')) {
+                alert('No hay datos de resumen semanal para exportar.');
+                return;
+            }
+            const btn = event && event.target ? event.target.closest('button') : null;
+            const textoOriginal = btn ? btn.innerHTML : null;
+            if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Generando...'; }
+            try {
+                const canvas = await html2canvas(el, { backgroundColor: '#ffffff', scale: 2, useCORS: true });
+                const semana = document.getElementById('semanaInput').value || 'semana';
+                const link = document.createElement('a');
+                link.download = `resumen_semanal_asistencia_${semana}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            } catch (e) {
+                console.error('Error exportando imagen del resumen semanal:', e);
+                alert('No se pudo generar la imagen. Intenta nuevamente.');
+            } finally {
+                if (btn) { btn.disabled = false; btn.innerHTML = textoOriginal; }
+            }
         }
 
         let _comentarioTimers = {};
