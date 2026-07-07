@@ -223,6 +223,28 @@ def _run_migrations():
                         conn.commit()
                         print(f"✅ Sync: figuras añadidas a {actualizadas} alarmas existentes")
 
+            # ── comentarios_asistencia (comentarios semanales por técnico) ────
+            cur.execute("""
+                SELECT COUNT(*) FROM information_schema.TABLES
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME   = 'comentarios_asistencia'
+            """)
+            row8 = cur.fetchone()
+            count8 = row8[0] if isinstance(row8, tuple) else list(row8.values())[0]
+            if count8 == 0:
+                cur.execute("""
+                    CREATE TABLE comentarios_asistencia (
+                        id          INT AUTO_INCREMENT PRIMARY KEY,
+                        username    VARCHAR(100) NOT NULL,
+                        semana      DATE         NOT NULL,
+                        comentario  TEXT,
+                        updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        UNIQUE KEY uniq_user_semana (username, semana)
+                    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+                """)
+                conn.commit()
+                print("✅ Migración: tabla comentarios_asistencia creada")
+
     except Exception as e:
         print(f"⚠️  Migración omitida: {e}")
     finally:
