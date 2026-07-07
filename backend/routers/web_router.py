@@ -4980,3 +4980,340 @@ async def alarmas():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("🔔 Alarm Troubleshooting", contenido, "alarmas"))
+
+# ============================================================
+# PÁGINAS PÚBLICAS (sin login) — para solicitar Google AdSense
+# ------------------------------------------------------------
+# Cómo usar:
+#   1. Copia el bloque completo (los 3 @router.get) y pégalo
+#      dentro de tu archivo web_router.py, junto a las demás rutas.
+#   2. Reemplaza "ca-pub-XXXXXXXXXXXXXXXX" por tu ID real de
+#      AdSense cuando lo tengas (Anuncios → Configuración → ID de editor).
+#   3. Cuando solicites la revisión en Google AdSense, usa la URL
+#      pública de tu dominio, por ejemplo: https://tu-dominio.com/
+#      (esta ruta "/" es la que Google va a rastrear).
+#   4. Ajusta los textos de contacto, teléfono, etc. con tus datos reales.
+# ============================================================
+
+PUBLIC_STYLE = """
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+    * { box-sizing: border-box; font-family: 'Inter', sans-serif; margin:0; padding:0; }
+    body { background:#f7f9fc; color:#1f2937; line-height:1.7; }
+    header.pub-header {
+        background: linear-gradient(135deg,#002B5B 0%,#0057A8 100%);
+        color:white; padding: 20px 24px; display:flex; align-items:center;
+        justify-content:space-between; flex-wrap:wrap; gap:12px;
+    }
+    header.pub-header .brand { display:flex; align-items:center; gap:12px; font-weight:800; font-size:1.15rem; }
+    header.pub-header .brand img { height:40px; border-radius:6px; }
+    header.pub-header nav a {
+        color:white; text-decoration:none; font-weight:600; font-size:0.92rem;
+        margin-left:20px; opacity:0.9;
+    }
+    header.pub-header nav a:hover { opacity:1; text-decoration:underline; }
+    .pub-hero {
+        max-width: 960px; margin: 0 auto; padding: 56px 24px 32px; text-align:center;
+    }
+    .pub-hero h1 { font-size:2.1rem; font-weight:800; color:#002B5B; margin-bottom:14px; }
+    .pub-hero p.lead { font-size:1.05rem; color:#4b5563; max-width:680px; margin:0 auto 24px; }
+    .pub-hero .cta {
+        display:inline-block; background:linear-gradient(135deg,#002B5B,#0057A8); color:white;
+        padding:14px 32px; border-radius:10px; font-weight:700; text-decoration:none;
+        box-shadow:0 6px 18px rgba(0,43,91,0.25);
+    }
+    .pub-section { max-width: 860px; margin: 0 auto; padding: 32px 24px; }
+    .pub-section h2 { font-size:1.4rem; font-weight:800; color:#002B5B; margin-bottom:14px; }
+    .pub-section p { color:#374151; margin-bottom:14px; font-size:0.98rem; }
+    .pub-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:20px; margin-top:20px; }
+    .pub-card {
+        background:white; border-radius:14px; padding:22px; box-shadow:0 4px 16px rgba(0,43,91,0.07);
+        border-top:4px solid #0057A8;
+    }
+    .pub-card h3 { font-size:1.02rem; color:#002B5B; margin-bottom:8px; }
+    .pub-card p { font-size:0.9rem; color:#6b7280; margin:0; }
+    .ad-slot { max-width:860px; margin:24px auto; padding:0 24px; }
+    footer.pub-footer {
+        background:#002B5B; color:#cfe0ff; text-align:center; padding:28px 16px; margin-top:40px; font-size:0.85rem;
+    }
+    footer.pub-footer a { color:#9dc0ff; text-decoration:none; margin:0 10px; }
+    footer.pub-footer a:hover { text-decoration:underline; }
+</style>
+"""
+
+ADSENSE_HEAD_SCRIPT = """
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX"
+        crossorigin="anonymous"></script>
+"""
+
+ADSENSE_UNIT = """
+<ins class="adsbygoogle"
+     style="display:block;"
+     data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
+     data-ad-slot="YYYYYYYYYY"
+     data-ad-format="auto"
+     data-full-width-responsive="true"></ins>
+<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+"""
+
+
+@router.get("/", response_class=HTMLResponse)
+async def landing_publica():
+    return f"""
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Carrier Transicold – Sistema de Gestión de Flota Refrigerada</title>
+        <meta name="description" content="Plataforma de gestión operativa para flotas de transporte refrigerado: control de mantenimiento, inventario, asignaciones técnicas y diagnóstico de alarmas Carrier Transicold.">
+        {PUBLIC_STYLE}
+        {ADSENSE_HEAD_SCRIPT}
+    </head>
+    <body>
+        <header class="pub-header">
+            <div class="brand">
+                <img src="https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo.jpg" alt="Carrier Transicold">
+                Sistema Operativo Carrier Transicold
+            </div>
+            <nav>
+                <a href="/">Inicio</a>
+                <a href="/nosotros">Nosotros</a>
+                <a href="/privacidad">Privacidad</a>
+                <a href="/app">Iniciar sesión</a>
+            </nav>
+        </header>
+
+        <section class="pub-hero">
+            <h1>Gestión inteligente de flotas de transporte refrigerado</h1>
+            <p class="lead">
+                Coordinamos el mantenimiento, la asignación de técnicos y el control de calidad de
+                unidades reefer Carrier Transicold desde una sola plataforma: menos tiempo muerto,
+                más trazabilidad y decisiones basadas en datos reales de campo.
+            </p>
+            <a class="cta" href="/app">Acceder al sistema</a>
+        </section>
+
+        <div class="ad-slot">
+            {ADSENSE_UNIT}
+        </div>
+
+        <section class="pub-section">
+            <h2>¿Qué hace esta plataforma?</h2>
+            <p>
+                Nuestro sistema centraliza el ciclo completo de mantenimiento de unidades de
+                refrigeración transportable: desde el registro de series y componentes (VIN,
+                compresor, motor, evaporadores) hasta la asignación de actividades a técnicos en
+                campo, pasando por el control de tickets de servicio, evidencias fotográficas y
+                reportes ejecutivos de avance por lote.
+            </p>
+            <p>
+                Está pensado para equipos de operaciones que necesitan visibilidad en tiempo real
+                sobre el estado de cada unidad — pendiente, en proceso o completada — sin depender
+                de hojas de cálculo dispersas ni reportes manuales.
+            </p>
+
+            <div class="pub-grid">
+                <div class="pub-card">
+                    <h3>📋 Control de asignaciones</h3>
+                    <p>Distribuye actividades de mantenimiento entre técnicos y da seguimiento a cada tarea hasta su cierre.</p>
+                </div>
+                <div class="pub-card">
+                    <h3>🎫 Gestión de tickets</h3>
+                    <p>Registra incidencias por unidad, asigna responsables y documenta el reporte final de cada caso.</p>
+                </div>
+                <div class="pub-card">
+                    <h3>📦 Inventario y series</h3>
+                    <p>Lleva control detallado de componentes clave: VIN, compresores, motores, evaporadores y generadores.</p>
+                </div>
+                <div class="pub-card">
+                    <h3>📍 Asistencia con geolocalización</h3>
+                    <p>Registro de entrada y salida de técnicos con verificación de ubicación y foto de confirmación.</p>
+                </div>
+                <div class="pub-card">
+                    <h3>🔔 Diagnóstico de alarmas</h3>
+                    <p>Consulta rápida de códigos de alarma Carrier Transicold con causas, reset y acciones correctivas.</p>
+                </div>
+                <div class="pub-card">
+                    <h3>📊 Reportes ejecutivos</h3>
+                    <p>Dashboards con avance por lote, distribución de carga técnica y exportación a Excel.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="pub-section">
+            <h2>Sobre este proyecto</h2>
+            <p>
+                Este sistema nació de la necesidad real de digitalizar procesos de mantenimiento
+                que antes se gestionaban de forma manual, con el objetivo de reducir errores,
+                acelerar la entrega de unidades y dar trazabilidad completa a cada intervención
+                técnica sobre equipos de refrigeración transportable.
+            </p>
+        </section>
+
+        <footer class="pub-footer">
+            <p>© 2026 Carrier Transicold — Sistema Operativo</p>
+            <p><a href="/privacidad">Política de privacidad</a> · <a href="/nosotros">Nosotros</a> · <a href="/app">Iniciar sesión</a></p>
+        </footer>
+    </body>
+    </html>
+    """
+
+
+@router.get("/nosotros", response_class=HTMLResponse)
+async def pagina_nosotros():
+    return f"""
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Nosotros – Carrier Transicold</title>
+        {PUBLIC_STYLE}
+        {ADSENSE_HEAD_SCRIPT}
+    </head>
+    <body>
+        <header class="pub-header">
+            <div class="brand">
+                <img src="https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo.jpg" alt="Carrier Transicold">
+                Sistema Operativo Carrier Transicold
+            </div>
+            <nav>
+                <a href="/">Inicio</a>
+                <a href="/nosotros">Nosotros</a>
+                <a href="/privacidad">Privacidad</a>
+                <a href="/app">Iniciar sesión</a>
+            </nav>
+        </header>
+
+        <section class="pub-section" style="padding-top:48px;">
+            <h2>Quiénes somos</h2>
+            <p>
+                Somos un equipo de operaciones dedicado al mantenimiento de unidades de
+                refrigeración transportable Carrier Transicold. Esta plataforma es una
+                herramienta interna que hemos abierto parcialmente al público para explicar
+                nuestro proceso de trabajo y las buenas prácticas que aplicamos en el
+                mantenimiento de equipos reefer.
+            </p>
+            <p>
+                Trabajamos con lotes de unidades organizadas por número económico, dando
+                seguimiento a cada actividad —desde el cableado inicial hasta la revisión
+                final de fugas y vacío— con técnicos certificados en campo.
+            </p>
+
+            <h2 style="margin-top:32px;">Buenas prácticas de mantenimiento reefer</h2>
+            <p>
+                El mantenimiento preventivo de unidades de refrigeración transportable reduce
+                significativamente las fallas en ruta. Algunas prácticas que seguimos:
+            </p>
+            <div class="pub-grid">
+                <div class="pub-card">
+                    <h3>🔍 Inspección de fugas</h3>
+                    <p>Revisión periódica del sistema de refrigerante para detectar fugas antes de que afecten el rendimiento térmico.</p>
+                </div>
+                <div class="pub-card">
+                    <h3>🌡 Verificación de vacío</h3>
+                    <p>Comprobación del vacío del sistema tras cualquier intervención, evitando humedad residual en el circuito.</p>
+                </div>
+                <div class="pub-card">
+                    <h3>🔌 Cableado y conexiones</h3>
+                    <p>Revisión de arneses y conexiones eléctricas, puntos frecuentes de falla por vibración en ruta.</p>
+                </div>
+                <div class="pub-card">
+                    <h3>📟 Diagnóstico de alarmas</h3>
+                    <p>Interpretación temprana de códigos de alarma para actuar antes de que la unidad quede fuera de servicio.</p>
+                </div>
+            </div>
+        </section>
+
+        <div class="ad-slot">
+            {ADSENSE_UNIT}
+        </div>
+
+        <footer class="pub-footer">
+            <p>© 2026 Carrier Transicold — Sistema Operativo</p>
+            <p><a href="/privacidad">Política de privacidad</a> · <a href="/">Inicio</a> · <a href="/app">Iniciar sesión</a></p>
+        </footer>
+    </body>
+    </html>
+    """
+
+
+@router.get("/privacidad", response_class=HTMLResponse)
+async def politica_privacidad():
+    return f"""
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Política de Privacidad – Carrier Transicold</title>
+        {PUBLIC_STYLE}
+    </head>
+    <body>
+        <header class="pub-header">
+            <div class="brand">
+                <img src="https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo.jpg" alt="Carrier Transicold">
+                Sistema Operativo Carrier Transicold
+            </div>
+            <nav>
+                <a href="/">Inicio</a>
+                <a href="/nosotros">Nosotros</a>
+                <a href="/privacidad">Privacidad</a>
+                <a href="/app">Iniciar sesión</a>
+            </nav>
+        </header>
+
+        <section class="pub-section" style="padding-top:48px;">
+            <h2>Política de Privacidad</h2>
+            <p><em>Última actualización: julio de 2026</em></p>
+
+            <p>
+                Esta política describe cómo se recopila y utiliza la información en el sitio web
+                y sistema operativo de Carrier Transicold ("nosotros", "el sistema").
+            </p>
+
+            <h2 style="margin-top:28px;font-size:1.15rem;">Información que recopilamos</h2>
+            <p>
+                El acceso a las páginas públicas de este sitio (inicio, nosotros) no requiere
+                registro ni recopila datos personales más allá de los generados automáticamente
+                por tu navegador (como dirección IP y tipo de dispositivo) con fines estadísticos
+                y de seguridad.
+            </p>
+            <p>
+                El sistema operativo interno (accesible mediante inicio de sesión) recopila datos
+                estrictamente necesarios para su funcionamiento: nombre de usuario, registros de
+                actividad, asignaciones de mantenimiento y, en el módulo de asistencia, ubicación
+                geográfica aproximada y fotografía de verificación al momento de registrar entrada
+                o salida. Estos datos se usan únicamente para fines operativos internos y no se
+                comparten con terceros.
+            </p>
+
+            <h2 style="margin-top:28px;font-size:1.15rem;">Cookies y publicidad</h2>
+            <p>
+                Este sitio puede mostrar anuncios provistos por Google AdSense. Google, como
+                proveedor externo, utiliza cookies para publicar anuncios basados en visitas
+                previas de un usuario a este u otros sitios web. El uso de la cookie de
+                publicidad de Google permite a Google y sus socios publicar anuncios basados en
+                la visita de los usuarios a este sitio y/o a otros sitios de Internet.
+            </p>
+            <p>
+                Los usuarios pueden inhabilitar la publicidad personalizada visitando la
+                <a href="https://adssettings.google.com/" target="_blank" rel="noopener">
+                    Configuración de anuncios de Google</a>.
+            </p>
+
+            <h2 style="margin-top:28px;font-size:1.15rem;">Contacto</h2>
+            <p>
+                Si tienes dudas sobre esta política de privacidad, puedes contactarnos a través
+                de los canales indicados en la sección "Nosotros" de este sitio.
+            </p>
+        </section>
+
+        <footer class="pub-footer">
+            <p>© 2026 Carrier Transicold — Sistema Operativo</p>
+            <p><a href="/">Inicio</a> · <a href="/nosotros">Nosotros</a> · <a href="/app">Iniciar sesión</a></p>
+        </footer>
+    </body>
+    </html>
+    """
