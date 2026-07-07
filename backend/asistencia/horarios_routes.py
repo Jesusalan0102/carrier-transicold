@@ -572,6 +572,68 @@ def confirmar_importacion(payload: ConfirmarImportacion, current_user=Depends(ve
     return {"ok": True, "guardados": guardados, "eliminados": eliminados}
 
 
+# ── Comentarios semanales de asistencia ─────────────────────────────────────
+
+class ComentarioItem(BaseModel):
+    username: str
+    comentario: str = ""
+
+
+class ComentariosBatch(BaseModel):
+    semana: str
+    comentarios: List[ComentarioItem]
+
+
+@router.get("/comentarios")
+def get_comentarios(
+    semana: str = Query(...),
+    current_user=Depends(verify_token)
+):
+    if current_user["role"] not in ("admin", "visor"):
+        raise HTTPException(status_code=403, detail="Solo administradores o visores")
+
+    rows = execute_read(
+        "SELECT username, comentario FROM comentarios_asistencia WHERE semana=%s",
+        (semana,)
+    ) or []
+    return {r["username"]: r["comentario"] for r in rows}
+
+
+@router.post("/comentarios")
+def save_comentarios(payload: ComentariosBatch, current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+
+    guardados = 0
+    for item in payload.comentarios:
+        texto = (item.comentario or "").strip()
+        existente = execute_read(
+            "SELECT id FROM comentarios_asistencia WHERE username=%s AND semana=%s",
+            (item.username, payload.semana)
+        )
+        if not texto:
+            if existente:
+                execute_write(
+                    "DELETE FROM comentarios_asistencia WHERE username=%s AND semana=%s",
+                    (item.username, payload.semana)
+                )
+                guardados += 1
+            continue
+        if existente:
+            execute_write(
+                "UPDATE comentarios_asistencia SET comentario=%s WHERE username=%s AND semana=%s",
+                (texto, item.username, payload.semana)
+            )
+        else:
+            execute_write(
+                "INSERT INTO comentarios_asistencia (username, semana, comentario) VALUES (%s,%s,%s)",
+                (item.username, payload.semana, texto)
+            )
+        guardados += 1
+
+    return {"ok": True, "guardados": guardados}
+
+
 # ── GET /api/horarios/hoy ──────────────────────────────────────────────────────
 
 @router.get("/hoy")
