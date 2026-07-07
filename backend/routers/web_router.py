@@ -3625,7 +3625,7 @@ async def asistencia_admin():
             const tecnicos = [...new Set(resumen.map(r=>r.username))].sort();
             let html = '<table class="horario-tbl"><thead><tr><th>Técnico</th>';
             fechas.forEach((f,i) => { html += `<th>${diasSemana[i]}<br><small style="font-weight:400;opacity:.8;">${f.slice(5)}</small></th>`; });
-            html += '<th>Hrs. trabajadas</th></tr></thead><tbody>';
+            html += '<th>Hrs. trabajadas</th><th>Horas extra</th></tr></thead><tbody>';
             tecnicos.forEach(tec => {
                 const filas = resumen.filter(r=>r.username===tec);
                 let totalHrs = 0;
@@ -3640,7 +3640,12 @@ async def asistencia_admin():
                     const ret = r.retardo_min > 0 ? `<br><small style="color:#d97706;">+${r.retardo_min}min retardo</small>` : '';
                     html += `<td>${badge}${detalle}${ret}</td>`;
                 });
-                html += `<td><b>${totalHrs.toFixed(1)} h</b></td></tr>`;
+                // Jornada ordinaria semanal = 48 h (LFT). Todo lo que exceda cuenta como hora extra.
+                const horasExtra = Math.max(0, totalHrs - 48);
+                const extraTxt = horasExtra > 0
+                    ? `<b style="color:#d97706;">+${horasExtra.toFixed(1)} h</b>`
+                    : `<span style="color:#9ca3af;">—</span>`;
+                html += `<td><b>${totalHrs.toFixed(1)} h</b></td><td>${extraTxt}</td></tr>`;
             });
             html += '</tbody></table>';
             document.getElementById('resumenSemanal').innerHTML = html;
