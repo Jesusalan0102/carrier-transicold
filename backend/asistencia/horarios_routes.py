@@ -15,6 +15,7 @@ from datetime import date, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from auth import verify_token
@@ -810,3 +811,171 @@ def get_resumen(
             })
 
     return resultado
+
+
+# ── GET /api/horarios/resumen/excel ─────────────────────────────────────────────
+# Exporta el Resumen Semanal de Asistencia como archivo .xlsx (en vez de imagen).
+# Reutiliza get_resumen() y get_comentarios() para garantizar exactamente los
+# mismos datos que se muestran en la tabla del navegador.
+
+DIAS_SEMANA_XLSX = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"]
+
+ESTADO_LABEL_XLSX = {
+    "completo":    "Completo",
+    "retardo":     "Retardo",
+    "ausente":     "Ausente",
+    "libre":       "Libre",
+    "sin_salida":  "Sin salida",
+    "sin_entrada": "Sin entrada",
+}
+
+
+@router.get("/resumen/excel")
+def exportar_resumen_semanal_excel(
+    semana: str = Query(...),
+    current_user=Depends(verify_token)
+):
+    if current_user["role"] not in ("admin", "visor"):
+        raise HTTPException(status_code=403, detail="Solo administradores o visores")
+
+    try:
+        lunes = date.fromisoformat(semana)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Formato de semana inválido, debe ser YYYY-MM-DD")
+
+    try:
+        import openpyxl
+        from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        raise HTTPException(status_code=500, detail="openpyxl no instalado. Agrega 'openpyxl' a requirements.txt")
+
+    resumen = get_resumen(semana=semana, current_user=current_user)
+    comentarios = get_comentarios(semana=semana, current_user=current_user)
+
+    fechas = [(lunes + timedelta(days=i)).isoformat() for i in range(6)]
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Resumen Semanal"
+
+    header_fill = PatternFill(start_color="002B5B", end_color="002B5B", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True, size=11)
+    thin = Side(style="thin", color="D1D5DB")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    left = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
+    ESTADO_FILL = {
+        "completo":    PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid"),
+        "retardo":     PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid"),
+        "ausente":     PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid"),
+        "libre":       PatternFill(start_color="F3F4F6", end_color="F3F4F6", fill_type="solid"),
+        "sin_salida":  PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid"),
+        "sin_entrada": PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid"),
+    }
+
+    # ── Encabezados ──────────────────────────────────────────────────────────
+    headers = ["Técnico"]
+    for i, f in enumerate(fechas):
+        headers.append(f"{DIAS_SEMANA_XLSX[i]}\n{f[5:]}")
+    headers += ["Hrs. trabajadas", "Horas extra", "Retardos", "Comentarios"]
+
+    for col, titulo in enumerate(headers, start=1):
+        c = ws.cell(row=1, column=col, value=titulo)
+        c.fill = header_fill
+        c.font = header_font
+        c.alignment = center
+        c.border = border
+    ws.row_dimensions[1].height = 32
+    ws.freeze_panes = "A2"
+
+    # ── Datos ────────────────────────────────────────────────────────────────
+    tecnicos = sorted({r["username"] for r in resumen})
+    row_idx = 2
+    for tec in tecnicos:
+        filas = [r for r in resumen if r["username"] == tec]
+        total_hrs = 0.0
+        num_retardos = 0
+        min_retardos = 0
+        for r in filas:
+            if r.get("retardo_min"):
+                if r["retardo_min"] > 0:
+                    num_retardos += 1
+                    min_retardos += r["retardo_min"]
+
+        col = 1
+        c = ws.cell(row=row_idx, column=col, value=tec)
+        c.border = border
+        c.alignment = left
+        c.font = Font(bold=True)
+
+        for f in fechas:
+            col += 1
+            r = next((x for x in filas if x["fecha"] == f), None)
+            if not r:
+                c = ws.cell(row=row_idx, column=col, value="Libre")
+                c.fill = ESTADO_FILL["libre"]
+            else:
+                if r.get("horas_trabajadas"):
+                    total_hrs += float(r["horas_trabajadas"])
+                estado = r["estado"]
+                label = ESTADO_LABEL_XLSX.get(estado, estado)
+                detalle = ""
+                if r.get("hora_entrada_real") or r.get("hora_salida_real"):
+                    detalle = f"\n{r.get('hora_entrada_real') or '—'} → {r.get('hora_salida_real') or '—'}"
+                ret_txt = f"\n+{r['retardo_min']}min retardo" if r.get("retardo_min") and r["retardo_min"] > 0 else ""
+                c = ws.cell(row=row_idx, column=col, value=f"{label}{detalle}{ret_txt}")
+                c.fill = ESTADO_FILL.get(estado, ESTADO_FILL["libre"])
+            c.border = border
+            c.alignment = center
+
+        horas_extra = max(0.0, total_hrs - 48)
+        col += 1
+        c = ws.cell(row=row_idx, column=col, value=round(total_hrs, 1))
+        c.border = border
+        c.alignment = center
+        c.font = Font(bold=True)
+
+        col += 1
+        c = ws.cell(row=row_idx, column=col, value=round(horas_extra, 1) if horas_extra > 0 else "—")
+        c.border = border
+        c.alignment = center
+        if horas_extra > 0:
+            c.font = Font(color="D97706", bold=True)
+
+        col += 1
+        if num_retardos > 0:
+            c = ws.cell(row=row_idx, column=col, value=f"{num_retardos} ({min_retardos} min)")
+            c.fill = ESTADO_FILL["retardo"]
+        else:
+            c = ws.cell(row=row_idx, column=col, value="—")
+        c.border = border
+        c.alignment = center
+
+        col += 1
+        c = ws.cell(row=row_idx, column=col, value=comentarios.get(tec, "") or "")
+        c.border = border
+        c.alignment = left
+
+        row_idx += 1
+
+    # ── Anchos de columna ────────────────────────────────────────────────────
+    ws.column_dimensions[get_column_letter(1)].width = 18
+    for i in range(2, 2 + len(fechas)):
+        ws.column_dimensions[get_column_letter(i)].width = 20
+    ws.column_dimensions[get_column_letter(2 + len(fechas))].width = 16
+    ws.column_dimensions[get_column_letter(3 + len(fechas))].width = 14
+    ws.column_dimensions[get_column_letter(4 + len(fechas))].width = 16
+    ws.column_dimensions[get_column_letter(5 + len(fechas))].width = 30
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"resumen_semanal_asistencia_{semana}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )

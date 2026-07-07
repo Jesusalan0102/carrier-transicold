@@ -3337,7 +3337,6 @@ async def asistencia_admin():
     contenido = """
     <script>if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; }</script>
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <style>
         .tab-btn { background:white; border:1.5px solid #e5e7eb; border-radius:10px; padding:10px 24px; font-weight:600; font-size:.9rem; color:#6b7280; cursor:pointer; transition:.2s; }
         .tab-btn.active { background:#002B5B; color:white; border-color:#002B5B; }
@@ -3409,7 +3408,7 @@ async def asistencia_admin():
 
         <div style="display:flex; align-items:center; justify-content:space-between; margin-top:32px; flex-wrap:wrap; gap:10px;">
             <div class="section-title" style="margin:0;">📊 Resumen Semanal de Asistencia</div>
-            <button class="btn-primary" style="width:auto; padding:8px 18px; font-size:.85rem;" onclick="exportarResumenSemanalImagen()">🖼️ Exportar Imagen</button>
+            <button class="btn-primary" style="width:auto; padding:8px 18px; font-size:.85rem;" onclick="exportarResumenSemanalExcel()">📊 Exportar Excel</button>
         </div>
         <div id="resumenSemanalWrap" style="overflow-x:auto; background:white; padding:4px;">
             <div id="resumenSemanal" style="overflow-x:auto;"></div>
@@ -3673,25 +3672,35 @@ async def asistencia_admin():
             document.getElementById('resumenSemanal').innerHTML = html;
         }
 
-        async function exportarResumenSemanalImagen() {
+        async function exportarResumenSemanalExcel() {
             const el = document.getElementById('resumenSemanalWrap');
             if (!el || !el.querySelector('table')) {
                 alert('No hay datos de resumen semanal para exportar.');
+                return;
+            }
+            const semana = document.getElementById('semanaInput').value;
+            if (!semana) {
+                alert('Selecciona primero la semana.');
                 return;
             }
             const btn = event && event.target ? event.target.closest('button') : null;
             const textoOriginal = btn ? btn.innerHTML : null;
             if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Generando...'; }
             try {
-                const canvas = await html2canvas(el, { backgroundColor: '#ffffff', scale: 2, useCORS: true });
-                const semana = document.getElementById('semanaInput').value || 'semana';
+                const res = await fetchAuth(`/api/horarios/resumen/excel?semana=${semana}`);
+                if (!res.ok) throw new Error('Respuesta no exitosa del servidor');
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
                 const link = document.createElement('a');
-                link.download = `resumen_semanal_asistencia_${semana}.png`;
-                link.href = canvas.toDataURL('image/png');
+                link.href = url;
+                link.download = `resumen_semanal_asistencia_${semana}.xlsx`;
+                document.body.appendChild(link);
                 link.click();
+                link.remove();
+                window.URL.revokeObjectURL(url);
             } catch (e) {
-                console.error('Error exportando imagen del resumen semanal:', e);
-                alert('No se pudo generar la imagen. Intenta nuevamente.');
+                console.error('Error exportando Excel del resumen semanal:', e);
+                alert('No se pudo generar el Excel. Intenta nuevamente.');
             } finally {
                 if (btn) { btn.disabled = false; btn.innerHTML = textoOriginal; }
             }
