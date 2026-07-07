@@ -3572,14 +3572,16 @@ async def asistencia_admin():
             const semana = document.getElementById('semanaInput').value;
             if (!semana) return;
             try {
-                const [tecRes, horRes, resRes] = await Promise.all([
+                const [tecRes, horRes, resRes, comRes] = await Promise.all([
                     fetchAuth('/api/usuarios/'),
                     fetchAuth(`/api/horarios/?semana=${semana}`),
-                    fetchAuth(`/api/horarios/resumen?semana=${semana}`)
+                    fetchAuth(`/api/horarios/resumen?semana=${semana}`),
+                    fetchAuth(`/api/horarios/comentarios?semana=${semana}`)
                 ]);
                 const tecRaw = await tecRes.json(); tecnicosData = (Array.isArray(tecRaw) ? tecRaw : []).filter(u => u.role === 'tecnico');
                 const horarios = await horRes.json();
                 const resumen = await resRes.json();
+                const comentarios = comRes.ok ? await comRes.json() : {};
 
                 horariosData = {};
                 horarios.forEach(h => { horariosData[h.username+'_'+h.fecha] = h; });
@@ -3607,7 +3609,7 @@ async def asistencia_admin():
                 document.getElementById('tablaHorarios').innerHTML = html;
 
                 // Tabla de resumen de asistencia real
-                renderResumen(resumen, fechas);
+                renderResumen(resumen, fechas, comentarios, semana);
 
             } catch(e) {
                 console.error('Error cargando horarios:', e);
@@ -3615,7 +3617,8 @@ async def asistencia_admin():
             }
         }
 
-        function renderResumen(resumen, fechas) {
+        function renderResumen(resumen, fechas, comentarios, semana) {
+            comentarios = comentarios || {};
             if (!resumen.length) {
                 document.getElementById('resumenSemanal').innerHTML = '<p style="color:#6b7280; padding:12px;">No hay registros de asistencia para esta semana.</p>';
                 return;
@@ -3625,7 +3628,7 @@ async def asistencia_admin():
             const tecnicos = [...new Set(resumen.map(r=>r.username))].sort();
             let html = '<table class="horario-tbl"><thead><tr><th>Técnico</th>';
             fechas.forEach((f,i) => { html += `<th>${diasSemana[i]}<br><small style="font-weight:400;opacity:.8;">${f.slice(5)}</small></th>`; });
-            html += '<th>Hrs. trabajadas</th><th>Horas extra</th></tr></thead><tbody>';
+            html += '<th>Hrs. trabajadas</th><th>Horas extra</th><th>Comentarios</th></tr></thead><tbody>';
             tecnicos.forEach(tec => {
                 const filas = resumen.filter(r=>r.username===tec);
                 let totalHrs = 0;
@@ -3645,10 +3648,40 @@ async def asistencia_admin():
                 const extraTxt = horasExtra > 0
                     ? `<b style="color:#d97706;">+${horasExtra.toFixed(1)} h</b>`
                     : `<span style="color:#9ca3af;">—</span>`;
-                html += `<td><b>${totalHrs.toFixed(1)} h</b></td><td>${extraTxt}</td></tr>`;
+                const comentarioVal = (comentarios[tec] || '').replace(/"/g, '&quot;');
+                html += `<td><b>${totalHrs.toFixed(1)} h</b></td><td>${extraTxt}</td>`;
+                html += `<td><textarea class="coment-input" data-user="${tec}" data-semana="${semana}"
+                            placeholder="Sin comentarios..."
+                            style="width:160px;min-height:44px;font-size:0.8rem;padding:6px;border:1px solid #e2e8f0;border-radius:8px;resize:vertical;font-family:inherit;"
+                            onblur="guardarComentario(this)">${comentarioVal}</textarea></td></tr>`;
             });
             html += '</tbody></table>';
             document.getElementById('resumenSemanal').innerHTML = html;
+        }
+
+        let _comentarioTimers = {};
+        async function guardarComentario(el) {
+            const username = el.dataset.user;
+            const semana = el.dataset.semana;
+            const comentario = el.value;
+            const key = username + '_' + semana;
+            // pequeño feedback visual mientras guarda
+            el.style.borderColor = '#93c5fd';
+            try {
+                const res = await fetchAuth('/api/horarios/comentarios', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({ semana, comentarios: [{ username, comentario }] })
+                });
+                if (res.ok) {
+                    el.style.borderColor = '#86efac';
+                } else {
+                    el.style.borderColor = '#fca5a5';
+                }
+            } catch(e) {
+                el.style.borderColor = '#fca5a5';
+            }
+            setTimeout(() => { el.style.borderColor = '#e2e8f0'; }, 1200);
         }
 
         async function guardarHorarios() {
