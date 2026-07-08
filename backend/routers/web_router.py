@@ -741,25 +741,36 @@ async def dashboard():
         .sched-toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
         .sched-toolbar select { width:auto; margin-bottom:0; min-width:170px; }
         .sched-toolbar .btn-primary, .sched-toolbar .btn-success { width:auto; padding:11px 18px; font-size:0.85rem; }
-        .sched-scroll { overflow-x:auto; border:1px solid var(--border-color); border-radius:10px; }
-        table.sched-tbl { border-collapse:separate; border-spacing:0; font-size:0.74rem; min-width:1400px; background:var(--bg-surface); }
-        table.sched-tbl th, table.sched-tbl td { border-right:1px solid var(--border-color-soft); border-bottom:1px solid var(--border-color-soft); padding:0; white-space:nowrap; }
+        .sched-scroll { overflow:auto; border:1px solid var(--border-color); border-radius:10px; max-height:65vh; }
+        #schedFullscreenWrap.sched-fullscreen-active .sched-scroll { max-height:none; }
+        table.sched-tbl { border-collapse:separate; border-spacing:0; font-size:0.74rem; min-width:1400px; background:var(--bg-surface); table-layout:fixed; }
+        table.sched-tbl th, table.sched-tbl td { border-right:1px solid var(--border-color-soft); border-bottom:1px solid var(--border-color-soft); padding:0; white-space:nowrap; overflow:hidden; }
         table.sched-tbl thead th { background:var(--carrier-blue); color:white; padding:8px 6px; font-weight:700; text-align:center; position:sticky; top:0; z-index:2; }
         body.theme-dark table.sched-tbl thead th { background:#0a1830; }
         table.sched-tbl thead th.weekend-hdr { background:#111827; }
         table.sched-tbl td.weekend-cell { background:#111827; }
         table.sched-tbl td.sticky-col, table.sched-tbl th.sticky-col { position:sticky; left:0; z-index:1; background:var(--bg-surface); }
         table.sched-tbl th.sticky-col { z-index:3; }
-        table.sched-tbl .cell-input { width:100%; height:100%; border:none; border-radius:0; margin:0; padding:6px 8px; font-size:0.74rem; background:transparent; color:var(--text-primary); min-width:90px; }
+        table.sched-tbl .cell-input { width:100%; height:100%; border:none; border-radius:0; margin:0; padding:6px 8px; font-size:0.74rem; background:transparent; color:var(--text-primary); box-sizing:border-box; }
         table.sched-tbl .cell-input:focus { outline:2px solid var(--carrier-accent); outline-offset:-2px; box-shadow:none; }
-        table.sched-tbl .day-input { width:34px; min-width:34px; text-align:center; padding:6px 2px; }
-        table.sched-tbl .qty-input { width:52px; min-width:52px; text-align:center; }
-        table.sched-tbl .model-input { min-width:100px; }
-        table.sched-tbl .owner-input { min-width:170px; color:var(--carrier-blue); font-weight:700; }
+        table.sched-tbl .day-input { text-align:center; padding:6px 2px; }
+        table.sched-tbl .qty-input { text-align:center; }
+        table.sched-tbl .col-resizer { position:absolute; right:0; top:0; bottom:0; width:6px; cursor:col-resize; z-index:4; }
+        table.sched-tbl .col-resizer:hover, table.sched-tbl .col-resizer.resizing { background:rgba(255,255,255,0.35); }
+
+        /* ── Ver tabla completa (pantalla ampliada) ───────────────────────── */
+        #schedFullscreenWrap.sched-fullscreen-active {
+            position:fixed; inset:0; z-index:5000; background:var(--bg-surface);
+            padding:18px; margin:0; display:flex; flex-direction:column; border-radius:0;
+        }
+        #schedFullscreenWrap.sched-fullscreen-active .sched-scroll { flex:1; }
+        .sched-fs-btn { margin-left:auto; }
+        table.sched-tbl .model-input { }
+        table.sched-tbl .owner-input { color:var(--carrier-blue); font-weight:700; }
         body.theme-dark table.sched-tbl .owner-input { color:#5b9bf0; }
-        table.sched-tbl .notes-input { min-width:150px; background:#fdebd3; }
+        table.sched-tbl .notes-input { background:#fdebd3; }
         body.theme-dark table.sched-tbl .notes-input { background:#3a2c15; }
-        table.sched-tbl .lote-input { min-width:70px; text-align:center; font-weight:700; color:var(--carrier-success); }
+        table.sched-tbl .lote-input { text-align:center; font-weight:700; color:var(--carrier-success); }
         table.sched-tbl .lote-input.mismatch { color:var(--carrier-warn); }
         table.sched-tbl .del-row-btn { background:none; border:none; color:var(--carrier-danger); cursor:pointer; font-size:0.95rem; padding:6px; }
         table.sched-tbl .del-row-btn:hover { opacity:0.7; }
@@ -805,18 +816,22 @@ async def dashboard():
     </div><!-- /tabPanelDashboard -->
 
     <div class="tab-panel" id="tabPanelSchedule">
+      <div id="schedFullscreenWrap">
         <div class="sched-toolbar">
             <select id="schedMesSelect" onchange="cambiarMesSchedule()"></select>
             <button class="btn-primary admin-only" onclick="nuevoMesSchedule()">🗓️ Nuevo mes</button>
             <button class="btn-success admin-only" onclick="agregarFilaSchedule()">➕ Agregar línea</button>
             <span id="schedGuardando" style="font-size:0.78rem;color:var(--text-secondary);"></span>
+            <button class="btn-primary sched-fs-btn" id="schedFsBtn" onclick="toggleSchedFullscreen()">⛶ Ver tabla completa</button>
         </div>
         <div class="sched-scroll">
             <table class="sched-tbl" id="schedTabla">
+                <colgroup id="schedColgroup"></colgroup>
                 <thead><tr id="schedTheadRow"></tr></thead>
                 <tbody id="schedTbody"></tbody>
             </table>
         </div>
+      </div>
     </div><!-- /tabPanelSchedule -->
 
     </div><!-- /tab-panels-wrap -->
@@ -985,6 +1000,60 @@ async def dashboard():
         let schedFilas = [];
         let schedMesActual = null;
         const MESES_ES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+        const SCHED_COL_DEFAULTS = {
+            line:60, owner:190, size:64, tipo:96, brand:110, notes:170, qty:60, model:120, lote:85
+        };
+        let schedColWidths = {};
+        try {
+            schedColWidths = JSON.parse(localStorage.getItem('sched_col_widths_v1') || '{}');
+        } catch (e) { schedColWidths = {}; }
+
+        function schedAnchoCol(key) {
+            return schedColWidths[key] || SCHED_COL_DEFAULTS[key] || 36;
+        }
+        function schedGuardarAnchos() {
+            try { localStorage.setItem('sched_col_widths_v1', JSON.stringify(schedColWidths)); } catch (e) {}
+        }
+
+        function toggleSchedFullscreen() {
+            const wrap = document.getElementById('schedFullscreenWrap');
+            const activo = wrap.classList.toggle('sched-fullscreen-active');
+            document.getElementById('schedFsBtn').textContent = activo ? '✕ Cerrar pantalla completa' : '⛶ Ver tabla completa';
+            document.body.style.overflow = activo ? 'hidden' : '';
+        }
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                const wrap = document.getElementById('schedFullscreenWrap');
+                if (wrap && wrap.classList.contains('sched-fullscreen-active')) toggleSchedFullscreen();
+            }
+        });
+
+        let schedResizeState = null;
+        function schedIniciarResize(e, key) {
+            e.preventDefault();
+            schedResizeState = { key, startX: e.clientX, startWidth: schedAnchoCol(key), el: e.target };
+            e.target.classList.add('resizing');
+            document.addEventListener('mousemove', schedDurranteResize);
+            document.addEventListener('mouseup', schedFinResize);
+        }
+        function schedDurranteResize(e) {
+            if (!schedResizeState) return;
+            const delta = e.clientX - schedResizeState.startX;
+            const nuevo = Math.max(28, schedResizeState.startWidth + delta);
+            schedColWidths[schedResizeState.key] = nuevo;
+            const col = document.querySelector('#schedColgroup col[data-col="' + schedResizeState.key + '"]');
+            if (col) col.style.width = nuevo + 'px';
+        }
+        function schedFinResize() {
+            if (schedResizeState && schedResizeState.el) schedResizeState.el.classList.remove('resizing');
+            schedResizeState = null;
+            schedGuardarAnchos();
+            document.removeEventListener('mousemove', schedDurranteResize);
+            document.removeEventListener('mouseup', schedFinResize);
+        }
+        function schedTh(key, label, extraClass) {
+            return `<th class="${extraClass || ''}" data-col="${key}">${label}<div class="col-resizer" onmousedown="schedIniciarResize(event,'${key}')"></div></th>`;
+        }
 
         function schedNombreMes(mesAnio) {
             const [y, m] = mesAnio.split('-').map(Number);
@@ -1058,29 +1127,48 @@ async def dashboard():
         function renderScheduleTabla() {
             if (!schedMesActual) return;
             const numDias = schedDiasDelMes(schedMesActual);
+            const ownerLeft = schedAnchoCol('line');
 
-            // ── Encabezado ──
-            let thead = `
-                <th class="sticky-col" style="min-width:60px;">LINE</th>
-                <th class="sticky-col" style="left:60px;min-width:170px;">OWNER</th>
-                <th style="min-width:60px;">SIZE</th>
-                <th style="min-width:90px;">TYPE</th>
-                <th style="min-width:80px;">Reefer/Heated Unit Brand</th>
-                <th style="min-width:150px;">Notes or Evaps</th>
-                <th style="min-width:52px;">Q'TY</th>
-                <th style="min-width:100px;">MODEL NO.</th>
-                <th style="min-width:70px;">LOTE</th>
+            // ── Colgroup (anchos de columnas, editables por arrastre) ──
+            let colgroup = `
+                <col data-col="line" style="width:${schedAnchoCol('line')}px;">
+                <col data-col="owner" style="width:${schedAnchoCol('owner')}px;">
+                <col data-col="size" style="width:${schedAnchoCol('size')}px;">
+                <col data-col="tipo" style="width:${schedAnchoCol('tipo')}px;">
+                <col data-col="brand" style="width:${schedAnchoCol('brand')}px;">
+                <col data-col="notes" style="width:${schedAnchoCol('notes')}px;">
+                <col data-col="qty" style="width:${schedAnchoCol('qty')}px;">
+                <col data-col="model" style="width:${schedAnchoCol('model')}px;">
+                <col data-col="lote" style="width:${schedAnchoCol('lote')}px;">
             `;
             for (let d = 1; d <= numDias; d++) {
-                const wknd = schedEsFinDeSemana(schedMesActual, d) ? ' weekend-hdr' : '';
-                thead += `<th class="${wknd}" style="min-width:34px;">${d}</th>`;
+                colgroup += `<col data-col="day_${d}" style="width:${schedAnchoCol('day_' + d)}px;">`;
             }
+            colgroup += `<col style="width:40px;">`;
+            document.getElementById('schedColgroup').innerHTML = colgroup;
+
+            // ── Encabezado ──
+            let thead = '';
+            thead += schedTh('line', 'LINE', 'sticky-col');
+            thead += schedTh('owner', 'OWNER', 'sticky-col').replace('<th class="sticky-col"', `<th class="sticky-col" style="left:${ownerLeft}px;"`);
+            thead += schedTh('size', 'SIZE');
+            thead += schedTh('tipo', 'TYPE');
+            thead += schedTh('brand', 'Reefer/Heated Unit Brand');
+            thead += schedTh('notes', 'Notes or Evaps');
+            thead += schedTh('qty', "Q'TY");
+            thead += schedTh('model', 'MODEL NO.');
+            thead += schedTh('lote', 'LOTE');
+            for (let d = 1; d <= numDias; d++) {
+                const wknd = schedEsFinDeSemana(schedMesActual, d) ? ' weekend-hdr' : '';
+                thead += schedTh('day_' + d, d, wknd);
+            }
+            thead += `<th></th>`;
             document.getElementById('schedTheadRow').innerHTML = thead;
 
             // ── Cuerpo ──
             if (!schedFilas.length) {
                 document.getElementById('schedTbody').innerHTML =
-                    `<tr><td colspan="${9 + numDias}" style="text-align:center;padding:24px;color:var(--text-secondary);">
+                    `<tr><td colspan="${10 + numDias}" style="text-align:center;padding:24px;color:var(--text-secondary);">
                         Sin líneas registradas para ${schedNombreMes(schedMesActual)}. Usa "➕ Agregar línea" para comenzar.
                     </td></tr>`;
                 return;
@@ -1102,12 +1190,12 @@ async def dashboard():
                     <td class="sticky-col">
                         <input class="cell-input" value="${f.linea || ''}" onchange="schedGuardarCampo(${f.id},'linea',this.value)">
                     </td>
-                    <td class="sticky-col" style="left:60px;">
+                    <td class="sticky-col" style="left:${ownerLeft}px;">
                         <input class="cell-input owner-input" value="${(f.owner || '').replace(/"/g, '&quot;')}" onchange="schedGuardarCampo(${f.id},'owner',this.value)">
                     </td>
-                    <td><input class="cell-input" style="min-width:60px;" value="${f.size || ''}" onchange="schedGuardarCampo(${f.id},'size',this.value)"></td>
-                    <td><input class="cell-input" style="min-width:90px;" value="${f.tipo || ''}" onchange="schedGuardarCampo(${f.id},'tipo',this.value)"></td>
-                    <td><input class="cell-input" style="min-width:80px;" value="${f.reefer_brand || ''}" onchange="schedGuardarCampo(${f.id},'reefer_brand',this.value)"></td>
+                    <td><input class="cell-input" value="${f.size || ''}" onchange="schedGuardarCampo(${f.id},'size',this.value)"></td>
+                    <td><input class="cell-input" value="${f.tipo || ''}" onchange="schedGuardarCampo(${f.id},'tipo',this.value)"></td>
+                    <td><input class="cell-input" value="${f.reefer_brand || ''}" onchange="schedGuardarCampo(${f.id},'reefer_brand',this.value)"></td>
                     <td><input class="cell-input notes-input" value="${(f.notas_evaps || '').replace(/"/g, '&quot;')}" onchange="schedGuardarCampo(${f.id},'notas_evaps',this.value)"></td>
                     <td><input type="number" class="cell-input qty-input" value="${qty || ''}" onchange="schedGuardarCampo(${f.id},'qty',this.value)"></td>
                     <td><input class="cell-input model-input" value="${f.model_no || ''}" onchange="schedGuardarCampo(${f.id},'model_no',this.value)"></td>
