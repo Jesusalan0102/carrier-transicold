@@ -92,7 +92,7 @@ async def service_worker():
     return FileResponse(str(sw_path), media_type="application/javascript")
 
 # ── Health check ──────────────────────────────────────────────────────────────
-@app.get("/")
+@app.get("/api/health")
 async def root():
     return {"message": "API Carrier Transicold funcionando 🚀", "version": "2.1"}
 
