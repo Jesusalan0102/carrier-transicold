@@ -29,6 +29,7 @@ class ScheduleFila(BaseModel):
     notas_evaps: Optional[str] = ""
     qty: Optional[int] = 0
     model_no: Optional[str] = ""
+    lote: Optional[str] = ""
     dias: Optional[Dict[str, int]] = {}
 
 
@@ -70,10 +71,10 @@ def crear_fila(data: ScheduleFila, current_user=Depends(verify_token)):
     next_orden = 0 if not max_orden or max_orden[0]["m"] is None else max_orden[0]["m"] + 1
     new_id = execute_write_with_id(
         """INSERT INTO schedule_produccion
-           (mes_anio, orden, linea, owner, size, tipo, reefer_brand, notas_evaps, qty, model_no, dias)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+           (mes_anio, orden, linea, owner, size, tipo, reefer_brand, notas_evaps, qty, model_no, lote, dias)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (data.mes_anio, next_orden, data.linea, data.owner, data.size, data.tipo,
-         data.reefer_brand, data.notas_evaps, data.qty, data.model_no,
+         data.reefer_brand, data.notas_evaps, data.qty, data.model_no, data.lote,
          json.dumps(data.dias or {}))
     )
     return {"mensaje": "Fila creada", "id": new_id, "orden": next_orden}
@@ -86,10 +87,10 @@ def actualizar_fila(fila_id: int, data: ScheduleFila, current_user=Depends(verif
     afectados = execute_write(
         """UPDATE schedule_produccion
            SET linea=%s, owner=%s, size=%s, tipo=%s, reefer_brand=%s,
-               notas_evaps=%s, qty=%s, model_no=%s, dias=%s
+               notas_evaps=%s, qty=%s, model_no=%s, lote=%s, dias=%s
            WHERE id=%s""",
         (data.linea, data.owner, data.size, data.tipo, data.reefer_brand,
-         data.notas_evaps, data.qty, data.model_no, json.dumps(data.dias or {}), fila_id)
+         data.notas_evaps, data.qty, data.model_no, data.lote, json.dumps(data.dias or {}), fila_id)
     )
     if not afectados:
         raise HTTPException(status_code=404, detail="Fila no encontrada")

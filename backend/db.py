@@ -254,6 +254,22 @@ def _run_migrations():
                 conn.commit()
                 print("✅ Migración: tabla schedule_produccion creada")
 
+            # ── lote (editable) en schedule_produccion ────────────────────────
+            cur.execute("""
+                SELECT COUNT(*) FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME   = 'schedule_produccion'
+                  AND COLUMN_NAME  = 'lote'
+            """)
+            row10 = cur.fetchone()
+            count10 = row10[0] if isinstance(row10, tuple) else list(row10.values())[0]
+            if count10 == 0:
+                cur.execute(
+                    "ALTER TABLE schedule_produccion ADD COLUMN lote VARCHAR(50) DEFAULT '' AFTER model_no"
+                )
+                conn.commit()
+                print("✅ Migración: columna lote añadida a schedule_produccion")
+
             # ── comentarios_asistencia (comentarios semanales por técnico) ────
             cur.execute("""
                 SELECT COUNT(*) FROM information_schema.TABLES

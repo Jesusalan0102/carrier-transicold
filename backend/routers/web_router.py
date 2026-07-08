@@ -755,11 +755,12 @@ async def dashboard():
         table.sched-tbl .day-input { width:34px; min-width:34px; text-align:center; padding:6px 2px; }
         table.sched-tbl .qty-input { width:52px; min-width:52px; text-align:center; }
         table.sched-tbl .model-input { min-width:100px; }
-        table.sched-tbl .owner-input { min-width:170px; }
+        table.sched-tbl .owner-input { min-width:170px; color:var(--carrier-blue); font-weight:700; }
+        body.theme-dark table.sched-tbl .owner-input { color:#5b9bf0; }
         table.sched-tbl .notes-input { min-width:150px; background:#fdebd3; }
         body.theme-dark table.sched-tbl .notes-input { background:#3a2c15; }
-        table.sched-tbl .lote-cell { text-align:center; font-weight:700; color:var(--carrier-success); font-size:0.72rem; padding:6px 4px; }
-        table.sched-tbl .lote-cell.mismatch { color:var(--carrier-warn); }
+        table.sched-tbl .lote-input { min-width:70px; text-align:center; font-weight:700; color:var(--carrier-success); }
+        table.sched-tbl .lote-input.mismatch { color:var(--carrier-warn); }
         table.sched-tbl .del-row-btn { background:none; border:none; color:var(--carrier-danger); cursor:pointer; font-size:0.95rem; padding:6px; }
         table.sched-tbl .del-row-btn:hover { opacity:0.7; }
         .sched-total-row td { background:var(--bg-surface-2); font-weight:700; }
@@ -1091,9 +1092,11 @@ async def dashboard():
                 let sumaDias = 0;
                 Object.values(dias).forEach(v => { sumaDias += (parseInt(v) || 0); });
                 const qty = parseInt(f.qty) || 0;
-                const loteHtml = qty > 0 && sumaDias === qty
-                    ? `<span style="color:var(--carrier-success);">✔ (${sumaDias})</span>`
-                    : (sumaDias > 0 ? `<span class="lote-cell mismatch">(${sumaDias})</span>` : '<span style="opacity:.4;">—</span>');
+                const coincide = qty > 0 && sumaDias === qty;
+                const loteValor = (f.lote !== undefined && f.lote !== null && f.lote !== '')
+                    ? f.lote
+                    : (sumaDias > 0 ? (coincide ? `✔ (${sumaDias})` : `(${sumaDias})`) : '');
+                const loteClass = 'cell-input lote-input' + (qty > 0 && !coincide ? ' mismatch' : '');
 
                 body += `<tr data-fila-id="${f.id}">
                     <td class="sticky-col">
@@ -1108,7 +1111,7 @@ async def dashboard():
                     <td><input class="cell-input notes-input" value="${(f.notas_evaps || '').replace(/"/g, '&quot;')}" onchange="schedGuardarCampo(${f.id},'notas_evaps',this.value)"></td>
                     <td><input type="number" class="cell-input qty-input" value="${qty || ''}" onchange="schedGuardarCampo(${f.id},'qty',this.value)"></td>
                     <td><input class="cell-input model-input" value="${f.model_no || ''}" onchange="schedGuardarCampo(${f.id},'model_no',this.value)"></td>
-                    <td class="lote-cell">${loteHtml}</td>
+                    <td><input class="${loteClass}" value="${(loteValor + '').replace(/"/g, '&quot;')}" onchange="schedGuardarCampo(${f.id},'lote',this.value)"></td>
                     ${Array.from({length: numDias}, (_, i) => i + 1).map(d => {
                         const wknd = schedEsFinDeSemana(schedMesActual, d) ? ' weekend-cell' : '';
                         const val = dias[d] !== undefined && dias[d] !== null ? dias[d] : '';
@@ -1155,7 +1158,7 @@ async def dashboard():
                         linea: fila.linea || '', owner: fila.owner || '', size: fila.size || '',
                         tipo: fila.tipo || '', reefer_brand: fila.reefer_brand || '',
                         notas_evaps: fila.notas_evaps || '', qty: fila.qty || 0,
-                        model_no: fila.model_no || '', dias: fila.dias || {}
+                        model_no: fila.model_no || '', lote: fila.lote || '', dias: fila.dias || {}
                     })
                 });
                 document.getElementById('schedGuardando').textContent = '✔ Guardado';
@@ -1176,7 +1179,7 @@ async def dashboard():
                 schedFilas.push({
                     id: data.id, mes_anio: schedMesActual, orden: data.orden,
                     linea: '', owner: '', size: '', tipo: '', reefer_brand: '',
-                    notas_evaps: '', qty: 0, model_no: '', dias: {}
+                    notas_evaps: '', qty: 0, model_no: '', lote: '', dias: {}
                 });
                 renderScheduleTabla();
             } catch (err) {
