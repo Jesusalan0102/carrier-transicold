@@ -223,6 +223,37 @@ def _run_migrations():
                         conn.commit()
                         print(f"✅ Sync: figuras añadidas a {actualizadas} alarmas existentes")
 
+            # ── schedule_produccion (DRY & Reefer VT Production Daily Schedule) ──
+            cur.execute("""
+                SELECT COUNT(*) FROM information_schema.TABLES
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME   = 'schedule_produccion'
+            """)
+            row9 = cur.fetchone()
+            count9 = row9[0] if isinstance(row9, tuple) else list(row9.values())[0]
+            if count9 == 0:
+                cur.execute("""
+                    CREATE TABLE schedule_produccion (
+                        id            INT AUTO_INCREMENT PRIMARY KEY,
+                        mes_anio      VARCHAR(7)   NOT NULL,
+                        orden         INT          NOT NULL DEFAULT 0,
+                        linea         VARCHAR(50)  DEFAULT '',
+                        owner         VARCHAR(150) DEFAULT '',
+                        size          VARCHAR(20)  DEFAULT '',
+                        tipo          VARCHAR(50)  DEFAULT '',
+                        reefer_brand  VARCHAR(150) DEFAULT '',
+                        notas_evaps   VARCHAR(255) DEFAULT '',
+                        qty           INT          DEFAULT 0,
+                        model_no      VARCHAR(50)  DEFAULT '',
+                        dias          JSON         DEFAULT NULL,
+                        created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        INDEX idx_mes (mes_anio)
+                    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+                """)
+                conn.commit()
+                print("✅ Migración: tabla schedule_produccion creada")
+
             # ── comentarios_asistencia (comentarios semanales por técnico) ────
             cur.execute("""
                 SELECT COUNT(*) FROM information_schema.TABLES

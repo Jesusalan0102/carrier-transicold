@@ -721,7 +721,56 @@ async def dashboard():
         .chart-empty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--text-secondary); text-align:center; gap:8px; }
         .chart-empty .ico { font-size:2rem; opacity:0.4; }
         .chart-empty .msg { font-size:0.85rem; max-width:220px; }
+
+        /* ── Pestañas estilo navegador (Dashboard / Schedule) ─────────────── */
+        .browser-tabs { display:flex; align-items:flex-end; gap:4px; margin-bottom:0; padding-left:4px; }
+        .browser-tab {
+            display:flex; align-items:center; gap:8px; padding:11px 22px 10px;
+            background:var(--bg-surface-2); color:var(--text-secondary); font-weight:600; font-size:0.85rem;
+            border-radius:12px 12px 0 0; cursor:pointer; user-select:none; border:1px solid var(--border-color);
+            border-bottom:none; position:relative; top:1px; transition:background 0.15s, color 0.15s;
+        }
+        .browser-tab:hover { background:var(--carrier-light); }
+        .browser-tab.active { background:var(--bg-surface); color:var(--carrier-blue); box-shadow:0 -3px 10px var(--shadow-soft); }
+        body.theme-dark .browser-tab.active { color:#cfe0ff; }
+        .tab-panels-wrap { background:var(--bg-surface); border:1px solid var(--border-color); border-radius:0 12px 12px 12px; padding:22px; box-shadow:0 4px 12px var(--shadow-soft); }
+        .tab-panel { display:none; }
+        .tab-panel.active { display:block; }
+
+        /* ── Grid editable de Schedule de Producción ──────────────────────── */
+        .sched-toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+        .sched-toolbar select { width:auto; margin-bottom:0; min-width:170px; }
+        .sched-toolbar .btn-primary, .sched-toolbar .btn-success { width:auto; padding:11px 18px; font-size:0.85rem; }
+        .sched-scroll { overflow-x:auto; border:1px solid var(--border-color); border-radius:10px; }
+        table.sched-tbl { border-collapse:separate; border-spacing:0; font-size:0.74rem; min-width:1400px; background:var(--bg-surface); }
+        table.sched-tbl th, table.sched-tbl td { border-right:1px solid var(--border-color-soft); border-bottom:1px solid var(--border-color-soft); padding:0; white-space:nowrap; }
+        table.sched-tbl thead th { background:var(--carrier-blue); color:white; padding:8px 6px; font-weight:700; text-align:center; position:sticky; top:0; z-index:2; }
+        body.theme-dark table.sched-tbl thead th { background:#0a1830; }
+        table.sched-tbl thead th.weekend-hdr { background:#111827; }
+        table.sched-tbl td.weekend-cell { background:#111827; }
+        table.sched-tbl td.sticky-col, table.sched-tbl th.sticky-col { position:sticky; left:0; z-index:1; background:var(--bg-surface); }
+        table.sched-tbl th.sticky-col { z-index:3; }
+        table.sched-tbl .cell-input { width:100%; height:100%; border:none; border-radius:0; margin:0; padding:6px 8px; font-size:0.74rem; background:transparent; color:var(--text-primary); min-width:90px; }
+        table.sched-tbl .cell-input:focus { outline:2px solid var(--carrier-accent); outline-offset:-2px; box-shadow:none; }
+        table.sched-tbl .day-input { width:34px; min-width:34px; text-align:center; padding:6px 2px; }
+        table.sched-tbl .qty-input { width:52px; min-width:52px; text-align:center; }
+        table.sched-tbl .model-input { min-width:100px; }
+        table.sched-tbl .owner-input { min-width:170px; }
+        table.sched-tbl .notes-input { min-width:150px; background:#fdebd3; }
+        body.theme-dark table.sched-tbl .notes-input { background:#3a2c15; }
+        table.sched-tbl .lote-cell { text-align:center; font-weight:700; color:var(--carrier-success); font-size:0.72rem; padding:6px 4px; }
+        table.sched-tbl .lote-cell.mismatch { color:var(--carrier-warn); }
+        table.sched-tbl .del-row-btn { background:none; border:none; color:var(--carrier-danger); cursor:pointer; font-size:0.95rem; padding:6px; }
+        table.sched-tbl .del-row-btn:hover { opacity:0.7; }
+        .sched-total-row td { background:var(--bg-surface-2); font-weight:700; }
     </style>
+
+    <div class="browser-tabs">
+        <div class="browser-tab active" id="tabBtnDashboard" onclick="cambiarTabDashboard('dashboard')">📊 Dashboard</div>
+        <div class="browser-tab" id="tabBtnSchedule" onclick="cambiarTabDashboard('schedule')">🗓️ Schedule</div>
+    </div>
+    <div class="tab-panels-wrap">
+    <div class="tab-panel active" id="tabPanelDashboard">
 
     <div class="kpi-grid" id="kpiContainer"></div>
     <div class="alert-strip" id="alertStrip"></div>
@@ -751,6 +800,25 @@ async def dashboard():
 
     <div class="section-title admin-only">📥 Reportes</div>
     <button class="btn-primary admin-only" style="width:auto; padding:12px 28px;" onclick="descargarReporte()">📊 Descargar Reporte Maestro Excel</button>
+
+    </div><!-- /tabPanelDashboard -->
+
+    <div class="tab-panel" id="tabPanelSchedule">
+        <div class="sched-toolbar">
+            <select id="schedMesSelect" onchange="cambiarMesSchedule()"></select>
+            <button class="btn-primary admin-only" onclick="nuevoMesSchedule()">🗓️ Nuevo mes</button>
+            <button class="btn-success admin-only" onclick="agregarFilaSchedule()">➕ Agregar línea</button>
+            <span id="schedGuardando" style="font-size:0.78rem;color:var(--text-secondary);"></span>
+        </div>
+        <div class="sched-scroll">
+            <table class="sched-tbl" id="schedTabla">
+                <thead><tr id="schedTheadRow"></tr></thead>
+                <tbody id="schedTbody"></tbody>
+            </table>
+        </div>
+    </div><!-- /tabPanelSchedule -->
+
+    </div><!-- /tab-panels-wrap -->
 
     <script>
         const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series'];
@@ -893,6 +961,239 @@ async def dashboard():
             const blob = await res.blob(); const url = URL.createObjectURL(blob);
             const a = document.createElement('a'); a.href=url; a.download='reporte_maestro.xlsx'; a.click();
             setTimeout(()=>URL.revokeObjectURL(url),1000);
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        // ── Pestañas Dashboard / Schedule ────────────────────────────────
+        // ══════════════════════════════════════════════════════════════════
+        let schedCargado = false;
+        function cambiarTabDashboard(tab) {
+            document.getElementById('tabBtnDashboard').classList.toggle('active', tab === 'dashboard');
+            document.getElementById('tabBtnSchedule').classList.toggle('active', tab === 'schedule');
+            document.getElementById('tabPanelDashboard').classList.toggle('active', tab === 'dashboard');
+            document.getElementById('tabPanelSchedule').classList.toggle('active', tab === 'schedule');
+            if (tab === 'schedule' && !schedCargado) {
+                schedCargado = true;
+                initSchedule();
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        // ── Schedule de Producción (grid editable estilo Excel) ─────────
+        // ══════════════════════════════════════════════════════════════════
+        let schedFilas = [];
+        let schedMesActual = null;
+        const MESES_ES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+
+        function schedNombreMes(mesAnio) {
+            const [y, m] = mesAnio.split('-').map(Number);
+            return MESES_ES[m - 1] + ' ' + y;
+        }
+        function schedDiasDelMes(mesAnio) {
+            const [y, m] = mesAnio.split('-').map(Number);
+            return new Date(y, m, 0).getDate();
+        }
+        function schedEsFinDeSemana(mesAnio, dia) {
+            const [y, m] = mesAnio.split('-').map(Number);
+            const dow = new Date(y, m - 1, dia).getDay();
+            return dow === 0 || dow === 6;
+        }
+
+        async function initSchedule() {
+            try {
+                const res = await fetchAuth('/api/schedule/meses');
+                let meses = await res.json();
+                if (!meses.length) {
+                    const hoy = new Date();
+                    meses = [hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0')];
+                }
+                const sel = document.getElementById('schedMesSelect');
+                sel.innerHTML = meses.map(m => `<option value="${m}">${schedNombreMes(m)}</option>`).join('');
+                schedMesActual = meses[0];
+                sel.value = schedMesActual;
+                await cambiarMesSchedule();
+            } catch (err) {
+                console.error('Schedule init error:', err);
+            }
+        }
+
+        async function cambiarMesSchedule() {
+            const sel = document.getElementById('schedMesSelect');
+            schedMesActual = sel.value;
+            document.getElementById('schedGuardando').textContent = 'Cargando...';
+            try {
+                const res = await fetchAuth('/api/schedule/?mes_anio=' + encodeURIComponent(schedMesActual));
+                schedFilas = await res.json();
+            } catch (err) {
+                schedFilas = [];
+            }
+            document.getElementById('schedGuardando').textContent = '';
+            renderScheduleTabla();
+        }
+
+        function nuevoMesSchedule() {
+            const mesTxt = prompt('Nuevo mes (formato: MM-AAAA), ej. 08-2026:');
+            if (!mesTxt) return;
+            const partes = mesTxt.trim().split('-');
+            if (partes.length !== 2 || isNaN(partes[0]) || isNaN(partes[1])) {
+                alert('Formato inválido. Usa MM-AAAA, ej. 08-2026');
+                return;
+            }
+            const mm = String(parseInt(partes[0])).padStart(2, '0');
+            const yyyy = partes[1];
+            const mesAnio = yyyy + '-' + mm;
+            const sel = document.getElementById('schedMesSelect');
+            if (![...sel.options].some(o => o.value === mesAnio)) {
+                const opt = document.createElement('option');
+                opt.value = mesAnio; opt.textContent = schedNombreMes(mesAnio);
+                sel.insertBefore(opt, sel.firstChild);
+            }
+            sel.value = mesAnio;
+            schedMesActual = mesAnio;
+            schedFilas = [];
+            renderScheduleTabla();
+        }
+
+        function renderScheduleTabla() {
+            if (!schedMesActual) return;
+            const numDias = schedDiasDelMes(schedMesActual);
+
+            // ── Encabezado ──
+            let thead = `
+                <th class="sticky-col" style="min-width:60px;">LINE</th>
+                <th class="sticky-col" style="left:60px;min-width:170px;">OWNER</th>
+                <th style="min-width:60px;">SIZE</th>
+                <th style="min-width:90px;">TYPE</th>
+                <th style="min-width:80px;">Reefer/Heated Unit Brand</th>
+                <th style="min-width:150px;">Notes or Evaps</th>
+                <th style="min-width:52px;">Q'TY</th>
+                <th style="min-width:100px;">MODEL NO.</th>
+                <th style="min-width:70px;">LOTE</th>
+            `;
+            for (let d = 1; d <= numDias; d++) {
+                const wknd = schedEsFinDeSemana(schedMesActual, d) ? ' weekend-hdr' : '';
+                thead += `<th class="${wknd}" style="min-width:34px;">${d}</th>`;
+            }
+            document.getElementById('schedTheadRow').innerHTML = thead;
+
+            // ── Cuerpo ──
+            if (!schedFilas.length) {
+                document.getElementById('schedTbody').innerHTML =
+                    `<tr><td colspan="${9 + numDias}" style="text-align:center;padding:24px;color:var(--text-secondary);">
+                        Sin líneas registradas para ${schedNombreMes(schedMesActual)}. Usa "➕ Agregar línea" para comenzar.
+                    </td></tr>`;
+                return;
+            }
+
+            let body = '';
+            schedFilas.forEach(f => {
+                const dias = f.dias || {};
+                let sumaDias = 0;
+                Object.values(dias).forEach(v => { sumaDias += (parseInt(v) || 0); });
+                const qty = parseInt(f.qty) || 0;
+                const loteHtml = qty > 0 && sumaDias === qty
+                    ? `<span style="color:var(--carrier-success);">✔ (${sumaDias})</span>`
+                    : (sumaDias > 0 ? `<span class="lote-cell mismatch">(${sumaDias})</span>` : '<span style="opacity:.4;">—</span>');
+
+                body += `<tr data-fila-id="${f.id}">
+                    <td class="sticky-col">
+                        <input class="cell-input" value="${f.linea || ''}" onchange="schedGuardarCampo(${f.id},'linea',this.value)">
+                    </td>
+                    <td class="sticky-col" style="left:60px;">
+                        <input class="cell-input owner-input" value="${(f.owner || '').replace(/"/g, '&quot;')}" onchange="schedGuardarCampo(${f.id},'owner',this.value)">
+                    </td>
+                    <td><input class="cell-input" style="min-width:60px;" value="${f.size || ''}" onchange="schedGuardarCampo(${f.id},'size',this.value)"></td>
+                    <td><input class="cell-input" style="min-width:90px;" value="${f.tipo || ''}" onchange="schedGuardarCampo(${f.id},'tipo',this.value)"></td>
+                    <td><input class="cell-input" style="min-width:80px;" value="${f.reefer_brand || ''}" onchange="schedGuardarCampo(${f.id},'reefer_brand',this.value)"></td>
+                    <td><input class="cell-input notes-input" value="${(f.notas_evaps || '').replace(/"/g, '&quot;')}" onchange="schedGuardarCampo(${f.id},'notas_evaps',this.value)"></td>
+                    <td><input type="number" class="cell-input qty-input" value="${qty || ''}" onchange="schedGuardarCampo(${f.id},'qty',this.value)"></td>
+                    <td><input class="cell-input model-input" value="${f.model_no || ''}" onchange="schedGuardarCampo(${f.id},'model_no',this.value)"></td>
+                    <td class="lote-cell">${loteHtml}</td>
+                    ${Array.from({length: numDias}, (_, i) => i + 1).map(d => {
+                        const wknd = schedEsFinDeSemana(schedMesActual, d) ? ' weekend-cell' : '';
+                        const val = dias[d] !== undefined && dias[d] !== null ? dias[d] : '';
+                        return `<td class="${wknd}"><input type="number" class="cell-input day-input" value="${val}" onchange="schedGuardarDia(${f.id},${d},this.value)"></td>`;
+                    }).join('')}
+                    <td class="admin-only" style="position:sticky;right:0;background:var(--bg-surface);">
+                        <button class="del-row-btn" onclick="schedEliminarFila(${f.id})" title="Eliminar línea">🗑</button>
+                    </td>
+                </tr>`;
+            });
+            document.getElementById('schedTbody').innerHTML = body;
+        }
+
+        function schedFindFila(id) {
+            return schedFilas.find(f => f.id === id);
+        }
+
+        async function schedGuardarCampo(id, campo, valor) {
+            const fila = schedFindFila(id);
+            if (!fila) return;
+            fila[campo] = campo === 'qty' ? (parseInt(valor) || 0) : valor;
+            await schedPersistirFila(fila);
+            if (campo === 'qty') renderScheduleTabla();
+        }
+
+        async function schedGuardarDia(id, dia, valor) {
+            const fila = schedFindFila(id);
+            if (!fila) return;
+            if (!fila.dias) fila.dias = {};
+            const num = parseInt(valor);
+            if (isNaN(num) || valor === '') { delete fila.dias[dia]; } else { fila.dias[dia] = num; }
+            await schedPersistirFila(fila);
+            renderScheduleTabla();
+        }
+
+        async function schedPersistirFila(fila) {
+            document.getElementById('schedGuardando').textContent = 'Guardando...';
+            try {
+                await fetchAuth('/api/schedule/' + fila.id, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        mes_anio: schedMesActual,
+                        linea: fila.linea || '', owner: fila.owner || '', size: fila.size || '',
+                        tipo: fila.tipo || '', reefer_brand: fila.reefer_brand || '',
+                        notas_evaps: fila.notas_evaps || '', qty: fila.qty || 0,
+                        model_no: fila.model_no || '', dias: fila.dias || {}
+                    })
+                });
+                document.getElementById('schedGuardando').textContent = '✔ Guardado';
+                setTimeout(() => { document.getElementById('schedGuardando').textContent = ''; }, 1200);
+            } catch (err) {
+                document.getElementById('schedGuardando').textContent = '⚠ Error al guardar';
+            }
+        }
+
+        async function schedAgregarFilaSchedule() {
+            try {
+                const res = await fetchAuth('/api/schedule/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mes_anio: schedMesActual, dias: {} })
+                });
+                const data = await res.json();
+                schedFilas.push({
+                    id: data.id, mes_anio: schedMesActual, orden: data.orden,
+                    linea: '', owner: '', size: '', tipo: '', reefer_brand: '',
+                    notas_evaps: '', qty: 0, model_no: '', dias: {}
+                });
+                renderScheduleTabla();
+            } catch (err) {
+                alert('Error al agregar línea');
+            }
+        }
+        function agregarFilaSchedule() { schedAgregarFilaSchedule(); }
+
+        async function schedEliminarFila(id) {
+            if (!confirm('¿Eliminar esta línea del schedule?')) return;
+            try {
+                await fetchAuth('/api/schedule/' + id, { method: 'DELETE' });
+                schedFilas = schedFilas.filter(f => f.id !== id);
+                renderScheduleTabla();
+            } catch (err) {
+                alert('Error al eliminar línea');
+            }
         }
 
         cargarDashboard();
