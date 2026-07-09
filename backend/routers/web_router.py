@@ -5379,7 +5379,7 @@ async def alarmas():
 # Cómo usar:
 #   1. Copia el bloque completo (los 3 @router.get) y pégalo
 #      dentro de tu archivo web_router.py, junto a las demás rutas.
-#   2. Reemplaza "ca-pub-XXXXXXXXXXXXXXXX" por tu ID real de
+#   2. Reemplaza "ca-pub-5166749876470166" por tu ID real de
 #      AdSense cuando lo tengas (Anuncios → Configuración → ID de editor).
 #   3. Cuando solicites la revisión en Google AdSense, usa la URL
 #      pública de tu dominio, por ejemplo: https://tu-dominio.com/
@@ -5434,14 +5434,14 @@ PUBLIC_STYLE = """
 """
 
 ADSENSE_HEAD_SCRIPT = """
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX"
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5166749876470166"
         crossorigin="anonymous"></script>
 """
 
 ADSENSE_UNIT = """
 <ins class="adsbygoogle"
      style="display:block;"
-     data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
+     data-ad-client="ca-pub-5166749876470166"
      data-ad-slot="YYYYYYYYYY"
      data-ad-format="auto"
      data-full-width-responsive="true"></ins>
@@ -5641,6 +5641,7 @@ async def politica_privacidad():
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Política de Privacidad – Carrier Transicold</title>
         {PUBLIC_STYLE}
+        {ADSENSE_HEAD_SCRIPT}
     </head>
     <body>
         <header class="pub-header">
