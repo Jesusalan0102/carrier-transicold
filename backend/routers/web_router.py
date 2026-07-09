@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 
 router = APIRouter()
 
@@ -5447,6 +5447,11 @@ ADSENSE_UNIT = """
      data-full-width-responsive="true"></ins>
 <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
 """
+
+
+@router.get("/ads.txt", response_class=PlainTextResponse)
+async def ads_txt():
+    return "google.com, pub-5166749876470166, DIRECT, f08c47fec0942fa0\n"
 
 
 @router.get("/", response_class=HTMLResponse)
