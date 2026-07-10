@@ -5650,7 +5650,6 @@ async def politica_privacidad():
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Política de Privacidad – Carrier Transicold</title>
         {PUBLIC_STYLE}
-        {ADSENSE_HEAD_SCRIPT}
     </head>
     <body>
         <header class="pub-header">
