@@ -841,7 +841,7 @@ async def dashboard():
     </div><!-- /tab-panels-wrap -->
 
     <script>
-        const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series'];
+        const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series','Extra Eléctrico','Extra Soldador'];
         const camposSeries = {vin_number:'VIN Number',reefer_serial:'Serie Reefer',reefer_model:'Modelo Reefer',evaporator_serial_mjs11:'Evap. MJS11',evaporator_serial_mjd22:'Evap. MJD22',engine_serial:'Motor',compressor_serial:'Compresor',generator_serial:'Generador',battery_charger_serial:'Cargador Bat.'};
 
         async function cargarDashboard() {
@@ -1317,7 +1317,7 @@ async def asignaciones():
     </form>
     <script>
         const fetchAuth = window.fetchAuth;
-        const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series'];
+        const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series','Extra Eléctrico','Extra Soldador'];
         document.getElementById('unidad').addEventListener('change', () => document.getElementById('msgAsignacion').innerHTML = '');
         document.getElementById('tecnico').addEventListener('change', () => document.getElementById('msgAsignacion').innerHTML = '');
         document.getElementById('actividad').addEventListener('change', () => document.getElementById('msgAsignacion').innerHTML = '');
@@ -3431,7 +3431,7 @@ async def solicitud():
         async function cargarOpciones() {
             const unidadesRes = await fetchAuth('/api/unidades/'); const unidades = await unidadesRes.json();
             document.getElementById('unidad').innerHTML = '<option value="">Unidad</option>' + (Array.isArray(unidades) ? unidades.map(u => `<option value="${u.unit_number}">${u.unit_number} (${u.id_lote})</option>`).join('') : '');
-            document.getElementById('actividad').innerHTML = '<option value="">Actividad</option>' + ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series'].map(a => `<option value="${a}">${a}</option>`).join('');
+            document.getElementById('actividad').innerHTML = '<option value="">Actividad</option>' + ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series','Extra Eléctrico','Extra Soldador'].map(a => `<option value="${a}">${a}</option>`).join('');
             const histRes = await fetchAuth('/api/asignaciones/?tecnico=' + username + '&limit=20'); const historial = await histRes.json();
             let hHtml = '';
             if (Array.isArray(historial)) historial.forEach(h => { const color = h.estado === 'solicitado' ? '#fef9c3' : h.estado === 'pendiente' ? '#fff7ed' : h.estado === 'en_proceso' ? '#eff6ff' : '#f0fdf4'; const borderColor = h.estado === 'solicitado' ? '#854d0e' : h.estado === 'pendiente' ? '#9a3412' : h.estado === 'en_proceso' ? '#1e40af' : '#166534'; hHtml += `<div style="background:${color};border-left:4px solid ${borderColor};padding:10px 16px;margin-bottom:6px;border-radius:8px;"><b>${h.actividad_id}</b> — Unidad: ${h.unidad} · ${h.estado}</div>`; });
@@ -5730,6 +5730,7 @@ ACTIVIDADES_CARRIER = [
     "Vacío", "Cerrado", "Pre-viaje", "Horas Corridas",
     "Standby", "GPS", "Corriendo", "Inspección",
     "Accesorios", "Toma de Valores", "Evidencia", "Toma de Series",
+    "Extra Eléctrico", "Extra Soldador",
 ]
 
 class ClusterAsignacion(BaseModel):
