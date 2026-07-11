@@ -744,7 +744,7 @@ async def dashboard():
         /* ── Grid editable de Schedule de Producción ──────────────────────── */
         .sched-toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
         .sched-toolbar select { width:auto; margin-bottom:0; min-width:170px; }
-        .sched-toolbar .btn-primary, .sched-toolbar .btn-success { width:auto; padding:11px 18px; font-size:0.85rem; }
+        .sched-toolbar .btn-primary, .sched-toolbar .btn-success, .sched-toolbar .btn-warning { width:auto; padding:11px 18px; font-size:0.85rem; }
         .sched-scroll { overflow:auto; border:1px solid var(--border-color); border-radius:10px; max-height:65vh; }
         #schedFullscreenWrap.sched-fullscreen-active .sched-scroll { max-height:none; }
         table.sched-tbl { border-collapse:separate; border-spacing:0; font-size:0.74rem; min-width:1400px; background:var(--bg-surface); table-layout:fixed; }
@@ -825,8 +825,15 @@ async def dashboard():
             <select id="schedMesSelect" onchange="cambiarMesSchedule()"></select>
             <button class="btn-primary admin-only" onclick="nuevoMesSchedule()">🗓️ Nuevo mes</button>
             <button class="btn-success admin-only" onclick="agregarFilaSchedule()">➕ Agregar línea</button>
+            <button class="btn-primary admin-only" id="schedSeleccionarBtn" onclick="schedToggleSeleccion()">☑️ Seleccionar filas</button>
+            <button class="btn-primary admin-only" id="schedMostrarOcultosBtn" onclick="schedToggleMostrarOcultos()">👁️ Mostrar ocultos</button>
             <span id="schedGuardando" style="font-size:0.78rem;color:var(--text-secondary);"></span>
             <button class="btn-primary sched-fs-btn" id="schedFsBtn" onclick="toggleSchedFullscreen()">⛶ Ver tabla completa</button>
+        </div>
+        <div class="sched-toolbar admin-only" id="schedAccionesBarra" style="display:none;">
+            <span id="schedSeleccionCount" style="font-weight:600;"></span>
+            <button class="btn-warning" onclick="schedOcultarSeleccionadas()">🙈 Ocultar seleccionadas</button>
+            <button class="btn-success" onclick="schedAbrirModalReporte()">🖨️ Generar reporte</button>
         </div>
         <div class="sched-scroll">
             <table class="sched-tbl" id="schedTabla">
@@ -837,6 +844,20 @@ async def dashboard():
         </div>
       </div>
     </div><!-- /tabPanelSchedule -->
+
+    <!-- Modal: Generar reporte de unidades seleccionadas -->
+    <div id="sched-reporte-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;align-items:center;justify-content:center;">
+        <div style="background:white;border-radius:12px;max-width:640px;width:92%;max-height:80vh;overflow-y:auto;padding:24px;">
+            <h3 style="margin-top:0;">🖨️ Generar reporte de series</h3>
+            <p style="color:var(--text-secondary);font-size:.88rem;">Selecciona qué unidades incluir en el Excel. Por defecto están todas marcadas.</p>
+            <div id="sched-reporte-modal-body"></div>
+            <div style="display:flex;gap:10px;margin-top:16px;">
+                <button class="btn-success" onclick="schedConfirmarGenerarReporte()">⬇️ Descargar Excel</button>
+                <button class="btn-primary" onclick="document.getElementById('sched-reporte-modal').style.display='none'">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
 
     </div><!-- /tab-panels-wrap -->
 
@@ -1003,6 +1024,9 @@ async def dashboard():
         // ══════════════════════════════════════════════════════════════════
         let schedFilas = [];
         let schedMesActual = null;
+        let schedModoSeleccion = false;
+        let schedSeleccionadas = new Set();
+        let schedMostrarOcultos = false;
         const MESES_ES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
         const SCHED_COL_DEFAULTS = {
             line:60, owner:190, size:64, tipo:96, brand:110, notes:170, qty:60, model:120, lote:85
@@ -1131,10 +1155,13 @@ async def dashboard():
         function renderScheduleTabla() {
             if (!schedMesActual) return;
             const numDias = schedDiasDelMes(schedMesActual);
-            const ownerLeft = schedAnchoCol('line');
+            const chkWidth = schedModoSeleccion ? 34 : 0;
+            const ownerLeft = schedAnchoCol('line') + chkWidth;
 
             // ── Colgroup (anchos de columnas, editables por arrastre) ──
-            let colgroup = `
+            let colgroup = '';
+            if (schedModoSeleccion) colgroup += `<col style="width:34px;">`;
+            colgroup += `
                 <col data-col="line" style="width:${schedAnchoCol('line')}px;">
                 <col data-col="owner" style="width:${schedAnchoCol('owner')}px;">
                 <col data-col="size" style="width:${schedAnchoCol('size')}px;">
@@ -1153,7 +1180,10 @@ async def dashboard():
 
             // ── Encabezado ──
             let thead = '';
-            thead += schedTh('line', 'LINE', 'sticky-col');
+            if (schedModoSeleccion) {
+                thead += `<th class="sticky-col"><input type="checkbox" id="schedCheckTodos" onchange="schedSeleccionarTodos(this.checked)"></th>`;
+            }
+            thead += schedTh('line', 'LINE', 'sticky-col').replace('<th class="sticky-col"', `<th class="sticky-col" style="left:${chkWidth}px;"`);
             thead += schedTh('owner', 'OWNER', 'sticky-col').replace('<th class="sticky-col"', `<th class="sticky-col" style="left:${ownerLeft}px;"`);
             thead += schedTh('size', 'SIZE');
             thead += schedTh('tipo', 'TYPE');
@@ -1169,17 +1199,21 @@ async def dashboard():
             thead += `<th></th>`;
             document.getElementById('schedTheadRow').innerHTML = thead;
 
+            // ── Filtrado de filas ocultas ──
+            const filasVisibles = schedFilas.filter(f => schedMostrarOcultos || !f.oculto);
+            const numColsBase = schedModoSeleccion ? 11 : 10;
+
             // ── Cuerpo ──
-            if (!schedFilas.length) {
+            if (!filasVisibles.length) {
                 document.getElementById('schedTbody').innerHTML =
-                    `<tr><td colspan="${10 + numDias}" style="text-align:center;padding:24px;color:var(--text-secondary);">
-                        Sin líneas registradas para ${schedNombreMes(schedMesActual)}. Usa "➕ Agregar línea" para comenzar.
+                    `<tr><td colspan="${numColsBase + numDias}" style="text-align:center;padding:24px;color:var(--text-secondary);">
+                        ${schedFilas.length ? 'Sin líneas visibles (todas ocultas). Usa "👁️ Mostrar ocultos" para verlas.' : `Sin líneas registradas para ${schedNombreMes(schedMesActual)}. Usa "➕ Agregar línea" para comenzar.`}
                     </td></tr>`;
                 return;
             }
 
             let body = '';
-            schedFilas.forEach(f => {
+            filasVisibles.forEach(f => {
                 const dias = f.dias || {};
                 let sumaDias = 0;
                 Object.values(dias).forEach(v => { sumaDias += (parseInt(v) || 0); });
@@ -1189,9 +1223,15 @@ async def dashboard():
                     ? f.lote
                     : (sumaDias > 0 ? (coincide ? `✔ (${sumaDias})` : `(${sumaDias})`) : '');
                 const loteClass = 'cell-input lote-input' + (qty > 0 && !coincide ? ' mismatch' : '');
+                const filaOcultaStyle = f.oculto ? ' style="opacity:.55;"' : '';
+                const badgeOculto = f.oculto ? ` <span title="Lote oculto" style="font-size:.7rem;background:#fde68a;color:#7d6608;padding:1px 5px;border-radius:6px;">🙈 oculto</span>` : '';
+                const checkboxCell = schedModoSeleccion
+                    ? `<td class="sticky-col"><input type="checkbox" class="sched-row-check" data-fila-id="${f.id}" ${schedSeleccionadas.has(f.id) ? 'checked' : ''} onchange="schedToggleFila(${f.id}, this.checked)"></td>`
+                    : '';
 
-                body += `<tr data-fila-id="${f.id}">
-                    <td class="sticky-col">
+                body += `<tr data-fila-id="${f.id}"${filaOcultaStyle}>
+                    ${checkboxCell}
+                    <td class="sticky-col" style="left:${chkWidth}px;">
                         <input class="cell-input" value="${f.linea || ''}" onchange="schedGuardarCampo(${f.id},'linea',this.value)">
                     </td>
                     <td class="sticky-col" style="left:${ownerLeft}px;">
@@ -1203,7 +1243,7 @@ async def dashboard():
                     <td><input class="cell-input notes-input" value="${(f.notas_evaps || '').replace(/"/g, '&quot;')}" onchange="schedGuardarCampo(${f.id},'notas_evaps',this.value)"></td>
                     <td><input type="number" class="cell-input qty-input" value="${qty || ''}" onchange="schedGuardarCampo(${f.id},'qty',this.value)"></td>
                     <td><input class="cell-input model-input" value="${f.model_no || ''}" onchange="schedGuardarCampo(${f.id},'model_no',this.value)"></td>
-                    <td><input class="${loteClass}" value="${(loteValor + '').replace(/"/g, '&quot;')}" onchange="schedGuardarCampo(${f.id},'lote',this.value)"></td>
+                    <td><input class="${loteClass}" value="${(loteValor + '').replace(/"/g, '&quot;')}" onchange="schedGuardarCampo(${f.id},'lote',this.value)">${badgeOculto}</td>
                     ${Array.from({length: numDias}, (_, i) => i + 1).map(d => {
                         const wknd = schedEsFinDeSemana(schedMesActual, d) ? ' weekend-cell' : '';
                         const val = dias[d] !== undefined && dias[d] !== null ? dias[d] : '';
@@ -1215,6 +1255,140 @@ async def dashboard():
                 </tr>`;
             });
             document.getElementById('schedTbody').innerHTML = body;
+        }
+
+        // ── Selección de filas, ocultar lotes y reporte de series ────────
+        function schedToggleSeleccion() {
+            schedModoSeleccion = !schedModoSeleccion;
+            if (!schedModoSeleccion) schedSeleccionadas.clear();
+            document.getElementById('schedSeleccionarBtn').textContent = schedModoSeleccion ? '✕ Cancelar selección' : '☑️ Seleccionar filas';
+            schedActualizarBarraAcciones();
+            renderScheduleTabla();
+        }
+
+        function schedToggleMostrarOcultos() {
+            schedMostrarOcultos = !schedMostrarOcultos;
+            document.getElementById('schedMostrarOcultosBtn').textContent = schedMostrarOcultos ? '🙈 Ocultar de nuevo' : '👁️ Mostrar ocultos';
+            renderScheduleTabla();
+        }
+
+        function schedToggleFila(id, marcado) {
+            if (marcado) schedSeleccionadas.add(id); else schedSeleccionadas.delete(id);
+            schedActualizarBarraAcciones();
+        }
+
+        function schedSeleccionarTodos(marcado) {
+            const filasVisibles = schedFilas.filter(f => schedMostrarOcultos || !f.oculto);
+            filasVisibles.forEach(f => { if (marcado) schedSeleccionadas.add(f.id); else schedSeleccionadas.delete(f.id); });
+            renderScheduleTabla();
+            schedActualizarBarraAcciones();
+        }
+
+        function schedActualizarBarraAcciones() {
+            const barra = document.getElementById('schedAccionesBarra');
+            const count = document.getElementById('schedSeleccionCount');
+            const n = schedSeleccionadas.size;
+            barra.style.display = (schedModoSeleccion && n > 0) ? 'flex' : 'none';
+            count.textContent = n > 0 ? `${n} línea${n !== 1 ? 's' : ''} seleccionada${n !== 1 ? 's' : ''}` : '';
+        }
+
+        function schedLotesDeSeleccion() {
+            const ids = Array.from(schedSeleccionadas);
+            const lotes = new Set();
+            let sinLote = 0;
+            ids.forEach(id => {
+                const f = schedFindFila(id);
+                if (f && f.lote && f.lote.trim()) lotes.add(f.lote.trim());
+                else sinLote++;
+            });
+            return { lotes: Array.from(lotes), sinLote };
+        }
+
+        async function schedOcultarSeleccionadas() {
+            const { lotes, sinLote } = schedLotesDeSeleccion();
+            if (!lotes.length) { alert('Ninguna de las filas seleccionadas tiene un lote asignado todavía.'); return; }
+            let msg = `¿Ocultar ${lotes.length} lote${lotes.length !== 1 ? 's' : ''} (${lotes.join(', ')}) del Schedule, Dashboard y KPIs? Los datos se conservan y puedes mostrarlos de nuevo.`;
+            if (sinLote > 0) msg += `\n\n(${sinLote} fila(s) seleccionada(s) sin lote se omitirán.)`;
+            if (!confirm(msg)) return;
+
+            let errores = [];
+            for (const idLote of lotes) {
+                try {
+                    const res = await fetchAuth(`/api/unidades/lotes/ocultar?id_lote=${encodeURIComponent(idLote)}&backup_onedrive=false`, { method: 'POST' });
+                    if (!res.ok) { const d = await res.json().catch(() => ({})); errores.push(`${idLote}: ${d.detail || res.status}`); }
+                } catch (e) { errores.push(`${idLote}: ${e.message}`); }
+            }
+            schedSeleccionadas.clear();
+            schedActualizarBarraAcciones();
+            await cambiarMesSchedule();
+            if (errores.length) alert('Algunos lotes no se pudieron ocultar:\n' + errores.join('\n'));
+        }
+
+        let schedUnidadesPorLote = {};
+        async function schedAbrirModalReporte() {
+            const { lotes, sinLote } = schedLotesDeSeleccion();
+            if (!lotes.length) { alert('Ninguna de las filas seleccionadas tiene un lote asignado todavía.'); return; }
+
+            const body = document.getElementById('sched-reporte-modal-body');
+            body.innerHTML = '<p>Cargando unidades…</p>';
+            document.getElementById('sched-reporte-modal').style.display = 'flex';
+
+            try {
+                const res = await fetchAuth('/api/unidades/?incluir_ocultas=true');
+                const todas = await res.json();
+                schedUnidadesPorLote = {};
+                lotes.forEach(idLote => {
+                    schedUnidadesPorLote[idLote] = todas.filter(u => u.id_lote === idLote);
+                });
+
+                let html = '';
+                if (sinLote > 0) html += `<p style="color:var(--carrier-warn);font-size:.85rem;">${sinLote} fila(s) seleccionada(s) sin lote se omitieron.</p>`;
+                lotes.forEach(idLote => {
+                    const unidades = schedUnidadesPorLote[idLote] || [];
+                    html += `<div style="margin-bottom:16px;border:1px solid #e5e7eb;border-radius:8px;padding:10px;">
+                        <div style="font-weight:700;margin-bottom:6px;">📦 Lote: ${idLote} <span style="font-weight:400;color:var(--text-secondary);">(${unidades.length} unidad${unidades.length !== 1 ? 'es' : ''})</span></div>`;
+                    if (!unidades.length) {
+                        html += `<p style="font-size:.85rem;color:var(--text-secondary);">Sin unidades registradas para este lote.</p>`;
+                    } else {
+                        unidades.forEach(u => {
+                            html += `<label style="display:block;font-size:.85rem;padding:2px 0;">
+                                <input type="checkbox" class="sched-unidad-check" data-lote="${idLote}" value="${u.unit_number}" checked> ${u.unit_number}
+                            </label>`;
+                        });
+                    }
+                    html += `</div>`;
+                });
+                body.innerHTML = html;
+            } catch (e) {
+                body.innerHTML = `<p style="color:red;">Error al cargar unidades: ${e.message}</p>`;
+            }
+        }
+
+        async function schedConfirmarGenerarReporte() {
+            const checks = document.querySelectorAll('.sched-unidad-check:checked');
+            const unidades = Array.from(checks).map(c => c.value);
+            if (!unidades.length) { alert('Selecciona al menos una unidad para incluir en el reporte.'); return; }
+
+            try {
+                const res = await fetchAuth('/api/reportes/lotes-seleccionados', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ unidades })
+                });
+                if (!res.ok) {
+                    const d = await res.json().catch(() => ({}));
+                    alert(d.detail || `Error ${res.status} al generar el reporte`);
+                    return;
+                }
+                const blob = await res.blob();
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `Reporte_Series_Seleccion_${Date.now()}.xlsx`;
+                a.click();
+                document.getElementById('sched-reporte-modal').style.display = 'none';
+            } catch (e) {
+                alert('Error de red: ' + e.message);
+            }
         }
 
         function schedFindFila(id) {
