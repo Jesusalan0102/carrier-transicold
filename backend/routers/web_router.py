@@ -1321,7 +1321,7 @@ async def dashboard():
             schedSeleccionadas.clear();
             schedActualizarBarraAcciones();
             await cambiarMesSchedule();
-            if (errores.length) alert('Algunos lotes no se pudieron ocultar:\n' + errores.join('\n'));
+            if (errores.length) alert('Algunos lotes no se pudieron ocultar:\\n' + errores.join('\\n'));
         }
 
         let schedUnidadesPorLote = {};
@@ -5960,4 +5960,4 @@ def asignar_cluster(data: ClusterAsignacion, current_user=Depends(verify_token))
         "mensaje": f"{creadas} asignaciones creadas, {omitidas} omitidas (ya existían)",
         "creadas": creadas,
         "omitidas": omitidas
-    } 
+    }
