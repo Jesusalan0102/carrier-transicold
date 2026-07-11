@@ -1027,6 +1027,26 @@ async def dashboard():
         let schedModoSeleccion = false;
         let schedSeleccionadas = new Set();
         let schedMostrarOcultos = false;
+        let schedUnidadesTodas = [];
+
+        // Normaliza un id_lote para comparar sin que espacios, mayúsculas o
+        // símbolos (guiones, puntos) causen falsos negativos de coincidencia.
+        function schedNormLote(s) {
+            return (s || '').toString().trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        }
+        function schedUnidadesDeLote(idLote) {
+            const norm = schedNormLote(idLote);
+            if (!norm) return [];
+            return schedUnidadesTodas.filter(u => schedNormLote(u.id_lote) === norm);
+        }
+        async function schedCargarUnidadesCache() {
+            try {
+                const res = await fetchAuth('/api/unidades/?incluir_ocultas=true');
+                schedUnidadesTodas = await res.json();
+            } catch (e) {
+                schedUnidadesTodas = [];
+            }
+        }
         const MESES_ES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
         const SCHED_COL_DEFAULTS = {
             line:60, owner:190, size:64, tipo:96, brand:110, notes:170, qty:60, liberadas:110, lote:85
@@ -1120,7 +1140,10 @@ async def dashboard():
             schedMesActual = sel.value;
             document.getElementById('schedGuardando').textContent = 'Cargando...';
             try {
-                const res = await fetchAuth('/api/schedule/?mes_anio=' + encodeURIComponent(schedMesActual));
+                const [res] = await Promise.all([
+                    fetchAuth('/api/schedule/?mes_anio=' + encodeURIComponent(schedMesActual)),
+                    schedCargarUnidadesCache()
+                ]);
                 schedFilas = await res.json();
             } catch (err) {
                 schedFilas = [];
@@ -1221,6 +1244,11 @@ async def dashboard():
                 const coincide = qty > 0 && sumaDias === qty;
                 const loteValor = f.lote || '';
                 const loteClass = 'cell-input lote-input' + (qty > 0 && !coincide ? ' mismatch' : '');
+                const loteUnidadesRow = schedUnidadesDeLote(loteValor);
+                const loteModelosRow = [...new Set(loteUnidadesRow.map(u => u.reefer_model).filter(Boolean))];
+                const loteModeloHtml = loteModelosRow.length
+                    ? `<div style="font-size:.68rem;color:var(--text-secondary);line-height:1.15;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${loteModelosRow.join(', ').replace(/"/g, '&quot;')}">${loteModelosRow.join(', ')}</div>`
+                    : '';
                 const liberadasColor = qty > 0 ? (coincide ? '#16a34a' : '#d97706') : 'var(--text-secondary)';
                 const filaOcultaStyle = f.oculto ? ' style="opacity:.55;"' : '';
                 const badgeOculto = f.oculto ? ` <span title="Lote oculto" style="font-size:.7rem;background:#fde68a;color:#7d6608;padding:1px 5px;border-radius:6px;">🙈 oculto</span>` : '';
@@ -1242,7 +1270,7 @@ async def dashboard():
                     <td><input class="cell-input notes-input" value="${(f.notas_evaps || '').replace(/"/g, '&quot;')}" onchange="schedGuardarCampo(${f.id},'notas_evaps',this.value)"></td>
                     <td><input type="number" class="cell-input qty-input" value="${qty || ''}" onchange="schedGuardarCampo(${f.id},'qty',this.value)"></td>
                     <td style="text-align:center;font-weight:700;color:${liberadasColor};" title="Suma automática de unidades por día (columnas numeradas)">${sumaDias || 0}${qty > 0 ? ` / ${qty}` : ''}${coincide ? ' ✔' : ''}</td>
-                    <td><input class="${loteClass}" value="${loteValor.replace(/"/g, '&quot;')}" onchange="schedGuardarCampo(${f.id},'lote',this.value)" placeholder="—">${badgeOculto}</td>
+                    <td><input class="${loteClass}" value="${loteValor.replace(/"/g, '&quot;')}" onchange="schedGuardarCampo(${f.id},'lote',this.value)" placeholder="—">${loteModeloHtml}${badgeOculto}</td>
                     ${Array.from({length: numDias}, (_, i) => i + 1).map(d => {
                         const wknd = schedEsFinDeSemana(schedMesActual, d) ? ' weekend-cell' : '';
                         const val = dias[d] !== undefined && dias[d] !== null ? dias[d] : '';
@@ -1335,27 +1363,36 @@ async def dashboard():
             try {
                 const res = await fetchAuth('/api/unidades/?incluir_ocultas=true');
                 const todas = await res.json();
+                schedUnidadesTodas = todas; // refresca el cache global también
                 schedUnidadesPorLote = {};
                 lotes.forEach(idLote => {
-                    schedUnidadesPorLote[idLote] = todas.filter(u => u.id_lote === idLote);
+                    schedUnidadesPorLote[idLote] = schedUnidadesDeLote(idLote);
                 });
 
                 let html = '';
                 if (sinLote > 0) html += `<p style="color:var(--carrier-warn);font-size:.85rem;">${sinLote} fila(s) seleccionada(s) sin lote se omitieron.</p>`;
                 lotes.forEach(idLote => {
                     const unidades = schedUnidadesPorLote[idLote] || [];
-                    html += `<div style="margin-bottom:16px;border:1px solid #e5e7eb;border-radius:8px;padding:10px;">
-                        <div style="font-weight:700;margin-bottom:6px;">📦 Lote: ${idLote} <span style="font-weight:400;color:var(--text-secondary);">(${unidades.length} unidad${unidades.length !== 1 ? 'es' : ''})</span></div>`;
+                    const modelos = [...new Set(unidades.map(u => u.reefer_model).filter(Boolean))];
+                    const resumenModelos = modelos.length ? ` · ${modelos.join(', ')}` : '';
+                    html += `<details style="margin-bottom:12px;border:1px solid #e5e7eb;border-radius:8px;padding:10px;" ${unidades.length ? 'open' : ''}>
+                        <summary style="font-weight:700;cursor:pointer;">📦 Lote: ${idLote}
+                            <span style="font-weight:400;color:var(--text-secondary);">(${unidades.length} unidad${unidades.length !== 1 ? 'es' : ''}${resumenModelos})</span>
+                        </summary>
+                        <div style="margin-top:8px;padding-left:4px;">`;
                     if (!unidades.length) {
-                        html += `<p style="font-size:.85rem;color:var(--text-secondary);">Sin unidades registradas para este lote.</p>`;
+                        html += `<p style="font-size:.85rem;color:var(--text-secondary);">Sin unidades registradas para este lote todavía.</p>`;
                     } else {
+                        html += `<label style="display:block;font-size:.8rem;padding:2px 0;color:var(--text-secondary);">
+                                <input type="checkbox" onchange="this.closest('div').querySelectorAll('.sched-unidad-check').forEach(c=>c.checked=this.checked)" checked> Seleccionar todas
+                            </label>`;
                         unidades.forEach(u => {
                             html += `<label style="display:block;font-size:.85rem;padding:2px 0;">
-                                <input type="checkbox" class="sched-unidad-check" data-lote="${idLote}" value="${u.unit_number}" checked> ${u.unit_number}
+                                <input type="checkbox" class="sched-unidad-check" data-lote="${idLote}" value="${u.unit_number}" checked> ${u.unit_number}${u.reefer_model ? ` <span style="color:var(--text-secondary);">— ${u.reefer_model}</span>` : ''}
                             </label>`;
                         });
                     }
-                    html += `</div>`;
+                    html += `</div></details>`;
                 });
                 body.innerHTML = html;
             } catch (e) {
