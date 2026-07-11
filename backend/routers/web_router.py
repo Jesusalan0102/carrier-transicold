@@ -820,6 +820,7 @@ async def dashboard():
     </div><!-- /tabPanelDashboard -->
 
     <div class="tab-panel" id="tabPanelSchedule">
+      <datalist id="schedLotesDatalist"></datalist>
       <div id="schedFullscreenWrap">
         <div class="sched-toolbar">
             <select id="schedMesSelect" onchange="cambiarMesSchedule()"></select>
@@ -1046,6 +1047,13 @@ async def dashboard():
             } catch (e) {
                 schedUnidadesTodas = [];
             }
+            schedActualizarDatalistLotes();
+        }
+        function schedActualizarDatalistLotes() {
+            const dl = document.getElementById('schedLotesDatalist');
+            if (!dl) return;
+            const lotesReales = [...new Set(schedUnidadesTodas.map(u => u.id_lote).filter(Boolean))].sort();
+            dl.innerHTML = lotesReales.map(l => `<option value="${l.replace(/"/g, '&quot;')}">`).join('');
         }
         const MESES_ES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
         const SCHED_COL_DEFAULTS = {
@@ -1245,10 +1253,11 @@ async def dashboard():
                 const loteValor = f.lote || '';
                 const loteClass = 'cell-input lote-input' + (qty > 0 && !coincide ? ' mismatch' : '');
                 const loteUnidadesRow = schedUnidadesDeLote(loteValor);
+                const loteSinCoincidencia = loteValor.trim() !== '' && loteUnidadesRow.length === 0 && schedUnidadesTodas.length > 0;
                 const loteModelosRow = [...new Set(loteUnidadesRow.map(u => u.reefer_model).filter(Boolean))];
                 const loteModeloHtml = loteModelosRow.length
                     ? `<div style="font-size:.68rem;color:var(--text-secondary);line-height:1.15;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${loteModelosRow.join(', ').replace(/"/g, '&quot;')}">${loteModelosRow.join(', ')}</div>`
-                    : '';
+                    : (loteSinCoincidencia ? `<div style="font-size:.68rem;color:var(--carrier-warn);line-height:1.15;margin-top:2px;" title="Este lote no existe en la tabla de unidades. Revisa si hay un error de captura.">⚠ sin unidades</div>` : '');
                 const liberadasColor = qty > 0 ? (coincide ? '#16a34a' : '#d97706') : 'var(--text-secondary)';
                 const filaOcultaStyle = f.oculto ? ' style="opacity:.55;"' : '';
                 const badgeOculto = f.oculto ? ` <span title="Lote oculto" style="font-size:.7rem;background:#fde68a;color:#7d6608;padding:1px 5px;border-radius:6px;">🙈 oculto</span>` : '';
@@ -1270,7 +1279,7 @@ async def dashboard():
                     <td><input class="cell-input notes-input" value="${(f.notas_evaps || '').replace(/"/g, '&quot;')}" onchange="schedGuardarCampo(${f.id},'notas_evaps',this.value)"></td>
                     <td><input type="number" class="cell-input qty-input" value="${qty || ''}" onchange="schedGuardarCampo(${f.id},'qty',this.value)"></td>
                     <td style="text-align:center;font-weight:700;color:${liberadasColor};" title="Suma automática de unidades por día (columnas numeradas)">${sumaDias || 0}${qty > 0 ? ` / ${qty}` : ''}${coincide ? ' ✔' : ''}</td>
-                    <td><input class="${loteClass}" value="${loteValor.replace(/"/g, '&quot;')}" onchange="schedGuardarCampo(${f.id},'lote',this.value)" placeholder="—">${loteModeloHtml}${badgeOculto}</td>
+                    <td><input class="${loteClass}" list="schedLotesDatalist" value="${loteValor.replace(/"/g, '&quot;')}" onchange="schedGuardarCampo(${f.id},'lote',this.value)" placeholder="—">${loteModeloHtml}${badgeOculto}</td>
                     ${Array.from({length: numDias}, (_, i) => i + 1).map(d => {
                         const wknd = schedEsFinDeSemana(schedMesActual, d) ? ' weekend-cell' : '';
                         const val = dias[d] !== undefined && dias[d] !== null ? dias[d] : '';
@@ -1364,6 +1373,7 @@ async def dashboard():
                 const res = await fetchAuth('/api/unidades/?incluir_ocultas=true');
                 const todas = await res.json();
                 schedUnidadesTodas = todas; // refresca el cache global también
+                schedActualizarDatalistLotes();
                 schedUnidadesPorLote = {};
                 lotes.forEach(idLote => {
                     schedUnidadesPorLote[idLote] = schedUnidadesDeLote(idLote);
