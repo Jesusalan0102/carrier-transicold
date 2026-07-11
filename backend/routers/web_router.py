@@ -1029,7 +1029,7 @@ async def dashboard():
         let schedMostrarOcultos = false;
         const MESES_ES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
         const SCHED_COL_DEFAULTS = {
-            line:60, owner:190, size:64, tipo:96, brand:110, notes:170, qty:60, model:120, lote:85
+            line:60, owner:190, size:64, tipo:96, brand:110, notes:170, qty:60, liberadas:110, lote:85
         };
         let schedColWidths = {};
         try {
@@ -1169,7 +1169,7 @@ async def dashboard():
                 <col data-col="brand" style="width:${schedAnchoCol('brand')}px;">
                 <col data-col="notes" style="width:${schedAnchoCol('notes')}px;">
                 <col data-col="qty" style="width:${schedAnchoCol('qty')}px;">
-                <col data-col="model" style="width:${schedAnchoCol('model')}px;">
+                <col data-col="liberadas" style="width:${schedAnchoCol('liberadas')}px;">
                 <col data-col="lote" style="width:${schedAnchoCol('lote')}px;">
             `;
             for (let d = 1; d <= numDias; d++) {
@@ -1190,7 +1190,7 @@ async def dashboard():
             thead += schedTh('brand', 'Reefer/Heated Unit Brand');
             thead += schedTh('notes', 'Notes or Evaps');
             thead += schedTh('qty', "Q'TY");
-            thead += schedTh('model', 'MODEL NO.');
+            thead += schedTh('liberadas', 'UNIDADES LIBERADAS');
             thead += schedTh('lote', 'LOTE');
             for (let d = 1; d <= numDias; d++) {
                 const wknd = schedEsFinDeSemana(schedMesActual, d) ? ' weekend-hdr' : '';
@@ -1219,10 +1219,9 @@ async def dashboard():
                 Object.values(dias).forEach(v => { sumaDias += (parseInt(v) || 0); });
                 const qty = parseInt(f.qty) || 0;
                 const coincide = qty > 0 && sumaDias === qty;
-                const loteValor = (f.lote !== undefined && f.lote !== null && f.lote !== '')
-                    ? f.lote
-                    : (sumaDias > 0 ? (coincide ? `✔ (${sumaDias})` : `(${sumaDias})`) : '');
+                const loteValor = f.lote || '';
                 const loteClass = 'cell-input lote-input' + (qty > 0 && !coincide ? ' mismatch' : '');
+                const liberadasColor = qty > 0 ? (coincide ? '#16a34a' : '#d97706') : 'var(--text-secondary)';
                 const filaOcultaStyle = f.oculto ? ' style="opacity:.55;"' : '';
                 const badgeOculto = f.oculto ? ` <span title="Lote oculto" style="font-size:.7rem;background:#fde68a;color:#7d6608;padding:1px 5px;border-radius:6px;">🙈 oculto</span>` : '';
                 const checkboxCell = schedModoSeleccion
@@ -1242,8 +1241,8 @@ async def dashboard():
                     <td><input class="cell-input" value="${f.reefer_brand || ''}" onchange="schedGuardarCampo(${f.id},'reefer_brand',this.value)"></td>
                     <td><input class="cell-input notes-input" value="${(f.notas_evaps || '').replace(/"/g, '&quot;')}" onchange="schedGuardarCampo(${f.id},'notas_evaps',this.value)"></td>
                     <td><input type="number" class="cell-input qty-input" value="${qty || ''}" onchange="schedGuardarCampo(${f.id},'qty',this.value)"></td>
-                    <td><input class="cell-input model-input" value="${f.model_no || ''}" onchange="schedGuardarCampo(${f.id},'model_no',this.value)"></td>
-                    <td><input class="${loteClass}" value="${(loteValor + '').replace(/"/g, '&quot;')}" onchange="schedGuardarCampo(${f.id},'lote',this.value)">${badgeOculto}</td>
+                    <td style="text-align:center;font-weight:700;color:${liberadasColor};" title="Suma automática de unidades por día (columnas numeradas)">${sumaDias || 0}${qty > 0 ? ` / ${qty}` : ''}${coincide ? ' ✔' : ''}</td>
+                    <td><input class="${loteClass}" value="${loteValor.replace(/"/g, '&quot;')}" onchange="schedGuardarCampo(${f.id},'lote',this.value)" placeholder="—">${badgeOculto}</td>
                     ${Array.from({length: numDias}, (_, i) => i + 1).map(d => {
                         const wknd = schedEsFinDeSemana(schedMesActual, d) ? ' weekend-cell' : '';
                         const val = dias[d] !== undefined && dias[d] !== null ? dias[d] : '';
