@@ -10,6 +10,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from db import get_db_connection, execute_read
 from auth import verify_token
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/reportes", tags=["Reportes Maestros"])
 
@@ -694,6 +695,90 @@ def exportar_reporte_lote(
         raise
     except Exception as e:
         print(f"Error al generar reporte de lote '{id_lote}': {e}")
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
+    finally:
+        connection.close()
+
+
+class UnidadesSeleccionadas(BaseModel):
+    unidades: list[str]
+
+
+@router.post("/lotes-seleccionados")
+def exportar_reporte_unidades_seleccionadas(
+    data: UnidadesSeleccionadas,
+    current_user=Depends(verify_token)
+):
+    """
+    Genera un único Excel con la hoja Series_Unidades (mismas columnas que el
+    reporte por lote) pero filtrado a una lista explícita de unit_numbers,
+    posiblemente de varios lotes distintos. Usado desde el Schedule al
+    seleccionar filas y elegir qué unidades incluir en el reporte.
+    """
+    if not data.unidades:
+        raise HTTPException(status_code=400, detail="Debes indicar al menos una unidad")
+
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(status_code=500, detail="No hay conexión con la base de datos")
+
+    try:
+        placeholders = ",".join(["%s"] * len(data.unidades))
+        rows_db = _query(connection, f"""
+            SELECT
+                id_lote                  AS `Lote`,
+                unit_number               AS `Número de Unidad`,
+                vin_number               AS `VIN (Chasis)`,
+                reefer_model             AS `Modelo Reefer`,
+                reefer_serial            AS `Serie Reefer`,
+                evaporator_serial_mjs11  AS `Serie Evaporador MJS11`,
+                evaporator_serial_mjd22  AS `Serie Evaporador MJD22`,
+                engine_serial            AS `Serie Motor`,
+                compressor_serial        AS `Serie Compresor`,
+                generator_serial         AS `Serie Generador`,
+                battery_charger_serial   AS `Serie Cargador Batería`,
+                fecha_registro           AS `Fecha y Hora de Registro`
+            FROM unidades
+            WHERE unit_number IN ({placeholders})
+            ORDER BY id_lote, unit_number
+        """, tuple(data.unidades))
+
+        if not rows_db:
+            raise HTTPException(status_code=404, detail="No se encontraron unidades para esa selección")
+
+        wb = Workbook()
+        wb.remove(wb.active)
+        ws = wb.create_sheet("Series_Unidades")
+
+        cols = list(rows_db[0].keys())
+        rows_fmt = []
+        for r in rows_db:
+            row_vals = []
+            for c in cols:
+                val = r[c]
+                if c == "Fecha y Hora de Registro" and hasattr(val, "strftime"):
+                    row_vals.append(val.strftime("%d/%m/%Y %H:%M:%S"))
+                else:
+                    row_vals.append(_safe_str(val) if val not in (None, "") else "—")
+            rows_fmt.append(row_vals)
+        _write_sheet(ws, cols, rows_fmt)
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        fecha_hoy = datetime.now(TZ).strftime("%Y%m%d_%H%M")
+        filename = f"Reporte_Series_Seleccion_{fecha_hoy}.xlsx"
+
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error al generar reporte de unidades seleccionadas: {e}")
         raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
     finally:
         connection.close()
