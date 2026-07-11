@@ -58,7 +58,25 @@ def listar_filas(mes_anio: str, current_user=Depends(verify_token)):
         "SELECT * FROM schedule_produccion WHERE mes_anio=%s ORDER BY orden ASC, id ASC",
         (mes_anio,)
     )
-    return [_row_to_dict(dict(r)) for r in rows]
+    filas = [_row_to_dict(dict(r)) for r in rows]
+
+    # Determinar qué lotes están ocultos (reutiliza unidades.oculto, misma
+    # fuente de verdad que el panel de administración) para marcar cada fila.
+    lotes_presentes = {f["lote"] for f in filas if f.get("lote")}
+    lotes_ocultos = set()
+    if lotes_presentes:
+        placeholders = ",".join(["%s"] * len(lotes_presentes))
+        ocultos_rows = execute_read(
+            f"""SELECT DISTINCT id_lote FROM unidades
+                WHERE id_lote IN ({placeholders}) AND oculto=1""",
+            tuple(lotes_presentes)
+        )
+        lotes_ocultos = {r["id_lote"] for r in ocultos_rows}
+
+    for f in filas:
+        f["oculto"] = bool(f.get("lote") and f["lote"] in lotes_ocultos)
+
+    return filas
 
 
 @router.post("/")
