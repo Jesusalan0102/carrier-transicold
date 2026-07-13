@@ -191,7 +191,7 @@ def _sheet_actividades(wb, conn):
         LEFT JOIN (
             SELECT asignacion_id,
                    GROUP_CONCAT(
-                       CONCAT(tecnico, ' (', DATE_FORMAT(fecha, '%d/%m/%Y %H:%i'), '): ', comentario)
+                       CONCAT(tecnico, ' (', DATE_FORMAT(fecha, '%%d/%%m/%%Y %%H:%%i'), '): ', comentario)
                        ORDER BY fecha SEPARATOR '  |  '
                    ) AS comentarios
             FROM comentarios_actividades
@@ -608,7 +608,7 @@ def _sheet_lote_actividades(wb, conn, id_lote):
         LEFT JOIN (
             SELECT asignacion_id,
                    GROUP_CONCAT(
-                       CONCAT(tecnico, ' (', DATE_FORMAT(fecha, '%d/%m/%Y %H:%i'), '): ', comentario)
+                       CONCAT(tecnico, ' (', DATE_FORMAT(fecha, '%%d/%%m/%%Y %%H:%%i'), '): ', comentario)
                        ORDER BY fecha SEPARATOR '  |  '
                    ) AS comentarios
             FROM comentarios_actividades
