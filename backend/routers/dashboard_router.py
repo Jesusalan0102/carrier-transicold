@@ -247,11 +247,20 @@ def reporte_excel(current_user: dict = Depends(verify_token)):
     # ── Hoja 3: Actividades ────────────────────────────────────────────────
     ws2 = wb.create_sheet("Actividades")
     asigs = execute_read("""
-        SELECT id, unidad, actividad_id, tecnico, estado,
-               comentario,
-               fecha_asignacion, fecha_inicio, fecha_fin, ticket_id
-        FROM asignaciones
-        ORDER BY id DESC
+        SELECT a.id, a.unidad, a.actividad_id, a.tecnico, a.estado,
+               COALESCE(c.comentarios, a.comentario) AS comentario,
+               a.fecha_asignacion, a.fecha_inicio, a.fecha_fin, a.ticket_id
+        FROM asignaciones a
+        LEFT JOIN (
+            SELECT asignacion_id,
+                   GROUP_CONCAT(
+                       CONCAT(tecnico, ' (', DATE_FORMAT(fecha, '%d/%m/%Y %H:%i'), '): ', comentario)
+                       ORDER BY fecha SEPARATOR '  |  '
+                   ) AS comentarios
+            FROM comentarios_actividades
+            GROUP BY asignacion_id
+        ) c ON c.asignacion_id = a.id
+        ORDER BY a.id DESC
     """)
     write_sheet(ws2, asigs, col_widths={
         "actividad_id": 22, "tecnico": 18, "estado": 14,
