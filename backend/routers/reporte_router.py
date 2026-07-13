@@ -185,8 +185,19 @@ def _sheet_actividades(wb, conn):
     ws = wb.create_sheet("Actividades")
     rows_db = _query(conn, """
         SELECT a.id, a.unidad, a.actividad_id, a.tecnico, a.estado,
-               a.comentario, a.fecha_asignacion, a.fecha_inicio, a.fecha_fin, a.ticket_id
-        FROM asignaciones a ORDER BY a.fecha_asignacion DESC
+               COALESCE(c.comentarios, a.comentario) AS comentario,
+               a.fecha_asignacion, a.fecha_inicio, a.fecha_fin, a.ticket_id
+        FROM asignaciones a
+        LEFT JOIN (
+            SELECT asignacion_id,
+                   GROUP_CONCAT(
+                       CONCAT(tecnico, ' (', DATE_FORMAT(fecha, '%d/%m/%Y %H:%i'), '): ', comentario)
+                       ORDER BY fecha SEPARATOR '  |  '
+                   ) AS comentarios
+            FROM comentarios_actividades
+            GROUP BY asignacion_id
+        ) c ON c.asignacion_id = a.id
+        ORDER BY a.fecha_asignacion DESC
     """)
     if not rows_db:
         ws.cell(1, 1, "Sin registros").font = Font(italic=True)
@@ -589,11 +600,20 @@ def _sheet_lote_actividades(wb, conn, id_lote):
     ws = wb.create_sheet("Actividades")
     rows_db = _query(conn, """
         SELECT a.unidad AS Unidad, a.actividad_id AS Actividad, a.tecnico AS Técnico,
-               a.estado AS Estado, a.comentario AS Comentario,
+               a.estado AS Estado, COALESCE(c.comentarios, a.comentario) AS Comentario,
                a.fecha_asignacion AS `Fecha Asignación`,
                a.fecha_inicio AS `Fecha Inicio`, a.fecha_fin AS `Fecha Fin`
         FROM asignaciones a
         INNER JOIN unidades u ON u.unit_number = a.unidad
+        LEFT JOIN (
+            SELECT asignacion_id,
+                   GROUP_CONCAT(
+                       CONCAT(tecnico, ' (', DATE_FORMAT(fecha, '%d/%m/%Y %H:%i'), '): ', comentario)
+                       ORDER BY fecha SEPARATOR '  |  '
+                   ) AS comentarios
+            FROM comentarios_actividades
+            GROUP BY asignacion_id
+        ) c ON c.asignacion_id = a.id
         WHERE u.id_lote=%s
         ORDER BY a.unidad, a.fecha_asignacion DESC
     """, (id_lote,))
