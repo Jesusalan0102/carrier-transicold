@@ -254,7 +254,7 @@ def reporte_excel(current_user: dict = Depends(verify_token)):
         LEFT JOIN (
             SELECT asignacion_id,
                    GROUP_CONCAT(
-                       CONCAT(tecnico, ' (', DATE_FORMAT(fecha, '%d/%m/%Y %H:%i'), '): ', comentario)
+                       CONCAT(tecnico, ' (', DATE_FORMAT(fecha, '%%d/%%m/%%Y %%H:%%i'), '): ', comentario)
                        ORDER BY fecha SEPARATOR '  |  '
                    ) AS comentarios
             FROM comentarios_actividades
