@@ -5666,7 +5666,7 @@ ADSENSE_UNIT = """
 <ins class="adsbygoogle"
      style="display:block;"
      data-ad-client="ca-pub-5166749876470166"
-     data-ad-slot="YYYYYYYYYY"
+     data-ad-slot="5183636349"
      data-ad-format="auto"
      data-full-width-responsive="true"></ins>
 <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
@@ -5772,6 +5772,50 @@ async def landing_publica():
             </p>
         </section>
 
+        <section class="pub-section">
+            <h2>Preguntas frecuentes</h2>
+            <div class="pub-grid">
+                <div class="pub-card">
+                    <h3>¿Qué es una unidad reefer?</h3>
+                    <p>
+                        Es el equipo de refrigeración instalado en un remolque o contenedor de
+                        transporte, encargado de mantener la temperatura de la carga dentro de
+                        un rango controlado durante todo el trayecto. Su falla puede significar
+                        la pérdida completa de un embarque, por eso el mantenimiento preventivo
+                        es tan importante como la reparación misma.
+                    </p>
+                </div>
+                <div class="pub-card">
+                    <h3>¿Por qué centralizar el mantenimiento en una plataforma?</h3>
+                    <p>
+                        Cuando la información vive en hojas de cálculo separadas o en mensajes
+                        sueltos, es fácil perder trazabilidad: nadie sabe con certeza qué unidad
+                        fue atendida, por quién ni con qué resultado. Centralizar el registro
+                        permite auditar cada intervención y detectar patrones de falla recurrentes
+                        por lote o por modelo de unidad.
+                    </p>
+                </div>
+                <div class="pub-card">
+                    <h3>¿Cómo se organiza el trabajo de los técnicos?</h3>
+                    <p>
+                        Cada actividad se asigna a un técnico específico y queda ligada a la
+                        unidad correspondiente. El técnico documenta su avance con evidencia
+                        fotográfica y notas de campo, lo que permite a los supervisores validar
+                        el cierre de cada caso sin necesidad de estar presentes físicamente.
+                    </p>
+                </div>
+                <div class="pub-card">
+                    <h3>¿Qué se gana con el diagnóstico temprano de alarmas?</h3>
+                    <p>
+                        Detectar una alarma en sus primeras etapas evita que una unidad quede
+                        fuera de servicio en plena ruta. Interpretar correctamente el código y
+                        actuar a tiempo reduce tanto el tiempo de inactividad como el riesgo de
+                        daño a la carga transportada.
+                    </p>
+                </div>
+            </div>
+        </section>
+
         <footer class="pub-footer">
             <p>© 2026 Carrier Transicold — Sistema Operativo</p>
             <p><a href="/privacidad">Política de privacidad</a> · <a href="/nosotros">Nosotros</a> · <a href="/app">Iniciar sesión</a></p>
@@ -5843,6 +5887,48 @@ async def pagina_nosotros():
                 <div class="pub-card">
                     <h3>📟 Diagnóstico de alarmas</h3>
                     <p>Interpretación temprana de códigos de alarma para actuar antes de que la unidad quede fuera de servicio.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="pub-section">
+            <h2>Preguntas frecuentes sobre nuestro equipo</h2>
+            <div class="pub-grid">
+                <div class="pub-card">
+                    <h3>¿Con qué frecuencia se revisan las unidades?</h3>
+                    <p>
+                        La frecuencia depende del uso de cada unidad, pero como práctica general
+                        recomendamos una inspección visual en cada rotación de ruta y una revisión
+                        técnica completa —incluyendo fugas, vacío y conexiones— de forma periódica
+                        programada, sin esperar a que aparezca una falla evidente.
+                    </p>
+                </div>
+                <div class="pub-card">
+                    <h3>¿Qué certificaciones tienen los técnicos?</h3>
+                    <p>
+                        Nuestros técnicos de campo cuentan con formación específica en sistemas de
+                        refrigeración transportable, incluyendo manejo seguro de refrigerantes y
+                        procedimientos de vacío, además de capacitación continua conforme se
+                        actualizan los equipos que damos mantenimiento.
+                    </p>
+                </div>
+                <div class="pub-card">
+                    <h3>¿Cómo se documenta cada intervención?</h3>
+                    <p>
+                        Cada visita técnica queda registrada con evidencia fotográfica, notas del
+                        procedimiento realizado y el estado final de la unidad. Esto crea un
+                        historial consultable que ayuda a anticipar fallas repetidas en una misma
+                        unidad o en unidades del mismo lote.
+                    </p>
+                </div>
+                <div class="pub-card">
+                    <h3>¿Por qué compartimos estas prácticas públicamente?</h3>
+                    <p>
+                        Creemos que el mantenimiento preventivo bien hecho beneficia a toda la
+                        industria del transporte refrigerado, no solo a nuestros clientes directos.
+                        Por eso documentamos aquí nuestro enfoque de trabajo, aunque la plataforma
+                        de gestión en sí sea una herramienta interna.
+                    </p>
                 </div>
             </div>
         </section>
