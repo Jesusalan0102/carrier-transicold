@@ -5700,6 +5700,7 @@ async def landing_publica():
             <nav>
                 <a href="/">Inicio</a>
                 <a href="/nosotros">Nosotros</a>
+                <a href="/guia-mantenimiento">Guías</a>
                 <a href="/privacidad">Privacidad</a>
                 <a href="/app">Iniciar sesión</a>
             </nav>
@@ -5714,10 +5715,6 @@ async def landing_publica():
             </p>
             <a class="cta" href="/app">Acceder al sistema</a>
         </section>
-
-        <div class="ad-slot">
-            {ADSENSE_UNIT}
-        </div>
 
         <section class="pub-section">
             <h2>¿Qué hace esta plataforma?</h2>
@@ -5761,6 +5758,10 @@ async def landing_publica():
                 </div>
             </div>
         </section>
+
+        <div class="ad-slot">
+            {ADSENSE_UNIT}
+        </div>
 
         <section class="pub-section">
             <h2>Sobre este proyecto</h2>
@@ -5846,6 +5847,7 @@ async def pagina_nosotros():
             <nav>
                 <a href="/">Inicio</a>
                 <a href="/nosotros">Nosotros</a>
+                <a href="/guia-mantenimiento">Guías</a>
                 <a href="/privacidad">Privacidad</a>
                 <a href="/app">Iniciar sesión</a>
             </nav>
@@ -5966,6 +5968,7 @@ async def politica_privacidad():
             <nav>
                 <a href="/">Inicio</a>
                 <a href="/nosotros">Nosotros</a>
+                <a href="/guia-mantenimiento">Guías</a>
                 <a href="/privacidad">Privacidad</a>
                 <a href="/app">Iniciar sesión</a>
             </nav>
@@ -6014,6 +6017,133 @@ async def politica_privacidad():
             <p>
                 Si tienes dudas sobre esta política de privacidad, puedes contactarnos a través
                 de los canales indicados en la sección "Nosotros" de este sitio.
+            </p>
+        </section>
+
+        <footer class="pub-footer">
+            <p>© 2026 Carrier Transicold — Sistema Operativo</p>
+            <p><a href="/">Inicio</a> · <a href="/nosotros">Nosotros</a> · <a href="/app">Iniciar sesión</a></p>
+        </footer>
+    </body>
+    </html>
+    """
+
+
+@router.get("/guia-mantenimiento", response_class=HTMLResponse)
+async def guia_mantenimiento():
+    return f"""
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Guía de mantenimiento preventivo para unidades reefer | Carrier Transicold</title>
+        <meta name="description" content="Guía práctica de mantenimiento preventivo para unidades de refrigeración transportable: qué revisar antes de cada ruta, señales de alerta tempranas y buenas prácticas de campo.">
+        {PUBLIC_STYLE}
+        {ADSENSE_HEAD_SCRIPT}
+    </head>
+    <body>
+        <header class="pub-header">
+            <div class="brand">
+                <img src="https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo.jpg" alt="Carrier Transicold">
+                Sistema Operativo Carrier Transicold
+            </div>
+            <nav>
+                <a href="/">Inicio</a>
+                <a href="/nosotros">Nosotros</a>
+                <a href="/guia-mantenimiento">Guías</a>
+                <a href="/privacidad">Privacidad</a>
+                <a href="/app">Iniciar sesión</a>
+            </nav>
+        </header>
+
+        <section class="pub-hero">
+            <h1>Guía de mantenimiento preventivo para unidades reefer</h1>
+            <p class="lead">
+                Qué revisar antes de cada ruta para reducir fallas en carretera y proteger la carga.
+            </p>
+        </section>
+
+        <section class="pub-section">
+            <h2>Por qué el mantenimiento preventivo importa más que la reparación</h2>
+            <p>
+                Cuando una unidad reefer falla en plena ruta, el costo casi nunca es solo el de la
+                reparación. Es el tiempo que el vehículo pasa detenido, el reacomodo de la ruta, y en
+                el peor de los casos, la pérdida parcial o total de la carga por pérdida de cadena de
+                frío. La mayoría de esas fallas no aparecen de la nada: dan señales días o semanas
+                antes, y se pueden anticipar con una rutina de revisión simple pero consistente.
+            </p>
+            <p>
+                A continuación compartimos los puntos que, en nuestra experiencia operando flotas de
+                transporte refrigerado, más impacto tienen para evitar paros no programados.
+            </p>
+        </section>
+
+        <section class="pub-section">
+            <h2>Antes de cada salida</h2>
+            <div class="pub-grid">
+                <div class="pub-card">
+                    <h3>1. Revisión visual del compartimento del motor diésel</h3>
+                    <p>
+                        Busca fugas de aceite o refrigerante en el suelo bajo la unidad, correas con
+                        signos de desgaste o grietas, y conexiones eléctricas sueltas. Una fuga pequeña
+                        detectada a tiempo es una reparación menor; ignorada, puede dejar la unidad sin
+                        motor auxiliar a mitad de ruta.
+                    </p>
+                </div>
+                <div class="pub-card">
+                    <h3>2. Niveles de combustible y refrigerante</h3>
+                    <p>
+                        Confirma que el tanque de diésel del motor auxiliar tenga suficiente autonomía
+                        para la duración estimada del viaje, considerando que el consumo aumenta con
+                        temperaturas exteriores altas o cuando la unidad trabaja en modo de enfriamiento
+                        continuo (pull-down) al inicio de la carga.
+                    </p>
+                </div>
+                <div class="pub-card">
+                    <h3>3. Estado de puertas y empaques</h3>
+                    <p>
+                        Un empaque de puerta deteriorado permite fuga de aire frío constante, obligando
+                        al equipo a trabajar más de lo necesario para mantener la temperatura, lo que
+                        acelera el desgaste del compresor y dispara el consumo de combustible.
+                    </p>
+                </div>
+                <div class="pub-card">
+                    <h3>4. Panel de control y códigos de alarma activos</h3>
+                    <p>
+                        Antes de salir, revisa si el panel muestra alguna alarma activa o reciente. Una
+                        alarma que se "borra sola" sin haberse atendido no significa que el problema
+                        desapareció — muchas veces vuelve a aparecer bajo carga, ya en ruta.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <div class="ad-slot">
+            {ADSENSE_UNIT}
+        </div>
+
+        <section class="pub-section">
+            <h2>Señales de alerta que no deberían ignorarse</h2>
+            <p>
+                Hay ciertos comportamientos que, aunque no generan una alarma formal en el panel,
+                anticipan una falla mayor: ciclos de encendido y apagado del compresor más frecuentes
+                de lo normal, ruido metálico nuevo durante el arranque, tiempo de recuperación de
+                temperatura más lento tras abrir la puerta de carga, o vibración inusual en el chasis
+                del motor auxiliar. Documentar estos síntomas —aunque parezcan menores— ayuda a que el
+                taller diagnostique la causa real más rápido, en vez de reaccionar solo cuando ya hay
+                una falla total.
+            </p>
+        </section>
+
+        <section class="pub-section">
+            <h2>Por qué documentar cada revisión, no solo las reparaciones</h2>
+            <p>
+                Es común que las flotas solo registren cuando algo se rompe. El problema es que sin un
+                historial de las revisiones "normales", es imposible distinguir una falla aislada de
+                un patrón que se repite en una unidad específica o en un lote completo del mismo
+                modelo. Llevar un registro sistemático de todas las inspecciones —no solo de las
+                reparaciones— es lo que permite anticipar fallas antes de que detengan una ruta.
             </p>
         </section>
 
