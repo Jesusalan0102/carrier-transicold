@@ -12,6 +12,7 @@ class UserCreate(BaseModel):
     username: str
     password: str
     role: str
+    nombre_completo: str = ""
 
 class PasswordChange(BaseModel):
     new_password: str
@@ -20,11 +21,14 @@ class PerfilUpdate(BaseModel):
     foto_url: str = ""
     puesto: str = ""
 
+class NombreUpdate(BaseModel):
+    nombre_completo: str = ""
+
 @router.get("/me")
 def mi_perfil(current_user=Depends(verify_token)):
-    """Devuelve foto_url y puesto del usuario en sesion — accesible para cualquier rol."""
+    """Devuelve foto_url, puesto y nombre_completo del usuario en sesion — accesible para cualquier rol."""
     rows = execute_read(
-        "SELECT id, username, role, foto_url, puesto FROM users WHERE username = %s",
+        "SELECT id, username, role, foto_url, puesto, nombre_completo FROM users WHERE username = %s",
         (current_user["username"],)
     )
     if not rows:
@@ -36,7 +40,7 @@ def listar_usuarios(current_user=Depends(verify_token)):
     if current_user["role"] not in ("admin", "visor"):
         raise HTTPException(status_code=403, detail="Acceso denegado")
     return execute_read(
-        "SELECT id, username, role, foto_url, puesto FROM users ORDER BY role, username"
+        "SELECT id, username, role, foto_url, puesto, nombre_completo FROM users ORDER BY role, username"
     )
 
 @router.put("/{user_id}/perfil")
@@ -49,6 +53,17 @@ def actualizar_perfil(user_id: int, data: PerfilUpdate, current_user=Depends(ver
     )
     return {"mensaje": "Perfil actualizado correctamente"}
 
+@router.put("/{user_id}/nombre")
+def actualizar_nombre(user_id: int, data: NombreUpdate, current_user=Depends(verify_token)):
+    """Permite al administrador definir el nombre real que se mostrará en gráficas y horarios."""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    execute_write(
+        "UPDATE users SET nombre_completo = %s WHERE id = %s",
+        (data.nombre_completo.strip() or None, user_id)
+    )
+    return {"mensaje": "Nombre actualizado correctamente"}
+
 @router.post("/")
 def crear_usuario(user: UserCreate, current_user=Depends(verify_token)):
     if current_user["role"] != "admin":
@@ -60,8 +75,8 @@ def crear_usuario(user: UserCreate, current_user=Depends(verify_token)):
         raise HTTPException(status_code=400, detail="El nombre de usuario ya existe")
     hashed_password = bcrypt.hashpw(user.password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     execute_write(
-        "INSERT INTO users (username, password, role) VALUES (%s,%s,%s)",
-        (user.username, hashed_password, user.role)
+        "INSERT INTO users (username, password, role, nombre_completo) VALUES (%s,%s,%s,%s)",
+        (user.username, hashed_password, user.role, user.nombre_completo.strip() or None)
     )
     return {"mensaje": "Usuario creado", "username": user.username, "role": user.role}
 
