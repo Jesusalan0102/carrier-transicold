@@ -57,6 +57,7 @@ def get_kpis(current_user: dict = Depends(verify_token)):
 def get_stats_tecnicos(current_user: dict = Depends(verify_token)):
     return execute_read("""
         SELECT a.tecnico,
+               COALESCE(NULLIF(usr.nombre_completo, ''), a.tecnico) as tecnico_display,
                COUNT(*) as total,
                SUM(a.estado='completada') as completadas,
                SUM(a.estado='en_proceso') as en_curso,
@@ -64,8 +65,9 @@ def get_stats_tecnicos(current_user: dict = Depends(verify_token)):
                ROUND(SUM(a.estado='completada') / COUNT(*) * 100) as rendimiento_pct
         FROM asignaciones a
         INNER JOIN unidades u ON u.unit_number = a.unidad
+        LEFT JOIN users usr ON usr.username = a.tecnico
         WHERE u.oculto = 0
-        GROUP BY a.tecnico
+        GROUP BY a.tecnico, usr.nombre_completo
         ORDER BY completadas DESC
     """)
 
