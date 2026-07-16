@@ -864,7 +864,7 @@ async def dashboard():
 
     <script>
         const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series','Extra Eléctrico','Extra Soldador'];
-        const camposSeries = {vin_number:'VIN Number',reefer_serial:'Serie Reefer',reefer_model:'Modelo Reefer',evaporator_serial_mjs11:'Evap. MJS11',evaporator_serial_mjd22:'Evap. MJD22',engine_serial:'Motor',compressor_serial:'Compresor',generator_serial:'Generador',battery_charger_serial:'Cargador Bat.'};
+        const camposSeries = {vin_number:'VIN Number',reefer_serial:'Serie Reefer',reefer_model:'Modelo Reefer',evaporator_model_1:'Evap. 1 Modelo',evaporator_serial_mjs11:'Evap. 1 Serie',evaporator_model_2:'Evap. 2 Modelo',evaporator_serial_mjd22:'Evap. 2 Serie',engine_serial:'Motor',compressor_serial:'Compresor',generator_serial:'Generador',battery_charger_serial:'Cargador Bat.'};
 
         async function cargarDashboard() {
             try {
@@ -899,9 +899,9 @@ async def dashboard():
 
                 if (stats.length > 0) {
                     Plotly.newPlot('barChart', [
-                        {x: stats.map(s=>s.tecnico), y: stats.map(s=>s.completadas), type:'bar', name:'Completadas', marker:{color:'#16a34a'}},
-                        {x: stats.map(s=>s.tecnico), y: stats.map(s=>s.en_curso),    type:'bar', name:'En Curso',    marker:{color:'#d97706'}},
-                        {x: stats.map(s=>s.tecnico), y: stats.map(s=>s.pendientes),  type:'bar', name:'Pendientes',  marker:{color:'#dc2626'}},
+                        {x: stats.map(s=>s.tecnico_display||s.tecnico), y: stats.map(s=>s.completadas), type:'bar', name:'Completadas', marker:{color:'#16a34a'}},
+                        {x: stats.map(s=>s.tecnico_display||s.tecnico), y: stats.map(s=>s.en_curso),    type:'bar', name:'En Curso',    marker:{color:'#d97706'}},
+                        {x: stats.map(s=>s.tecnico_display||s.tecnico), y: stats.map(s=>s.pendientes),  type:'bar', name:'Pendientes',  marker:{color:'#dc2626'}},
                     ], {barmode:'group', paper_bgcolor:'transparent', plot_bgcolor:'transparent', font:{family:'Inter,sans-serif'}, margin:{t:10,b:80}}, {responsive:true, displaylogo:false});
                 } else {
                     document.getElementById('barChart').innerHTML = '<div class="chart-empty"><div class="ico">📈</div><div class="msg">Aún no hay actividades asignadas a técnicos. Esta gráfica se llenará en cuanto empiecen a registrarse asignaciones.</div></div>';
@@ -1711,16 +1711,26 @@ async def unidades():
         <input type="text" id="vin_number" placeholder="VIN Number"><input type="text" id="reefer_serial" placeholder="Serie del Reefer">
         <input type="text" id="reefer_model" placeholder="Modelo del Reefer">
         <div style="display:flex; gap:6px; align-items:center;">
-            <input type="text" id="evaporator_serial_mjs11" placeholder="Evaporador MJS11" style="flex:1;">
-            <label style="display:flex; align-items:center; gap:4px; font-size:0.8rem; white-space:nowrap; color:#64748b;">
-                <input type="checkbox" id="na_evaporator_serial_mjs11" onchange="toggleNA('evaporator_serial_mjs11')"> N/A
-            </label>
+            <select id="evaporator_model_1" style="width:135px; flex-shrink:0;" onchange="toggleEvapNA(1)">
+                <option value="">Evap. 1: Modelo</option>
+                <option value="MJD 1100">MJD 1100</option>
+                <option value="MJS 1100">MJS 1100</option>
+                <option value="MJD 2200">MJD 2200</option>
+                <option value="MJS 2200">MJS 2200</option>
+                <option value="N/A">N/A</option>
+            </select>
+            <input type="text" id="evaporator_serial_mjs11" placeholder="Número de serie" style="flex:1;">
         </div>
         <div style="display:flex; gap:6px; align-items:center;">
-            <input type="text" id="evaporator_serial_mjd22" placeholder="Evaporador MJD22" style="flex:1;">
-            <label style="display:flex; align-items:center; gap:4px; font-size:0.8rem; white-space:nowrap; color:#64748b;">
-                <input type="checkbox" id="na_evaporator_serial_mjd22" onchange="toggleNA('evaporator_serial_mjd22')"> N/A
-            </label>
+            <select id="evaporator_model_2" style="width:135px; flex-shrink:0;" onchange="toggleEvapNA(2)">
+                <option value="">Evap. 2: Modelo</option>
+                <option value="MJD 1100">MJD 1100</option>
+                <option value="MJS 1100">MJS 1100</option>
+                <option value="MJD 2200">MJD 2200</option>
+                <option value="MJS 2200">MJS 2200</option>
+                <option value="N/A">N/A</option>
+            </select>
+            <input type="text" id="evaporator_serial_mjd22" placeholder="Número de serie" style="flex:1;">
         </div>
         <input type="text" id="engine_serial" placeholder="Motor">
         <input type="text" id="compressor_serial" placeholder="Compresor"><input type="text" id="generator_serial" placeholder="Generador">
@@ -1731,11 +1741,12 @@ async def unidades():
     <div id="unidadesList"></div>
     <script>
         const fetchAuth = window.fetchAuth;
-        function toggleNA(fieldId) {
-            const input = document.getElementById(fieldId);
-            const checkbox = document.getElementById('na_' + fieldId);
-            if (checkbox.checked) { input.value = 'N/A'; input.disabled = true; }
-            else { input.value = ''; input.disabled = false; input.focus(); }
+        function toggleEvapNA(slot) {
+            const modelSel = document.getElementById('evaporator_model_' + slot);
+            const serialField = slot === 1 ? 'evaporator_serial_mjs11' : 'evaporator_serial_mjd22';
+            const input = document.getElementById(serialField);
+            if (modelSel.value === 'N/A') { input.value = 'N/A'; input.disabled = true; }
+            else { if (input.value === 'N/A') input.value = ''; input.disabled = false; }
         }
         async function cargarUnidades() { const res = await fetchAuth('/api/unidades/'); const unidades = await res.json(); let html = '<table><thead><tr><th>#Económico</th><th>Lote</th><th>VIN</th><th>Reefer Serial</th><th>Modelo</th><th>Motor</th><th>Compresor</th></tr></thead><tbody>'; if (Array.isArray(unidades)) unidades.forEach(u => html += `<tr><td>${u.unit_number}</td><td>${u.id_lote||''}</td><td style="font-family:monospace;">${u.vin_number||''}</td><td>${u.reefer_serial||''}</td><td>${u.reefer_model||''}</td><td style="font-family:monospace;">${u.engine_serial||''}</td><td>${u.compressor_serial||''}</td>`); html += '</tbody></table>'; document.getElementById('unidadesList').innerHTML = html; }
         document.getElementById('unidadForm').addEventListener('submit', async (e) => {
@@ -1746,7 +1757,9 @@ async def unidades():
                 vin_number: document.getElementById('vin_number').value,
                 reefer_serial: document.getElementById('reefer_serial').value,
                 reefer_model: document.getElementById('reefer_model').value,
+                evaporator_model_1: document.getElementById('evaporator_model_1').value,
                 evaporator_serial_mjs11: document.getElementById('evaporator_serial_mjs11').value,
+                evaporator_model_2: document.getElementById('evaporator_model_2').value,
                 evaporator_serial_mjd22: document.getElementById('evaporator_serial_mjd22').value,
                 engine_serial: document.getElementById('engine_serial').value,
                 compressor_serial: document.getElementById('compressor_serial').value,
@@ -1857,16 +1870,19 @@ async def usuarios():
                         : `<div class="perfil-foto-placeholder">👤</div>`;
 
                     const accionesAdmin = window.role === 'admin' ? `
-                        <button class="btn-sm btn-sm-blue" onclick="abrirModalPerfil(${u.id}, '${u.username}', '${u.foto_url || ''}', '${(u.puesto || '').replace(/'/g,"\\'")}')">🖼 Perfil</button>
+                        <button class="btn-sm btn-sm-blue" onclick="abrirModalPerfil(${u.id}, '${u.username}', '${u.foto_url || ''}', '${(u.puesto || '').replace(/'/g,"\\'")}', '${(u.nombre_completo || '').replace(/'/g,"\\'")}')">🖼 Perfil</button>
                         <button class="btn-sm btn-sm-amber" onclick="abrirModalPassword(${u.id}, '${u.username}')">🔑 Pwd</button>
                         <button class="btn-sm btn-sm-red" onclick="eliminarUsuario(${u.id}, '${u.username}')">🗑</button>
                     ` : '';
+                    const nombreMostrar = u.nombre_completo
+                        ? `${ROLE_EMOJI[u.role] || ''} ${u.nombre_completo} <span style="font-weight:400;color:var(--text-secondary);font-size:0.78rem;">(${u.username})</span>`
+                        : `${ROLE_EMOJI[u.role] || ''} ${u.username}`;
 
                     html += `
                     <div class="perfil-card role-${u.role}">
                         ${fotoHtml}
                         <div class="perfil-body">
-                            <div class="perfil-nombre">${ROLE_EMOJI[u.role] || ''} ${u.username}</div>
+                            <div class="perfil-nombre">${nombreMostrar}</div>
                             <div class="perfil-puesto">${puesto}</div>
                             <div class="perfil-acciones">${accionesAdmin}</div>
                         </div>
@@ -1880,7 +1896,7 @@ async def usuarios():
         }
 
         /* ── Modal: editar foto y puesto ── */
-        function abrirModalPerfil(userId, username, fotoActual, puestoActual) {
+        function abrirModalPerfil(userId, username, fotoActual, puestoActual, nombreActual) {
             const prev = document.getElementById('modalPerfil');
             if (prev) prev.remove();
             const modal = document.createElement('div');
@@ -1913,6 +1929,11 @@ async def usuarios():
 
                     <!-- Input archivo oculto -->
                     <input id="inputArchivoFoto" type="file" accept="image/*" style="display:none;" onchange="cargarFotoArchivo(this)">
+
+                    <!-- Nombre completo -->
+                    <label style="font-size:0.82rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:4px;">Nombre completo</label>
+                    <input id="inputNombreCompleto" type="text" placeholder="Ej: Carlos Ramírez" value="${nombreActual || ''}" style="margin-bottom:14px;">
+                    <p style="font-size:0.75rem;color:var(--text-secondary);margin:-10px 0 14px;">Este nombre se usará en gráficas y horarios en lugar del usuario (${username}).</p>
 
                     <!-- Puesto -->
                     <label style="font-size:0.82rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:4px;">Puesto / Cargo</label>
@@ -1968,13 +1989,21 @@ async def usuarios():
         async function guardarPerfil(userId) {
             const foto_url = window._fotoBase64 || '';
             const puesto   = document.getElementById('inputPuesto').value.trim();
+            const nombre_completo = document.getElementById('inputNombreCompleto').value.trim();
             const btn = document.getElementById('btnGuardarPerfil');
             btn.textContent = 'Guardando...'; btn.disabled = true;
-            const res = await fetchAuth('/api/usuarios/' + userId + '/perfil', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ foto_url, puesto })
-            });
+            const [res] = await Promise.all([
+                fetchAuth('/api/usuarios/' + userId + '/perfil', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ foto_url, puesto })
+                }),
+                fetchAuth('/api/usuarios/' + userId + '/nombre', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nombre_completo })
+                })
+            ]);
             if (res.ok) {
                 document.getElementById('modalPerfil').remove();
                 mostrarToast('✅ Perfil actualizado correctamente.', '#1F4E79');
@@ -3388,7 +3417,8 @@ async def admin():
         const u = data.unidad;
         const seriesRows = [
             ['VIN', u.vin_number], ['Reefer Serial', u.reefer_serial], ['Modelo Reefer', u.reefer_model],
-            ['Evap. MJS11', u.evaporator_serial_mjs11], ['Evap. MJD22', u.evaporator_serial_mjd22],
+            ['Evaporador 1', [u.evaporator_model_1, u.evaporator_serial_mjs11].filter(Boolean).join(' — ')],
+            ['Evaporador 2', [u.evaporator_model_2, u.evaporator_serial_mjd22].filter(Boolean).join(' — ')],
             ['Motor', u.engine_serial], ['Compresor', u.compressor_serial],
             ['Generador', u.generator_serial], ['Cargador Batería', u.battery_charger_serial],
         ].filter(([,v]) => v).map(([k,v]) => `<tr><td style="color:#6b7280;padding:4px 10px 4px 0;white-space:nowrap;">${k}</td><td style="font-family:monospace;font-size:13px;">${v}</td></tr>`).join('');
@@ -3626,20 +3656,27 @@ async def mis_tareas():
 
         // ---------- SERIES ----------
         function toggleSerieNA(i) {
+            const modelSel = document.getElementById('serie_model_' + i);
             const input = document.getElementById('serie_' + i);
-            const checkbox = document.getElementById('serie_na_' + i);
-            if (checkbox.checked) { input.value = 'N/A'; input.disabled = true; }
-            else { input.value = ''; input.disabled = false; input.focus(); }
+            if (modelSel.value === 'N/A') { input.value = 'N/A'; input.disabled = true; }
+            else { if (input.value === 'N/A') input.value = ''; input.disabled = false; }
         }
         async function tomarSeries(tareaId) {
             const camposSeries = [
                 { key: 'vin_number', label: 'VIN Number' },{ key: 'reefer_serial', label: 'Serie del Reefer' },{ key: 'reefer_model', label: 'Modelo del Reefer' },
-                { key: 'evaporator_serial_mjs11', label: 'Evaporador MJS11', na: true },{ key: 'evaporator_serial_mjd22', label: 'Evaporador MJD22', na: true },
+                { key: 'evaporator_serial_mjs11', label: 'Evaporador 1', na: true, modelKey: 'evaporator_model_1' },
+                { key: 'evaporator_serial_mjd22', label: 'Evaporador 2', na: true, modelKey: 'evaporator_model_2' },
                 { key: 'engine_serial', label: 'Motor' },{ key: 'compressor_serial', label: 'Compresor' },{ key: 'generator_serial', label: 'Generador' },
                 { key: 'battery_charger_serial', label: 'Cargador de Batería' }
             ];
+            const opcionesEvap = ['','MJD 1100','MJS 1100','MJD 2200','MJS 2200','N/A']
+                .map(o => `<option value="${o}">${o || 'Modelo'}</option>`).join('');
             let inputs = camposSeries.map((c,i) => c.na
-                ? `<div style="display:flex; gap:6px; align-items:center; margin-bottom:4px;"><input type="text" id="serie_${i}" placeholder="${c.label}" style="flex:1;"><label style="display:flex; align-items:center; gap:4px; font-size:0.8rem; white-space:nowrap; color:#64748b;"><input type="checkbox" id="serie_na_${i}" onchange="toggleSerieNA(${i})"> N/A</label><input type="hidden" id="serie_key_${i}" value="${c.key}"></div>`
+                ? `<div style="display:flex; gap:6px; align-items:center; margin-bottom:4px;">
+                     <select id="serie_model_${i}" style="width:120px; flex-shrink:0;" onchange="toggleSerieNA(${i})" data-modelkey="${c.modelKey}">${opcionesEvap}</select>
+                     <input type="text" id="serie_${i}" placeholder="${c.label}: Nº de serie" style="flex:1;">
+                     <input type="hidden" id="serie_key_${i}" value="${c.key}">
+                   </div>`
                 : `<input type="text" id="serie_${i}" placeholder="${c.label}"><input type="hidden" id="serie_key_${i}" value="${c.key}">`
             ).join('');
             const modal = mostrarModal(`<div class="modal-content"><h3>🔢 Toma de Series</h3><div id="camposSeries">${inputs}</div><button class="btn-primary" id="btnGuardarSeries">💾 Guardar Series</button><button class="btn-danger" onclick="cerrarModal()">Cancelar</button></div>`);
@@ -3648,6 +3685,7 @@ async def mis_tareas():
                 const tarea = Array.isArray(tareas) ? tareas.find(t => t.id == tareaId) : null; if (!tarea) return alert('Tarea no encontrada');
                 const keys = [...document.querySelectorAll('[id^="serie_key_"]')].map(el => el.value); const values = { unit_number: tarea.unidad };
                 keys.forEach((key,i) => values[key] = document.getElementById('serie_'+i).value);
+                document.querySelectorAll('select[data-modelkey]').forEach(sel => { values[sel.dataset.modelkey] = sel.value; });
                 const resSeries = await fetchAuth('/api/unidades/series/update', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) }); if (resSeries.ok) { cerrarModal(); cargarTareas(); const t = document.createElement('div'); t.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;z-index:600;'; t.textContent = '✅ Series guardadas correctamente.'; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); } else { alert('Error al guardar las series.'); }
             };
         }
@@ -4241,7 +4279,7 @@ async def asistencia_admin():
                 fechas.forEach((f,i) => { html += `<th>${diasSemana[i]}<br><small style="font-weight:400;opacity:.8;">${f.slice(5)}</small></th>`; });
                 html += '</tr></thead><tbody>';
                 tecnicosData.forEach(tec => {
-                    html += `<tr><td>${tec.username}</td>`;
+                    html += `<tr><td>${tec.nombre_completo || tec.username}</td>`;
                     fechas.forEach(f => {
                         const h = horariosData[tec.username+'_'+f] || {};
                         html += `<td>
@@ -4257,7 +4295,9 @@ async def asistencia_admin():
                 document.getElementById('tablaHorarios').innerHTML = html;
 
                 // Tabla de resumen de asistencia real
-                renderResumen(resumen, fechas, comentarios, semana);
+                const nombreMap = {};
+                tecnicosData.forEach(t => { nombreMap[t.username] = t.nombre_completo || t.username; });
+                renderResumen(resumen, fechas, comentarios, semana, nombreMap);
 
             } catch(e) {
                 console.error('Error cargando horarios:', e);
@@ -4265,8 +4305,9 @@ async def asistencia_admin():
             }
         }
 
-        function renderResumen(resumen, fechas, comentarios, semana) {
+        function renderResumen(resumen, fechas, comentarios, semana, nombreMap) {
             comentarios = comentarios || {};
+            nombreMap = nombreMap || {};
             if (!resumen.length) {
                 document.getElementById('resumenSemanal').innerHTML = '<p style="color:#6b7280; padding:12px;">No hay registros de asistencia para esta semana.</p>';
                 return;
@@ -4285,7 +4326,7 @@ async def asistencia_admin():
                 filas.forEach(r => {
                     if (r.retardo_min > 0) { numRetardos++; minRetardos += r.retardo_min; }
                 });
-                html += `<tr><td>${tec}</td>`;
+                html += `<tr><td>${nombreMap[tec] || tec}</td>`;
                 fechas.forEach(f => {
                     const r = filas.find(x=>x.fecha===f);
                     if (!r) { html += '<td><span class="est-libre">Libre</span></td>'; return; }
