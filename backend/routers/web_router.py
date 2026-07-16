@@ -1709,8 +1709,20 @@ async def unidades():
     <form id="unidadForm" class="admin-only" style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
         <input type="text" id="unit_number" placeholder="Número Económico" required><input type="text" id="id_lote" placeholder="Número de Lote">
         <input type="text" id="vin_number" placeholder="VIN Number"><input type="text" id="reefer_serial" placeholder="Serie del Reefer">
-        <input type="text" id="reefer_model" placeholder="Modelo del Reefer"><input type="text" id="evaporator_serial_mjs11" placeholder="Evaporador MJS11">
-        <input type="text" id="evaporator_serial_mjd22" placeholder="Evaporador MJD22"><input type="text" id="engine_serial" placeholder="Motor">
+        <input type="text" id="reefer_model" placeholder="Modelo del Reefer">
+        <div style="display:flex; gap:6px; align-items:center;">
+            <input type="text" id="evaporator_serial_mjs11" placeholder="Evaporador MJS11" style="flex:1;">
+            <label style="display:flex; align-items:center; gap:4px; font-size:0.8rem; white-space:nowrap; color:#64748b;">
+                <input type="checkbox" id="na_evaporator_serial_mjs11" onchange="toggleNA('evaporator_serial_mjs11')"> N/A
+            </label>
+        </div>
+        <div style="display:flex; gap:6px; align-items:center;">
+            <input type="text" id="evaporator_serial_mjd22" placeholder="Evaporador MJD22" style="flex:1;">
+            <label style="display:flex; align-items:center; gap:4px; font-size:0.8rem; white-space:nowrap; color:#64748b;">
+                <input type="checkbox" id="na_evaporator_serial_mjd22" onchange="toggleNA('evaporator_serial_mjd22')"> N/A
+            </label>
+        </div>
+        <input type="text" id="engine_serial" placeholder="Motor">
         <input type="text" id="compressor_serial" placeholder="Compresor"><input type="text" id="generator_serial" placeholder="Generador">
         <input type="text" id="battery_charger_serial" placeholder="Cargador de Batería">
         <button type="submit" class="btn-primary" style="grid-column: span 2;">💾 Guardar Registro</button>
@@ -1719,6 +1731,12 @@ async def unidades():
     <div id="unidadesList"></div>
     <script>
         const fetchAuth = window.fetchAuth;
+        function toggleNA(fieldId) {
+            const input = document.getElementById(fieldId);
+            const checkbox = document.getElementById('na_' + fieldId);
+            if (checkbox.checked) { input.value = 'N/A'; input.disabled = true; }
+            else { input.value = ''; input.disabled = false; input.focus(); }
+        }
         async function cargarUnidades() { const res = await fetchAuth('/api/unidades/'); const unidades = await res.json(); let html = '<table><thead><tr><th>#Económico</th><th>Lote</th><th>VIN</th><th>Reefer Serial</th><th>Modelo</th><th>Motor</th><th>Compresor</th></tr></thead><tbody>'; if (Array.isArray(unidades)) unidades.forEach(u => html += `<tr><td>${u.unit_number}</td><td>${u.id_lote||''}</td><td style="font-family:monospace;">${u.vin_number||''}</td><td>${u.reefer_serial||''}</td><td>${u.reefer_model||''}</td><td style="font-family:monospace;">${u.engine_serial||''}</td><td>${u.compressor_serial||''}</td>`); html += '</tbody></table>'; document.getElementById('unidadesList').innerHTML = html; }
         document.getElementById('unidadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -3607,14 +3625,23 @@ async def mis_tareas():
         }
 
         // ---------- SERIES ----------
+        function toggleSerieNA(i) {
+            const input = document.getElementById('serie_' + i);
+            const checkbox = document.getElementById('serie_na_' + i);
+            if (checkbox.checked) { input.value = 'N/A'; input.disabled = true; }
+            else { input.value = ''; input.disabled = false; input.focus(); }
+        }
         async function tomarSeries(tareaId) {
             const camposSeries = [
                 { key: 'vin_number', label: 'VIN Number' },{ key: 'reefer_serial', label: 'Serie del Reefer' },{ key: 'reefer_model', label: 'Modelo del Reefer' },
-                { key: 'evaporator_serial_mjs11', label: 'Evaporador MJS11' },{ key: 'evaporator_serial_mjd22', label: 'Evaporador MJD22' },
+                { key: 'evaporator_serial_mjs11', label: 'Evaporador MJS11', na: true },{ key: 'evaporator_serial_mjd22', label: 'Evaporador MJD22', na: true },
                 { key: 'engine_serial', label: 'Motor' },{ key: 'compressor_serial', label: 'Compresor' },{ key: 'generator_serial', label: 'Generador' },
                 { key: 'battery_charger_serial', label: 'Cargador de Batería' }
             ];
-            let inputs = camposSeries.map((c,i) => `<input type="text" id="serie_${i}" placeholder="${c.label}"><input type="hidden" id="serie_key_${i}" value="${c.key}">`).join('');
+            let inputs = camposSeries.map((c,i) => c.na
+                ? `<div style="display:flex; gap:6px; align-items:center; margin-bottom:4px;"><input type="text" id="serie_${i}" placeholder="${c.label}" style="flex:1;"><label style="display:flex; align-items:center; gap:4px; font-size:0.8rem; white-space:nowrap; color:#64748b;"><input type="checkbox" id="serie_na_${i}" onchange="toggleSerieNA(${i})"> N/A</label><input type="hidden" id="serie_key_${i}" value="${c.key}"></div>`
+                : `<input type="text" id="serie_${i}" placeholder="${c.label}"><input type="hidden" id="serie_key_${i}" value="${c.key}">`
+            ).join('');
             const modal = mostrarModal(`<div class="modal-content"><h3>🔢 Toma de Series</h3><div id="camposSeries">${inputs}</div><button class="btn-primary" id="btnGuardarSeries">💾 Guardar Series</button><button class="btn-danger" onclick="cerrarModal()">Cancelar</button></div>`);
             document.getElementById('btnGuardarSeries').onclick = async () => {
                 const tareasRes = await fetchAuth('/api/asignaciones/?tecnico=' + username + '&estado=en_proceso'); const tareas = await tareasRes.json();
