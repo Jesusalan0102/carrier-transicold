@@ -26,9 +26,13 @@ router = APIRouter(prefix="/api/unidades", tags=["unidades"])
 
 CAMPOS_SERIES = [
     "vin_number","reefer_serial","reefer_model",
-    "evaporator_serial_mjs11","evaporator_serial_mjd22",
+    "evaporator_serial_mjs11","evaporator_model_1",
+    "evaporator_serial_mjd22","evaporator_model_2",
     "engine_serial","compressor_serial","generator_serial","battery_charger_serial"
 ]
+
+# Modelos de evaporador disponibles para el desplegable (front y validación)
+MODELOS_EVAPORADOR = ["", "MJD 1100", "MJS 1100", "MJD 2200", "MJS 2200", "N/A"]
 
 class UnidadCreate(BaseModel):
     unit_number: str
@@ -37,7 +41,9 @@ class UnidadCreate(BaseModel):
     reefer_serial: Optional[str] = ""
     reefer_model: Optional[str] = ""
     evaporator_serial_mjs11: Optional[str] = ""
+    evaporator_model_1: Optional[str] = ""
     evaporator_serial_mjd22: Optional[str] = ""
+    evaporator_model_2: Optional[str] = ""
     engine_serial: Optional[str] = ""
     compressor_serial: Optional[str] = ""
     generator_serial: Optional[str] = ""
@@ -49,7 +55,9 @@ class SeriesUpdate(BaseModel):
     reefer_serial: Optional[str] = ""
     reefer_model: Optional[str] = ""
     evaporator_serial_mjs11: Optional[str] = ""
+    evaporator_model_1: Optional[str] = ""
     evaporator_serial_mjd22: Optional[str] = ""
+    evaporator_model_2: Optional[str] = ""
     engine_serial: Optional[str] = ""
     compressor_serial: Optional[str] = ""
     generator_serial: Optional[str] = ""
@@ -485,11 +493,13 @@ def crear_unidad(unidad: UnidadCreate, current_user=Depends(verify_token)):
         execute_write(
             """UPDATE unidades SET
                id_lote=%s, vin_number=%s, reefer_serial=%s, reefer_model=%s,
-               evaporator_serial_mjs11=%s, evaporator_serial_mjd22=%s, engine_serial=%s,
+               evaporator_serial_mjs11=%s, evaporator_model_1=%s,
+               evaporator_serial_mjd22=%s, evaporator_model_2=%s, engine_serial=%s,
                compressor_serial=%s, generator_serial=%s, battery_charger_serial=%s
                WHERE unit_number=%s""",
             (unidad.id_lote, unidad.vin_number, unidad.reefer_serial, unidad.reefer_model,
-             unidad.evaporator_serial_mjs11, unidad.evaporator_serial_mjd22, unidad.engine_serial,
+             unidad.evaporator_serial_mjs11, unidad.evaporator_model_1,
+             unidad.evaporator_serial_mjd22, unidad.evaporator_model_2, unidad.engine_serial,
              unidad.compressor_serial, unidad.generator_serial, unidad.battery_charger_serial,
              unidad.unit_number)
         )
@@ -499,11 +509,13 @@ def crear_unidad(unidad: UnidadCreate, current_user=Depends(verify_token)):
         execute_write(
             """INSERT INTO unidades
                (unit_number, id_lote, vin_number, reefer_serial, reefer_model,
-                evaporator_serial_mjs11, evaporator_serial_mjd22, engine_serial,
+                evaporator_serial_mjs11, evaporator_model_1,
+                evaporator_serial_mjd22, evaporator_model_2, engine_serial,
                 compressor_serial, generator_serial, battery_charger_serial, fecha_registro)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (unidad.unit_number, unidad.id_lote, unidad.vin_number, unidad.reefer_serial,
-             unidad.reefer_model, unidad.evaporator_serial_mjs11, unidad.evaporator_serial_mjd22,
+             unidad.reefer_model, unidad.evaporator_serial_mjs11, unidad.evaporator_model_1,
+             unidad.evaporator_serial_mjd22, unidad.evaporator_model_2,
              unidad.engine_serial, unidad.compressor_serial, unidad.generator_serial,
              unidad.battery_charger_serial, ahora)
         )
@@ -530,11 +542,13 @@ def editar_unidad(unidad_id: int, unidad: UnidadCreate, current_user=Depends(ver
     execute_write(
         """UPDATE unidades SET
            unit_number=%s, id_lote=%s, vin_number=%s, reefer_serial=%s, reefer_model=%s,
-           evaporator_serial_mjs11=%s, evaporator_serial_mjd22=%s, engine_serial=%s,
+           evaporator_serial_mjs11=%s, evaporator_model_1=%s,
+           evaporator_serial_mjd22=%s, evaporator_model_2=%s, engine_serial=%s,
            compressor_serial=%s, generator_serial=%s, battery_charger_serial=%s
            WHERE id=%s""",
         (unidad.unit_number, unidad.id_lote, unidad.vin_number, unidad.reefer_serial,
-         unidad.reefer_model, unidad.evaporator_serial_mjs11, unidad.evaporator_serial_mjd22,
+         unidad.reefer_model, unidad.evaporator_serial_mjs11, unidad.evaporator_model_1,
+         unidad.evaporator_serial_mjd22, unidad.evaporator_model_2,
          unidad.engine_serial, unidad.compressor_serial, unidad.generator_serial,
          unidad.battery_charger_serial, unidad_id)
     )
