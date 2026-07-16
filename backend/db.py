@@ -292,6 +292,39 @@ def _run_migrations():
                 conn.commit()
                 print("✅ Migración: tabla comentarios_asistencia creada")
 
+            # ── evaporator_model_1 / evaporator_model_2 en unidades ───────────
+            for col in ("evaporator_model_1", "evaporator_model_2"):
+                cur.execute("""
+                    SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME   = 'unidades'
+                      AND COLUMN_NAME  = %s
+                """, (col,))
+                row_ev = cur.fetchone()
+                count_ev = row_ev[0] if isinstance(row_ev, tuple) else list(row_ev.values())[0]
+                if count_ev == 0:
+                    cur.execute(
+                        f"ALTER TABLE unidades ADD COLUMN {col} VARCHAR(20) DEFAULT NULL"
+                    )
+                    conn.commit()
+                    print(f"✅ Migración: columna {col} añadida a unidades")
+
+            # ── nombre_completo en users ───────────────────────────────────────
+            cur.execute("""
+                SELECT COUNT(*) FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME   = 'users'
+                  AND COLUMN_NAME  = 'nombre_completo'
+            """)
+            row_nc = cur.fetchone()
+            count_nc = row_nc[0] if isinstance(row_nc, tuple) else list(row_nc.values())[0]
+            if count_nc == 0:
+                cur.execute(
+                    "ALTER TABLE users ADD COLUMN nombre_completo VARCHAR(120) DEFAULT NULL"
+                )
+                conn.commit()
+                print("✅ Migración: columna nombre_completo añadida a users")
+
     except Exception as e:
         print(f"⚠️  Migración omitida: {e}")
     finally:
