@@ -539,6 +539,12 @@ def actualizar_series(data: SeriesUpdate, current_user=Depends(verify_token)):
 def editar_unidad(unidad_id: int, unidad: UnidadCreate, current_user=Depends(verify_token)):
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo administradores")
+
+    actual = execute_read("SELECT unit_number FROM unidades WHERE id=%s", (unidad_id,))
+    if not actual:
+        raise HTTPException(status_code=404, detail="Unidad no encontrada")
+    numero_anterior = actual[0]["unit_number"]
+
     execute_write(
         """UPDATE unidades SET
            unit_number=%s, id_lote=%s, vin_number=%s, reefer_serial=%s, reefer_model=%s,
@@ -552,7 +558,65 @@ def editar_unidad(unidad_id: int, unidad: UnidadCreate, current_user=Depends(ver
          unidad.engine_serial, unidad.compressor_serial, unidad.generator_serial,
          unidad.battery_charger_serial, unidad_id)
     )
+
+    # Si el número de unidad cambió, cascadear el nuevo número a todo lo que
+    # ya se trabajó con el número anterior, para no perder el historial.
+    if numero_anterior != unidad.unit_number:
+        execute_write("UPDATE asignaciones SET unidad=%s WHERE unidad=%s",
+                       (unidad.unit_number, numero_anterior))
+        execute_write("UPDATE evidencias SET unit_number=%s WHERE unit_number=%s",
+                       (unidad.unit_number, numero_anterior))
+        try:
+            execute_write("UPDATE tickets SET unit_number=%s WHERE unit_number=%s",
+                           (unidad.unit_number, numero_anterior))
+        except Exception:
+            pass  # tabla tickets puede no existir en instalaciones antiguas
+
     return {"mensaje": "Unidad actualizada"}
+
+
+@router.post("/homologar")
+def homologar_unidad(numero_anterior: str, numero_correcto: str, current_user=Depends(verify_token)):
+    """
+    Reasigna TODO el historial (asignaciones, evidencias, tickets) que haya quedado
+    ligado a `numero_anterior` (p.ej. un número mal capturado) hacia `numero_correcto`.
+    Úsalo cuando ya se registró una unidad duplicada por error de captura y quedaron
+    dos números para la misma unidad física.
+    """
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    if numero_anterior == numero_correcto:
+        raise HTTPException(status_code=400, detail="Los números deben ser diferentes")
+
+    destino = execute_read("SELECT id FROM unidades WHERE unit_number=%s", (numero_correcto,))
+    if not destino:
+        raise HTTPException(status_code=404, detail=f"No existe una unidad con el número {numero_correcto}")
+
+    asig = execute_write("UPDATE asignaciones SET unidad=%s WHERE unidad=%s",
+                          (numero_correcto, numero_anterior))
+    evid = execute_write("UPDATE evidencias SET unit_number=%s WHERE unit_number=%s",
+                          (numero_correcto, numero_anterior))
+    tick = 0
+    try:
+        tick = execute_write("UPDATE tickets SET unit_number=%s WHERE unit_number=%s",
+                              (numero_correcto, numero_anterior))
+    except Exception:
+        pass
+
+    # Si además quedó un registro duplicado en `unidades` con el número viejo, lo eliminamos
+    origen = execute_read("SELECT id FROM unidades WHERE unit_number=%s", (numero_anterior,))
+    eliminado = False
+    if origen:
+        execute_write("DELETE FROM unidades WHERE unit_number=%s", (numero_anterior,))
+        eliminado = True
+
+    return {
+        "mensaje": f"Historial de '{numero_anterior}' reasignado a '{numero_correcto}'",
+        "asignaciones_migradas": asig,
+        "evidencias_migradas": evid,
+        "tickets_migrados": tick,
+        "unidad_duplicada_eliminada": eliminado
+    }
 
 
 # DELETE /api/unidades/{unidad_id}
