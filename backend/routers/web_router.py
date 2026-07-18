@@ -1737,10 +1737,37 @@ async def unidades():
         <input type="text" id="battery_charger_serial" placeholder="Cargador de Batería">
         <button type="submit" class="btn-primary" style="grid-column: span 2;">💾 Guardar Registro</button>
     </form>
+    <div class="section-title">🔗 Homologar Unidad Duplicada</div>
+    <p style="color:#6b7280; font-size:0.85rem; margin:-6px 0 10px;">
+        Usa esto si por error se registró/trabajó una unidad con un número incorrecto (ej. le faltó un dígito)
+        y ya existe la unidad con el número correcto. Esto migra todo el historial (asignaciones, evidencias,
+        tickets) del número incorrecto hacia el correcto, y elimina el registro duplicado.
+    </p>
+    <div style="display:grid; grid-template-columns: 1fr 1fr auto; gap:10px; align-items:center; margin-bottom:24px;">
+        <input type="text" id="homologarAnterior" placeholder="Número incorrecto (ej. 245)">
+        <input type="text" id="homologarCorrecto" placeholder="Número correcto (ej. 2145)">
+        <button class="btn-primary" onclick="homologarUnidad()">🔗 Homologar</button>
+    </div>
     <div class="section-title">📸 Unidades Registradas</div>
     <div id="unidadesList"></div>
     <script>
         const fetchAuth = window.fetchAuth;
+        async function homologarUnidad() {
+            const anterior = document.getElementById('homologarAnterior').value.trim();
+            const correcto = document.getElementById('homologarCorrecto').value.trim();
+            if (!anterior || !correcto) return alert('Ingresa ambos números de unidad.');
+            if (!confirm(`¿Migrar todo el historial de "${anterior}" hacia "${correcto}"? Esto no se puede deshacer.`)) return;
+            const res = await fetchAuth(`/api/unidades/homologar?numero_anterior=${encodeURIComponent(anterior)}&numero_correcto=${encodeURIComponent(correcto)}`, { method: 'POST' });
+            const data = await res.json();
+            if (res.ok) {
+                alert(`✅ ${data.mensaje}\nAsignaciones migradas: ${data.asignaciones_migradas}\nEvidencias migradas: ${data.evidencias_migradas}\nTickets migrados: ${data.tickets_migrados}`);
+                document.getElementById('homologarAnterior').value = '';
+                document.getElementById('homologarCorrecto').value = '';
+                cargarUnidades();
+            } else {
+                alert('❌ ' + (data.detail || 'Error al homologar la unidad.'));
+            }
+        }
         function toggleEvapNA(slot) {
             const modelSel = document.getElementById('evaporator_model_' + slot);
             const serialField = slot === 1 ? 'evaporator_serial_mjs11' : 'evaporator_serial_mjd22';
