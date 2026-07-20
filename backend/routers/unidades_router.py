@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from fastapi.concurrency import run_in_threadpool
 from db import execute_read, execute_write
@@ -11,10 +11,6 @@ import io
 import zipfile
 import asyncio
 import logging
-import base64
-import json
-import os
-import requests
 
 TZ = ZoneInfo("America/Tijuana")
 logger = logging.getLogger(__name__)
@@ -485,82 +481,6 @@ def listar_unidades(incluir_ocultas: bool = False, current_user=Depends(verify_t
     if incluir_ocultas:
         return execute_read("SELECT * FROM unidades ORDER BY id_lote, unit_number")
     return execute_read("SELECT * FROM unidades WHERE oculto=0 ORDER BY id_lote, unit_number")
-
-
-# POST /api/unidades/
-@router.post("/ocr-placa")
-async def ocr_placa(file: UploadFile = File(...), current_user=Depends(verify_token)):
-    """
-    Analiza la foto de una placa de identificación (VIN, modelo, serie, etc.) usando IA
-    y devuelve los campos que logre leer, para precargar el formulario de Registro de
-    Unidades. El usuario siempre puede corregir/completar cualquier campo a mano.
-    """
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise HTTPException(
-            status_code=500,
-            detail="El escaneo de placas no está configurado en el servidor (falta ANTHROPIC_API_KEY)."
-        )
-
-    contenido = await file.read()
-    if len(contenido) > 8 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="La imagen es demasiado grande (máx. 8MB).")
-
-    media_type = file.content_type or "image/jpeg"
-    b64 = base64.b64encode(contenido).decode("utf-8")
-
-    prompt = (
-        "Esta es una foto de la placa de identificación de una unidad de transporte "
-        "refrigerado (trailer y/o equipo de refrigeración Carrier/Thermo King/Hyundai). "
-        "Extrae ÚNICAMENTE los datos que veas escritos con claridad en la placa. "
-        "Responde SOLO con un JSON válido (sin texto adicional, sin markdown, sin ```), "
-        "con exactamente estas claves, usando cadena vacía \"\" cuando el dato no aparezca:\n"
-        '{"vin_number": "", "reefer_model": "", "reefer_serial": "", "engine_serial": ""}\n\n'
-        "vin_number = VIN / NIV completo. "
-        "reefer_model = número de MODEL / MODELO de la placa. "
-        "reefer_serial = SERIAL NO. o número de serie principal de la placa. "
-        "engine_serial = solo si hay un número de serie de motor claramente separado; si no, deja vacío."
-    )
-
-    try:
-        resp = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "claude-sonnet-4-6",
-                "max_tokens": 500,
-                "messages": [{
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
-                        {"type": "text", "text": prompt},
-                    ],
-                }],
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        texto = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
-        texto_limpio = texto.replace("```json", "").replace("```", "").strip()
-        campos = json.loads(texto_limpio)
-    except Exception as e:
-        logger.error(f"Error en OCR de placa: {e}")
-        raise HTTPException(
-            status_code=502,
-            detail="No se pudo leer la placa automáticamente. Intenta con otra foto o llena los campos a mano."
-        )
-
-    return {
-        "vin_number": campos.get("vin_number", "") or "",
-        "reefer_model": campos.get("reefer_model", "") or "",
-        "reefer_serial": campos.get("reefer_serial", "") or "",
-        "engine_serial": campos.get("engine_serial", "") or "",
-    }
 
 
 @router.post("/")
