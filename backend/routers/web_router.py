@@ -1788,9 +1788,64 @@ async def unidades():
             return { vin_number: vin, id_lote: '', reefer_serial: '', texto_completo: textoQR };
         }
 
-        function _decodificarQR(canvas, ctx) {
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            return jsQR(imageData.data, canvas.width, canvas.height, { inversionAttempts: 'attemptBoth' });
+        function _prepararCanvas(img, maxDim) {
+            const escala = maxDim ? Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight)) : 1;
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(img.naturalWidth * escala));
+            canvas.height = Math.max(1, Math.round(img.naturalHeight * escala));
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            return { canvas, ctx };
+        }
+
+        // Escala de grises + estiramiento de contraste — ayuda cuando el brillo del metal
+        // de la placa aplana el contraste del QR.
+        function _realzarContraste(ctx, w, h) {
+            const imgData = ctx.getImageData(0, 0, w, h);
+            const d = imgData.data;
+            let min = 255, max = 0;
+            for (let i = 0; i < d.length; i += 4) {
+                const g = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+                if (g < min) min = g;
+                if (g > max) max = g;
+            }
+            const rango = Math.max(1, max - min);
+            for (let i = 0; i < d.length; i += 4) {
+                const g = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+                const v = Math.min(255, Math.max(0, ((g - min) / rango) * 255));
+                d[i] = d[i + 1] = d[i + 2] = v;
+            }
+            ctx.putImageData(imgData, 0, 0);
+        }
+
+        // Busca TODOS los códigos QR visibles en el canvas (la placa trae hasta 3: QR CODE,
+        // OP. MANUAL y V.I.N.), tapando cada uno encontrado para poder detectar el siguiente.
+        function _buscarQRsEnCanvas(canvas, ctx, maxIntentos = 6) {
+            const resultados = [];
+            for (let i = 0; i < maxIntentos; i++) {
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const r = jsQR(imageData.data, canvas.width, canvas.height, { inversionAttempts: 'attemptBoth' });
+                if (!r) break;
+                resultados.push(r.data);
+                const loc = r.location;
+                const xs = [loc.topLeftCorner.x, loc.topRightCorner.x, loc.bottomLeftCorner.x, loc.bottomRightCorner.x];
+                const ys = [loc.topLeftCorner.y, loc.topRightCorner.y, loc.bottomLeftCorner.y, loc.bottomRightCorner.y];
+                const minX = Math.max(0, Math.min(...xs) - 8), maxX = Math.min(canvas.width, Math.max(...xs) + 8);
+                const minY = Math.max(0, Math.min(...ys) - 8), maxY = Math.min(canvas.height, Math.max(...ys) + 8);
+                ctx.fillStyle = '#808080';
+                ctx.fillRect(minX, minY, maxX - minX, maxY - minY);
+            }
+            return resultados;
+        }
+
+        // De todos los QR encontrados, prioriza el que tenga el formato de 4 campos conocido;
+        // si no, el que contenga un VIN válido.
+        function _elegirMejorTexto(textos) {
+            const conFormato = textos.find(t => t.split('|').length === 4);
+            if (conFormato) return conFormato;
+            const conVin = textos.find(t => /\b[A-HJ-NPR-Z0-9]{17}\b/i.test(t));
+            if (conVin) return conVin;
+            return textos[0] || '';
         }
 
         async function escanearPlaca(inputEl) {
@@ -1801,34 +1856,29 @@ async def unidades():
             estado.style.color = '#1d4ed8';
             try {
                 const img = await _cargarImagen(file);
+                // Las fotos de celular reales pueden ser muy grandes; se prueban varias escalas
+                // (reducida, completa y una intermedia), y en cada una se intenta también con
+                // contraste realzado, hasta encontrar al menos un QR.
+                const escalasAProbar = [1800, null, 1000];
+                let textos = [];
+                for (const maxDim of escalasAProbar) {
+                    const { canvas, ctx } = _prepararCanvas(img, maxDim);
+                    textos = _buscarQRsEnCanvas(canvas, ctx);
+                    if (textos.length) break;
 
-                // Las fotos de celular reales pueden ser muy grandes (12MP+); las reducimos
-                // a un tamaño manejable para que jsQR no falle ni se cuelgue en el navegador.
-                const MAX_DIM = 1800;
-                const escala = Math.min(1, MAX_DIM / Math.max(img.naturalWidth, img.naturalHeight));
-                const canvas = document.createElement('canvas');
-                canvas.width = Math.round(img.naturalWidth * escala);
-                canvas.height = Math.round(img.naturalHeight * escala);
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-                let resultado = _decodificarQR(canvas, ctx);
-
-                // Si falla con la imagen reducida, se intenta una vez más a resolución completa
-                if (!resultado && escala < 1) {
-                    canvas.width = img.naturalWidth;
-                    canvas.height = img.naturalHeight;
-                    ctx.drawImage(img, 0, 0);
-                    resultado = _decodificarQR(canvas, ctx);
+                    const { canvas: canvas2, ctx: ctx2 } = _prepararCanvas(img, maxDim);
+                    _realzarContraste(ctx2, canvas2.width, canvas2.height);
+                    textos = _buscarQRsEnCanvas(canvas2, ctx2);
+                    if (textos.length) break;
                 }
 
-                if (!resultado || !resultado.data) {
+                if (!textos.length) {
                     estado.textContent = '⚠️ No se detectó ningún código QR en la foto. Acércate más solo al QR (el de abajo a la izquierda), evita el reflejo del metal, y vuelve a intentar.';
                     estado.style.color = '#d97706';
                     return;
                 }
 
-                const campos = _parsearQR(resultado.data);
+                const campos = _parsearQR(_elegirMejorTexto(textos));
                 let algo = false;
                 if (campos.vin_number) { document.getElementById('vin_number').value = campos.vin_number; algo = true; }
                 if (campos.id_lote)    { document.getElementById('id_lote').value = campos.id_lote; algo = true; }
@@ -1837,7 +1887,7 @@ async def unidades():
                     estado.textContent = '✅ Datos leídos del código QR. Revisa y corrige lo que haga falta antes de guardar.';
                     estado.style.color = '#16a34a';
                 } else {
-                    estado.textContent = `ℹ️ Se leyó el QR pero no reconocí el formato. Contenido leído: "${campos.texto_completo}". Cópialo manualmente si aplica.`;
+                    estado.textContent = `ℹ️ Se leyó un QR pero no reconocí el formato. Contenido leído: "${campos.texto_completo}". Cópialo manualmente si aplica.`;
                     estado.style.color = '#374151';
                 }
             } catch (e) {
