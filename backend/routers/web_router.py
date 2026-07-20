@@ -1771,20 +1771,26 @@ async def unidades():
         }
 
         function _parsearQR(textoQR) {
-            const t = textoQR.toUpperCase();
-            // VIN: 17 caracteres válidos (sin I, O, Q)
-            const vin = (t.match(/\b([A-HJ-NPR-Z0-9]{17})\b/) || [])[1] || '';
-            // Número de lote: busca etiquetas comunes (LOTE, LOT, BATCH) o, si no hay etiqueta,
-            // un token corto separado del VIN por espacio/coma/; que no sea el VIN mismo.
-            let lote = (t.match(/LOTE?\s*[:\-]?\s*([A-Z0-9\-]{2,15})/) || [])[1]
-                    || (t.match(/BATCH\s*[:\-]?\s*([A-Z0-9\-]{2,15})/) || [])[1]
-                    || '';
-            if (!lote) {
-                const tokens = t.split(/[\s,;|]+/).filter(Boolean);
-                const candidato = tokens.find(tok => tok !== vin && /^[A-Z0-9\-]{2,15}$/.test(tok));
-                if (candidato) lote = candidato;
+            // Formato confirmado de las placas Hyundai Translead:
+            // MATERIAL | SERIAL NO. | código interno | VIN completo
+            const partes = textoQR.split('|').map(s => s.trim());
+            if (partes.length === 4) {
+                return {
+                    id_lote: partes[0],       // MATERIAL -> Número de Lote en nuestro sistema
+                    reefer_serial: partes[1], // SERIAL NO.
+                    vin_number: partes[3],    // VIN completo de 17 caracteres
+                    texto_completo: textoQR
+                };
             }
-            return { vin_number: vin, id_lote: lote, texto_completo: textoQR };
+            // Fallback genérico si la placa no trae exactamente este formato
+            const t = textoQR.toUpperCase();
+            const vin = (t.match(/\b([A-HJ-NPR-Z0-9]{17})\b/) || [])[1] || '';
+            return { vin_number: vin, id_lote: '', reefer_serial: '', texto_completo: textoQR };
+        }
+
+        function _decodificarQR(canvas, ctx) {
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            return jsQR(imageData.data, canvas.width, canvas.height, { inversionAttempts: 'attemptBoth' });
         }
 
         async function escanearPlaca(inputEl) {
@@ -1795,16 +1801,29 @@ async def unidades():
             estado.style.color = '#1d4ed8';
             try {
                 const img = await _cargarImagen(file);
+
+                // Las fotos de celular reales pueden ser muy grandes (12MP+); las reducimos
+                // a un tamaño manejable para que jsQR no falle ni se cuelgue en el navegador.
+                const MAX_DIM = 1800;
+                const escala = Math.min(1, MAX_DIM / Math.max(img.naturalWidth, img.naturalHeight));
                 const canvas = document.createElement('canvas');
-                canvas.width = img.naturalWidth;
-                canvas.height = img.naturalHeight;
+                canvas.width = Math.round(img.naturalWidth * escala);
+                canvas.height = Math.round(img.naturalHeight * escala);
                 const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0);
-                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                const resultado = jsQR(imageData.data, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                let resultado = _decodificarQR(canvas, ctx);
+
+                // Si falla con la imagen reducida, se intenta una vez más a resolución completa
+                if (!resultado && escala < 1) {
+                    canvas.width = img.naturalWidth;
+                    canvas.height = img.naturalHeight;
+                    ctx.drawImage(img, 0, 0);
+                    resultado = _decodificarQR(canvas, ctx);
+                }
 
                 if (!resultado || !resultado.data) {
-                    estado.textContent = '⚠️ No se detectó ningún código QR en la foto. Acércate más solo al QR (el de abajo a la izquierda), con buena luz y sin ángulo, y vuelve a intentar.';
+                    estado.textContent = '⚠️ No se detectó ningún código QR en la foto. Acércate más solo al QR (el de abajo a la izquierda), evita el reflejo del metal, y vuelve a intentar.';
                     estado.style.color = '#d97706';
                     return;
                 }
