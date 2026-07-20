@@ -1706,6 +1706,13 @@ async def inventario():
 async def unidades():
     contenido = """
     <script> if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; } </script>
+    <div class="admin-only" style="display:flex; align-items:center; gap:10px; margin-bottom:14px; padding:12px; background:#eff6ff; border:1px dashed #93c5fd; border-radius:10px;">
+        <label for="inputEscanearPlaca" class="btn-primary" style="cursor:pointer; margin:0; display:inline-flex; align-items:center; gap:6px;">
+            📷 Escanear placa
+        </label>
+        <input type="file" id="inputEscanearPlaca" accept="image/*" capture="environment" style="display:none;" onchange="escanearPlaca(this)">
+        <span id="ocrPlacaEstado" style="font-size:0.85rem; color:#374151;">Toma o sube una foto de la placa (VIN, modelo, serie) para precargar los campos. Siempre podrás corregirlos antes de guardar.</span>
+    </div>
     <form id="unidadForm" class="admin-only" style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
         <input type="text" id="unit_number" placeholder="Número Económico" required><input type="text" id="id_lote" placeholder="Número de Lote">
         <input type="text" id="vin_number" placeholder="VIN Number"><input type="text" id="reefer_serial" placeholder="Serie del Reefer">
@@ -1752,6 +1759,31 @@ async def unidades():
     <div id="unidadesList"></div>
     <script>
         const fetchAuth = window.fetchAuth;
+        async function escanearPlaca(inputEl) {
+            const file = inputEl.files[0];
+            if (!file) return;
+            const estado = document.getElementById('ocrPlacaEstado');
+            estado.textContent = '🔎 Leyendo placa, un momento...';
+            estado.style.color = '#1d4ed8';
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                const res = await fetchAuth('/api/unidades/ocr-placa', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Error al leer la placa');
+                if (data.vin_number)     document.getElementById('vin_number').value = data.vin_number;
+                if (data.reefer_model)   document.getElementById('reefer_model').value = data.reefer_model;
+                if (data.reefer_serial)  document.getElementById('reefer_serial').value = data.reefer_serial;
+                if (data.engine_serial)  document.getElementById('engine_serial').value = data.engine_serial;
+                estado.textContent = '✅ Datos leídos de la placa. Revisa y corrige lo que haga falta antes de guardar.';
+                estado.style.color = '#16a34a';
+            } catch (e) {
+                estado.textContent = '❌ ' + e.message + ' — llena los campos manualmente.';
+                estado.style.color = '#dc2626';
+            } finally {
+                inputEl.value = '';
+            }
+        }
         async function homologarUnidad() {
             const anterior = document.getElementById('homologarAnterior').value.trim();
             const correcto = document.getElementById('homologarCorrecto').value.trim();
