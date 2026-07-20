@@ -1711,7 +1711,7 @@ async def unidades():
             📷 Escanear placa
         </label>
         <input type="file" id="inputEscanearPlaca" accept="image/*" capture="environment" style="display:none;" onchange="escanearPlaca(this)">
-        <span id="ocrPlacaEstado" style="font-size:0.85rem; color:#374151;">Toma o sube una foto de la placa (VIN, modelo, serie) para precargar los campos automáticamente y gratis. Siempre podrás corregirlos antes de guardar.</span>
+        <span id="ocrPlacaEstado" style="font-size:0.85rem; color:#374151;">Toma una foto acercándote al código QR de la placa (el de abajo a la izquierda) para precargar VIN y número de lote, gratis. Siempre podrás corregir los campos antes de guardar.</span>
     </div>
     <form id="unidadForm" class="admin-only" style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
         <input type="text" id="unit_number" placeholder="Número Económico" required><input type="text" id="id_lote" placeholder="Número de Lote">
@@ -1757,50 +1757,70 @@ async def unidades():
     </div>
     <div class="section-title">📸 Unidades Registradas</div>
     <div id="unidadesList"></div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
     <script>
         const fetchAuth = window.fetchAuth;
 
-        function _extraerCampoPlaca(texto, regex) {
-            const m = texto.match(regex);
-            return m ? m[1].trim() : '';
+        function _cargarImagen(file) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = () => reject(new Error('No se pudo abrir la imagen'));
+                img.src = URL.createObjectURL(file);
+            });
         }
 
-        function _parsearPlaca(textoOCR) {
-            // Normaliza espacios/errores comunes de OCR (O/0, l/1 no se tocan para no arruinar VINs)
-            const t = textoOCR.replace(/\s+/g, ' ').toUpperCase();
-
-            // VIN: 17 caracteres válidos (sin I, O, Q) — se busca primero cerca de la etiqueta VIN/NIV,
-            // y si no aparece ahí, se busca cualquier token de 17 caracteres en todo el texto.
-            let vin = _extraerCampoPlaca(t, /VIN\s*\/?\s*NIV\s*[:\-]?\s*([A-HJ-NPR-Z0-9]{17})/)
-                   || _extraerCampoPlaca(t, /\b([A-HJ-NPR-Z0-9]{17})\b/);
-
-            // MODEL: lo que sigue a la etiqueta MODEL, hasta el siguiente bloque de etiquetas conocidas
-            let modelo = _extraerCampoPlaca(t, /MODEL[O]?\s*[:\-]?\s*([A-Z0-9\-]{4,20})/);
-
-            // SERIAL NO.: número de serie de la placa (a veces coincide con los últimos dígitos del VIN)
-            let serie = _extraerCampoPlaca(t, /SERIAL\s*(?:NO\.?|NUMBER)?\s*[:\-]?\s*([A-Z0-9]{5,20})/);
-
-            return { vin_number: vin, reefer_model: modelo, reefer_serial: serie };
+        function _parsearQR(textoQR) {
+            const t = textoQR.toUpperCase();
+            // VIN: 17 caracteres válidos (sin I, O, Q)
+            const vin = (t.match(/\b([A-HJ-NPR-Z0-9]{17})\b/) || [])[1] || '';
+            // Número de lote: busca etiquetas comunes (LOTE, LOT, BATCH) o, si no hay etiqueta,
+            // un token corto separado del VIN por espacio/coma/; que no sea el VIN mismo.
+            let lote = (t.match(/LOTE?\s*[:\-]?\s*([A-Z0-9\-]{2,15})/) || [])[1]
+                    || (t.match(/BATCH\s*[:\-]?\s*([A-Z0-9\-]{2,15})/) || [])[1]
+                    || '';
+            if (!lote) {
+                const tokens = t.split(/[\s,;|]+/).filter(Boolean);
+                const candidato = tokens.find(tok => tok !== vin && /^[A-Z0-9\-]{2,15}$/.test(tok));
+                if (candidato) lote = candidato;
+            }
+            return { vin_number: vin, id_lote: lote, texto_completo: textoQR };
         }
 
         async function escanearPlaca(inputEl) {
             const file = inputEl.files[0];
             if (!file) return;
             const estado = document.getElementById('ocrPlacaEstado');
-            estado.textContent = '🔎 Leyendo placa (esto puede tardar unos segundos)...';
+            estado.textContent = '🔎 Buscando el código QR en la foto...';
             estado.style.color = '#1d4ed8';
             try {
-                const { data: { text } } = await Tesseract.recognize(file, 'eng');
-                const campos = _parsearPlaca(text);
+                const img = await _cargarImagen(file);
+                const canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth;
+                canvas.height = img.naturalHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const resultado = jsQR(imageData.data, canvas.width, canvas.height);
+
+                if (!resultado || !resultado.data) {
+                    estado.textContent = '⚠️ No se detectó ningún código QR en la foto. Acércate más solo al QR (el de abajo a la izquierda), con buena luz y sin ángulo, y vuelve a intentar.';
+                    estado.style.color = '#d97706';
+                    return;
+                }
+
+                const campos = _parsearQR(resultado.data);
                 let algo = false;
-                if (campos.vin_number)    { document.getElementById('vin_number').value = campos.vin_number; algo = true; }
-                if (campos.reefer_model)  { document.getElementById('reefer_model').value = campos.reefer_model; algo = true; }
-                if (campos.reefer_serial) { document.getElementById('reefer_serial').value = campos.reefer_serial; algo = true; }
-                estado.textContent = algo
-                    ? '✅ Datos leídos de la placa. Revisa y corrige lo que haga falta antes de guardar.'
-                    : '⚠️ No se pudo leer con claridad. Intenta con una foto más de frente/con más luz, o llena los campos a mano.';
-                estado.style.color = algo ? '#16a34a' : '#d97706';
+                if (campos.vin_number) { document.getElementById('vin_number').value = campos.vin_number; algo = true; }
+                if (campos.id_lote)    { document.getElementById('id_lote').value = campos.id_lote; algo = true; }
+
+                if (algo) {
+                    estado.textContent = '✅ Datos leídos del código QR. Revisa y corrige lo que haga falta antes de guardar.';
+                    estado.style.color = '#16a34a';
+                } else {
+                    estado.textContent = `ℹ️ Se leyó el QR pero no reconocí el formato. Contenido leído: "${campos.texto_completo}". Cópialo manualmente si aplica.`;
+                    estado.style.color = '#374151';
+                }
             } catch (e) {
                 console.error(e);
                 estado.textContent = '❌ Error al procesar la imagen — llena los campos manualmente.';
