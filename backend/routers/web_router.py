@@ -1711,7 +1711,7 @@ async def unidades():
             📷 Escanear placa
         </label>
         <input type="file" id="inputEscanearPlaca" accept="image/*" capture="environment" style="display:none;" onchange="escanearPlaca(this)">
-        <span id="ocrPlacaEstado" style="font-size:0.85rem; color:#374151;">Toma o sube una foto de la placa (VIN, modelo, serie) para precargar los campos. Siempre podrás corregirlos antes de guardar.</span>
+        <span id="ocrPlacaEstado" style="font-size:0.85rem; color:#374151;">Toma o sube una foto de la placa (VIN, modelo, serie) para precargar los campos automáticamente y gratis. Siempre podrás corregirlos antes de guardar.</span>
     </div>
     <form id="unidadForm" class="admin-only" style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
         <input type="text" id="unit_number" placeholder="Número Económico" required><input type="text" id="id_lote" placeholder="Número de Lote">
@@ -1757,28 +1757,53 @@ async def unidades():
     </div>
     <div class="section-title">📸 Unidades Registradas</div>
     <div id="unidadesList"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js"></script>
     <script>
         const fetchAuth = window.fetchAuth;
+
+        function _extraerCampoPlaca(texto, regex) {
+            const m = texto.match(regex);
+            return m ? m[1].trim() : '';
+        }
+
+        function _parsearPlaca(textoOCR) {
+            // Normaliza espacios/errores comunes de OCR (O/0, l/1 no se tocan para no arruinar VINs)
+            const t = textoOCR.replace(/\s+/g, ' ').toUpperCase();
+
+            // VIN: 17 caracteres válidos (sin I, O, Q) — se busca primero cerca de la etiqueta VIN/NIV,
+            // y si no aparece ahí, se busca cualquier token de 17 caracteres en todo el texto.
+            let vin = _extraerCampoPlaca(t, /VIN\s*\/?\s*NIV\s*[:\-]?\s*([A-HJ-NPR-Z0-9]{17})/)
+                   || _extraerCampoPlaca(t, /\b([A-HJ-NPR-Z0-9]{17})\b/);
+
+            // MODEL: lo que sigue a la etiqueta MODEL, hasta el siguiente bloque de etiquetas conocidas
+            let modelo = _extraerCampoPlaca(t, /MODEL[O]?\s*[:\-]?\s*([A-Z0-9\-]{4,20})/);
+
+            // SERIAL NO.: número de serie de la placa (a veces coincide con los últimos dígitos del VIN)
+            let serie = _extraerCampoPlaca(t, /SERIAL\s*(?:NO\.?|NUMBER)?\s*[:\-]?\s*([A-Z0-9]{5,20})/);
+
+            return { vin_number: vin, reefer_model: modelo, reefer_serial: serie };
+        }
+
         async function escanearPlaca(inputEl) {
             const file = inputEl.files[0];
             if (!file) return;
             const estado = document.getElementById('ocrPlacaEstado');
-            estado.textContent = '🔎 Leyendo placa, un momento...';
+            estado.textContent = '🔎 Leyendo placa (esto puede tardar unos segundos)...';
             estado.style.color = '#1d4ed8';
-            const formData = new FormData();
-            formData.append('file', file);
             try {
-                const res = await fetchAuth('/api/unidades/ocr-placa', { method: 'POST', body: formData });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.detail || 'Error al leer la placa');
-                if (data.vin_number)     document.getElementById('vin_number').value = data.vin_number;
-                if (data.reefer_model)   document.getElementById('reefer_model').value = data.reefer_model;
-                if (data.reefer_serial)  document.getElementById('reefer_serial').value = data.reefer_serial;
-                if (data.engine_serial)  document.getElementById('engine_serial').value = data.engine_serial;
-                estado.textContent = '✅ Datos leídos de la placa. Revisa y corrige lo que haga falta antes de guardar.';
-                estado.style.color = '#16a34a';
+                const { data: { text } } = await Tesseract.recognize(file, 'eng');
+                const campos = _parsearPlaca(text);
+                let algo = false;
+                if (campos.vin_number)    { document.getElementById('vin_number').value = campos.vin_number; algo = true; }
+                if (campos.reefer_model)  { document.getElementById('reefer_model').value = campos.reefer_model; algo = true; }
+                if (campos.reefer_serial) { document.getElementById('reefer_serial').value = campos.reefer_serial; algo = true; }
+                estado.textContent = algo
+                    ? '✅ Datos leídos de la placa. Revisa y corrige lo que haga falta antes de guardar.'
+                    : '⚠️ No se pudo leer con claridad. Intenta con una foto más de frente/con más luz, o llena los campos a mano.';
+                estado.style.color = algo ? '#16a34a' : '#d97706';
             } catch (e) {
-                estado.textContent = '❌ ' + e.message + ' — llena los campos manualmente.';
+                console.error(e);
+                estado.textContent = '❌ Error al procesar la imagen — llena los campos manualmente.';
                 estado.style.color = '#dc2626';
             } finally {
                 inputEl.value = '';
