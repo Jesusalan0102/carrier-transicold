@@ -419,6 +419,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 asignacion_nueva:     function(){{ _playTone([523,659,784],0.14,'triangle',0.35); }},
                 solicitud_aprobada:   function(){{ _playTone([784,988,1047],0.13,'sine',0.3); }},
                 actividad_iniciada:   function(){{ _playTone([440,554],0.16,'triangle',0.3); }},
+                actividad_pausada:    function(){{ _playTone([554,440],0.16,'triangle',0.3); }},
                 actividad_completada: function(){{ _playTone([523,659,784,1047],0.12,'sine',0.4); }},
                 ticket_nuevo:         function(){{ _playTone([330,262,220],0.2,'sawtooth',0.25); }},
                 corriendo_6h:         function(){{ _playTone([880,660,880,660],0.16,'square',0.4); }},
@@ -428,6 +429,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 asignacion_nueva:     'Actividad asignada',
                 solicitud_aprobada:   'Solicitud aprobada',
                 actividad_iniciada:   'Actividad iniciada',
+                actividad_pausada:    'Actividad pausada',
                 actividad_completada: 'Actividad completada',
                 ticket_nuevo:         'Nuevo ticket creado',
                 corriendo_6h:         'Unidad lleva 6 horas corriendo',
@@ -435,6 +437,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
             const _ICONS = {{
                 solicitud_nueva:'&#x1F4CB;', asignacion_nueva:'&#x2705;',
                 solicitud_aprobada:'&#x1F44D;', actividad_iniciada:'&#x25B6;&#xFE0F;',
+                actividad_pausada:'&#x23F8;&#xFE0F;',
                 actividad_completada:'&#x1F3C1;', ticket_nuevo:'&#x1F3AB;',
                 corriendo_6h:'&#x23F1;&#xFE0F;',
             }};
@@ -719,6 +722,10 @@ async def dashboard():
             background:#fef2f2; color:#b91c1c; border-color:#fecaca;
             animation:pulse-badge 1.1s infinite;
         }
+        .status-tbl .badge-corriendo.pausado {
+            background:#f3f4f6; color:#4b5563; border-color:#d1d5db;
+            animation:none;
+        }
         @keyframes pulse-badge {
             0%,100% { opacity:1; } 50% { opacity:0.55; }
         }
@@ -880,6 +887,8 @@ async def dashboard():
         const camposSeries = {vin_number:'VIN Number',reefer_serial:'Serie Reefer',reefer_model:'Modelo Reefer',evaporator_model_1:'Evap. 1 Modelo',evaporator_serial_mjs11:'Evap. 1 Serie',evaporator_model_2:'Evap. 2 Modelo',evaporator_serial_mjd22:'Evap. 2 Serie',engine_serial:'Motor',compressor_serial:'Compresor',generator_serial:'Generador',battery_charger_serial:'Cargador Bat.'};
 
         // ── Contador en vivo de horas 'Corriendo' (se refresca cada segundo) ──
+        // Usa segundos ya acumulados (persisten a través de pausas) + el tiempo
+        // transcurrido desde el último arranque, si la unidad sigue corriendo.
         let _contadorCorriendoInterval = null;
         function _fmtDuracionCorriendo(ms) {
             if (ms < 0) ms = 0;
@@ -891,19 +900,30 @@ async def dashboard():
             return `${pad(h)}:${pad(m)}:${pad(s)}`;
         }
         function _tickContadoresCorriendo() {
-            const nodos = document.querySelectorAll('.badge-corriendo[data-inicio]');
+            const nodos = document.querySelectorAll('.badge-corriendo[data-acumulado]');
             const ahora = Date.now();
             nodos.forEach(el => {
-                const iniStr = el.getAttribute('data-inicio');
-                const ini = new Date(iniStr.replace(' ', 'T')).getTime();
-                if (isNaN(ini)) return;
-                const ms = ahora - ini;
-                el.textContent = '⏱ ' + _fmtDuracionCorriendo(ms);
+                const acumuladoSeg = parseInt(el.getAttribute('data-acumulado'), 10) || 0;
+                const desdeStr = el.getAttribute('data-desde');
+                let ms = acumuladoSeg * 1000;
+                const corriendo = !!desdeStr;
+                if (corriendo) {
+                    const desde = new Date(desdeStr.replace(' ', 'T')).getTime();
+                    if (!isNaN(desde)) ms += Math.max(0, ahora - desde);
+                }
+                if (corriendo) {
+                    el.textContent = '⏱ ' + _fmtDuracionCorriendo(ms);
+                    el.classList.remove('pausado');
+                } else {
+                    el.textContent = '⏸ ' + _fmtDuracionCorriendo(ms);
+                    el.classList.add('pausado');
+                }
                 if ((ms / 3600000) >= 6) {
                     el.classList.add('alerta6h');
-                    el.title = 'Lleva 6+ horas corriendo';
+                    el.title = corriendo ? 'Lleva 6+ horas corriendo' : 'Pausada — ya acumuló 6+ horas';
                 } else {
                     el.classList.remove('alerta6h');
+                    el.title = corriendo ? 'Corriendo' : 'Pausada — tiempo acumulado guardado';
                 }
             });
         }
@@ -977,10 +997,17 @@ async def dashboard():
                         const compSet    = new Set(asignaciones.filter(a=>a.estado==='completada').map(a=>a.unidad+'||'+a.actividad_id));
                         const procesoSet = new Set(asignaciones.filter(a=>a.estado==='en_proceso').map(a=>a.unidad+'||'+a.actividad_id));
                         const pendSet    = new Set(asignaciones.filter(a=>a.estado==='pendiente').map(a=>a.unidad+'||'+a.actividad_id));
-                        // Mapa unidad -> fecha_inicio de la actividad 'Corriendo' activa (para el contador de horas)
-                        const corriendoInicio = {};
-                        asignaciones.filter(a=>a.actividad_id==='Corriendo' && a.estado==='en_proceso' && a.fecha_inicio)
-                            .forEach(a => { corriendoInicio[a.unidad] = a.fecha_inicio; });
+
+                        // Contador acumulado de horas 'Corriendo' por unidad (persiste a través de pausas)
+                        let corriendoTrack = {};
+                        try {
+                            const ctRes = await fetchAuth('/api/dashboard/corriendo_tracking');
+                            if (ctRes.ok) {
+                                const ctRows = await ctRes.json();
+                                ctRows.forEach(r => { corriendoTrack[r.unidad] = r; });
+                            }
+                        } catch(e) { console.warn('No se pudo cargar corriendo_tracking:', e); }
+
                         let tbl = '<table class="status-tbl"><thead><tr><th>LOTE</th><th>#Económico</th>';
                         actividades.forEach(a => { tbl += `<th>${a}</th>`; });
                         tbl += '</tr></thead><tbody>';
@@ -988,11 +1015,13 @@ async def dashboard():
                             tbl += `<tr><td>${u.id_lote||''}</td><td>${u.unit_number}</td>`;
                             actividades.forEach(act => {
                                 const key = u.unit_number+'||'+act;
-                                if (compSet.has(key)) {
+                                const track = act === 'Corriendo' ? corriendoTrack[u.unit_number] : null;
+                                if (act === 'Corriendo' && track && (track.corriendo_desde || track.segundos_acumulados > 0)) {
+                                    // Contador en vivo/pausado de horas corriendo (persiste tiempo acumulado)
+                                    const desdeAttr = track.corriendo_desde ? ` data-desde="${track.corriendo_desde}"` : '';
+                                    tbl += `<td><span class="badge-corriendo" data-acumulado="${track.segundos_acumulados||0}"${desdeAttr}>⏱ --:--:--</span></td>`;
+                                } else if (compSet.has(key)) {
                                     tbl += '<td><span class="check">✔</span></td>';
-                                } else if (act === 'Corriendo' && procesoSet.has(key) && corriendoInicio[u.unit_number]) {
-                                    // Contador en vivo de horas corriendo (se actualiza cada segundo)
-                                    tbl += `<td><span class="badge-corriendo" data-inicio="${corriendoInicio[u.unit_number]}" title="Corriendo desde ${corriendoInicio[u.unit_number]}">⏱ --:--:--</span></td>`;
                                 } else if (procesoSet.has(key)) {
                                     tbl += '<td><span class="badge-proceso" title="En proceso">⚙ En proceso</span></td>';
                                 } else if (pendSet.has(key)) {
@@ -3752,6 +3781,7 @@ async def mis_tareas():
                     if (t.estado === 'pendiente') btn = `<button class="btn-primary" onclick="iniciarTarea(${t.id})">▶️ Iniciar Actividad</button>`;
                     else if (t.estado === 'en_proceso') {
                         btn = `<button class="btn-success" onclick="completarTarea(${t.id})">✅ Finalizar</button>`;
+                        if (t.actividad_id === 'Corriendo') btn += `<button class="btn-primary" onclick="pausarTarea(${t.id})">⏸️ Pausar</button>`;
                         if (t.actividad_id === 'Evidencia') btn += `<button class="btn-primary" onclick="subirEvidencia(${t.id}, '${t.unidad}')">📸 Subir Fotos</button>`;
                         if (t.actividad_id === 'Toma de Valores') btn += `<button class="btn-primary" onclick="tomarValores(${t.id})">📊 Ingresar Valores</button>`;
                         if (t.actividad_id === 'Toma de Series') btn += `<button class="btn-primary" onclick="tomarSeries(${t.id})">🔢 Ingresar Series</button>`;
@@ -3763,6 +3793,11 @@ async def mis_tareas():
         }
 
         async function iniciarTarea(id) { const res = await fetchAuth('/api/asignaciones/' + id + '/iniciar', { method: 'PATCH' }); if (res.ok) cargarTareas(); else alert('Error al iniciar la tarea'); }
+        async function pausarTarea(id) {
+            const res = await fetchAuth('/api/asignaciones/' + id + '/pausar', { method: 'PATCH' });
+            if (res.ok) cargarTareas();
+            else { const d = await res.json().catch(()=>({})); alert(d.detail || 'Error al pausar la tarea'); }
+        }
         async function completarTarea(id) {
             const prev = document.getElementById('modalFinalizar');
             if (prev) prev.remove();

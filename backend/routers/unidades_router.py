@@ -631,3 +631,15 @@ def eliminar_unidad(unidad_id: int, current_user=Depends(verify_token)):
     execute_write("DELETE FROM asignaciones WHERE unidad=%s", (unit_number,))
     execute_write("DELETE FROM unidades WHERE id=%s", (unidad_id,))
     return {"mensaje": "Unidad y sus datos relacionados eliminados"}
+
+
+# ── REINICIAR CONTADOR DE HORAS 'CORRIENDO' (admin) ────────────────────────
+@router.patch("/{unit_number}/reiniciar-corriendo")
+def reiniciar_contador_corriendo(unit_number: str, current_user=Depends(verify_token)):
+    """Pone en cero el contador acumulado de horas 'Corriendo' de una unidad
+    (por ejemplo, después de darle servicio/mantenimiento)."""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    import corriendo_tracking
+    corriendo_tracking.reiniciar(unit_number)
+    return {"mensaje": f"Contador de horas corriendo reiniciado para la unidad {unit_number}"}

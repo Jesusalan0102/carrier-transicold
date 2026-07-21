@@ -4,6 +4,7 @@ from auth import verify_token
 from models import AsignacionCreate, AsignacionUpdate
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import corriendo_tracking
 import asyncio
 TZ = ZoneInfo("America/Tijuana")
 
@@ -146,12 +147,38 @@ def rechazar(asig_id: int, current_user=Depends(verify_token)):
 # ── INICIAR (técnico) ──────────────────────────────────────────────────────
 @router.patch("/{asig_id}/iniciar")
 def iniciar(asig_id: int, current_user=Depends(verify_token)):
+    rows = execute_read("SELECT unidad, actividad_id FROM asignaciones WHERE id=%s", (asig_id,))
+    if not rows:
+        raise HTTPException(status_code=404, detail="Asignación no encontrada")
+    unidad, actividad_id = rows[0]["unidad"], rows[0]["actividad_id"]
     execute_write(
         "UPDATE asignaciones SET estado='en_proceso', fecha_inicio=%s, alerta_6h_enviada=0 WHERE id=%s",
         (datetime.now(TZ), asig_id)
     )
+    if actividad_id == "Corriendo":
+        # Arranca o reanuda el contador acumulado de horas corriendo de la unidad
+        corriendo_tracking.iniciar(unidad)
     _notify("actividad_iniciada", {"asignacion_id": asig_id})
     return {"mensaje": "Actividad iniciada"}
+
+# ── PAUSAR (técnico: detiene sin marcar como completada) ───────────────────
+@router.patch("/{asig_id}/pausar")
+def pausar(asig_id: int, current_user=Depends(verify_token)):
+    rows = execute_read("SELECT unidad, actividad_id, estado FROM asignaciones WHERE id=%s", (asig_id,))
+    if not rows:
+        raise HTTPException(status_code=404, detail="Asignación no encontrada")
+    row = rows[0]
+    if row["estado"] != "en_proceso":
+        raise HTTPException(status_code=400, detail="Solo se puede pausar una actividad en proceso")
+    execute_write(
+        "UPDATE asignaciones SET estado='pendiente', fecha_inicio=NULL WHERE id=%s",
+        (asig_id,)
+    )
+    if row["actividad_id"] == "Corriendo":
+        # Guarda el tiempo transcurrido en el acumulado para retomarlo después
+        corriendo_tracking.pausar(row["unidad"])
+    _notify("actividad_pausada", {"asignacion_id": asig_id, "unidad": row["unidad"]})
+    return {"mensaje": "Actividad pausada; tiempo acumulado guardado"}
 
 # ── FINALIZAR (técnico, comentario obligatorio) ────────────────────────────
 @router.patch("/{asig_id}/finalizar")
@@ -161,10 +188,14 @@ def finalizar(asig_id: int, data: dict, current_user=Depends(verify_token)):
         raise HTTPException(status_code=400, detail="El comentario es obligatorio para finalizar")
     ticket_id = data.get("ticket_id")
     now = datetime.now(TZ)
+    asig_rows = execute_read("SELECT unidad, actividad_id FROM asignaciones WHERE id=%s", (asig_id,))
     execute_write(
         "UPDATE asignaciones SET estado='completada', fecha_fin=%s WHERE id=%s",
         (now, asig_id)
     )
+    if asig_rows and asig_rows[0]["actividad_id"] == "Corriendo":
+        # Guarda el tiempo transcurrido en el acumulado, aunque se termine antes de las 6h
+        corriendo_tracking.pausar(asig_rows[0]["unidad"])
     execute_write(
         "INSERT INTO comentarios_actividades (asignacion_id, tecnico, comentario) VALUES (%s,%s,%s)",
         (asig_id, current_user["username"], comentario)

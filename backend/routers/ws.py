@@ -83,34 +83,23 @@ UMBRAL_HORAS_CORRIENDO = 6
 async def monitor_corriendo_6h():
     """
     Tarea en segundo plano (independiente de conexiones WebSocket activas).
-    Cada 60s revisa las actividades 'Corriendo' en curso y, si alguna ya lleva
-    6+ horas y no se ha notificado, dispara WebSocket + push y marca la bandera
-    para no repetir el aviso.
+    Cada 60s revisa el contador acumulado de horas 'Corriendo' por unidad
+    (corriendo_tracking) y, si alguna ya acumuló 6+ horas (sumando pausas
+    previas) y no se ha notificado, dispara WebSocket + push y marca la
+    bandera para no repetir el aviso.
     """
+    import corriendo_tracking
     while True:
         try:
-            rows = execute_read(
-                "SELECT a.id, a.unidad, a.fecha_inicio "
-                "FROM asignaciones a "
-                "WHERE a.actividad_id='Corriendo' AND a.estado='en_proceso' "
-                "AND a.alerta_6h_enviada=0 "
-                "AND a.fecha_inicio <= (NOW() - INTERVAL %s HOUR)",
-                (UMBRAL_HORAS_CORRIENDO,)
-            )
+            rows = corriendo_tracking.obtener_pendientes_de_alerta()
             for r in rows:
-                from db import execute_write
-                execute_write(
-                    "UPDATE asignaciones SET alerta_6h_enviada=1 WHERE id=%s",
-                    (r["id"],)
-                )
+                corriendo_tracking.marcar_alerta_enviada(r["unidad"])
                 await notify("corriendo_6h", {
-                    "asignacion_id": r["id"],
                     "unidad": r["unidad"],
                     "unit_number": r["unidad"],
-                    "fecha_inicio": str(r["fecha_inicio"]),
                     "horas": UMBRAL_HORAS_CORRIENDO,
                 })
-                logger.info(f"[corriendo_6h] Alerta enviada — unidad {r['unidad']} (asignacion {r['id']})")
+                logger.info(f"[corriendo_6h] Alerta enviada — unidad {r['unidad']} (acumulado {r.get('total_segundos')}s)")
         except Exception as e:
             logger.error(f"monitor_corriendo_6h error: {e}")
         await asyncio.sleep(60)

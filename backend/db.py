@@ -341,6 +341,29 @@ def _run_migrations():
                 conn.commit()
                 print("✅ Migración: columna alerta_6h_enviada añadida a asignaciones")
 
+            # ── corriendo_tracking (contador acumulado de horas 'Corriendo') ──
+            # Vive independiente de la tabla `asignaciones` para poder acumular
+            # tiempo a través de pausas/reinicios hasta llegar a las 6 horas.
+            cur.execute("""
+                SELECT COUNT(*) FROM information_schema.TABLES
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME   = 'corriendo_tracking'
+            """)
+            row_ct = cur.fetchone()
+            count_ct = row_ct[0] if isinstance(row_ct, tuple) else list(row_ct.values())[0]
+            if count_ct == 0:
+                cur.execute("""
+                    CREATE TABLE corriendo_tracking (
+                        unidad               VARCHAR(50) PRIMARY KEY,
+                        segundos_acumulados  INT NOT NULL DEFAULT 0,
+                        corriendo_desde      DATETIME DEFAULT NULL,
+                        alerta_6h_enviada    TINYINT(1) NOT NULL DEFAULT 0,
+                        actualizado_en       TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+                """)
+                conn.commit()
+                print("✅ Migración: tabla corriendo_tracking creada")
+
     except Exception as e:
         print(f"⚠️  Migración omitida: {e}")
     finally:

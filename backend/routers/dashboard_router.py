@@ -101,6 +101,12 @@ def get_estatus_unidades(current_user: dict = Depends(verify_token)):
         resultado.append(row)
     return resultado
 
+# ── CONTADOR ACUMULADO DE HORAS 'CORRIENDO' POR UNIDAD ────────────────────
+@router.get("/corriendo_tracking")
+def get_corriendo_tracking(current_user: dict = Depends(verify_token)):
+    import corriendo_tracking
+    return corriendo_tracking.obtener_todos()
+
 # ── DESCARGAR REPORTE EXCEL (+ auto-sync a OneDrive) ──────────────────────
 @router.get("/reporte-excel")
 def reporte_excel(current_user: dict = Depends(verify_token)):
