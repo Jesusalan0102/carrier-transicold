@@ -100,6 +100,9 @@ async def root():
 @app.on_event("startup")
 async def startup_event():
     init_db()
+    import asyncio
+    from routers.ws import monitor_corriendo_6h
+    asyncio.create_task(monitor_corriendo_6h())
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 9000)))

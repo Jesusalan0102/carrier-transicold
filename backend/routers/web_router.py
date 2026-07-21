@@ -421,6 +421,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 actividad_iniciada:   function(){{ _playTone([440,554],0.16,'triangle',0.3); }},
                 actividad_completada: function(){{ _playTone([523,659,784,1047],0.12,'sine',0.4); }},
                 ticket_nuevo:         function(){{ _playTone([330,262,220],0.2,'sawtooth',0.25); }},
+                corriendo_6h:         function(){{ _playTone([880,660,880,660],0.16,'square',0.4); }},
             }};
             const _LABELS = {{
                 solicitud_nueva:      'Solicitud de actividad',
@@ -429,11 +430,13 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 actividad_iniciada:   'Actividad iniciada',
                 actividad_completada: 'Actividad completada',
                 ticket_nuevo:         'Nuevo ticket creado',
+                corriendo_6h:         'Unidad lleva 6 horas corriendo',
             }};
             const _ICONS = {{
                 solicitud_nueva:'&#x1F4CB;', asignacion_nueva:'&#x2705;',
                 solicitud_aprobada:'&#x1F44D;', actividad_iniciada:'&#x25B6;&#xFE0F;',
                 actividad_completada:'&#x1F3C1;', ticket_nuevo:'&#x1F3AB;',
+                corriendo_6h:'&#x23F1;&#xFE0F;',
             }};
 
             function _showToast(evType, payload) {{
@@ -706,6 +709,16 @@ async def dashboard():
         .status-tbl .badge-pendiente {
             display:inline-block; font-size:0.85rem; opacity:0.7;
         }
+        .status-tbl .badge-corriendo {
+            display:inline-flex; align-items:center; gap:4px;
+            background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe;
+            border-radius:999px; padding:2px 9px; font-size:0.7rem;
+            font-weight:700; white-space:nowrap; font-variant-numeric:tabular-nums;
+        }
+        .status-tbl .badge-corriendo.alerta6h {
+            background:#fef2f2; color:#b91c1c; border-color:#fecaca;
+            animation:pulse-badge 1.1s infinite;
+        }
         @keyframes pulse-badge {
             0%,100% { opacity:1; } 50% { opacity:0.55; }
         }
@@ -866,6 +879,40 @@ async def dashboard():
         const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series','Extra Eléctrico','Extra Soldador'];
         const camposSeries = {vin_number:'VIN Number',reefer_serial:'Serie Reefer',reefer_model:'Modelo Reefer',evaporator_model_1:'Evap. 1 Modelo',evaporator_serial_mjs11:'Evap. 1 Serie',evaporator_model_2:'Evap. 2 Modelo',evaporator_serial_mjd22:'Evap. 2 Serie',engine_serial:'Motor',compressor_serial:'Compresor',generator_serial:'Generador',battery_charger_serial:'Cargador Bat.'};
 
+        // ── Contador en vivo de horas 'Corriendo' (se refresca cada segundo) ──
+        let _contadorCorriendoInterval = null;
+        function _fmtDuracionCorriendo(ms) {
+            if (ms < 0) ms = 0;
+            const totalSec = Math.floor(ms / 1000);
+            const h = Math.floor(totalSec / 3600);
+            const m = Math.floor((totalSec % 3600) / 60);
+            const s = totalSec % 60;
+            const pad = n => String(n).padStart(2, '0');
+            return `${pad(h)}:${pad(m)}:${pad(s)}`;
+        }
+        function _tickContadoresCorriendo() {
+            const nodos = document.querySelectorAll('.badge-corriendo[data-inicio]');
+            const ahora = Date.now();
+            nodos.forEach(el => {
+                const iniStr = el.getAttribute('data-inicio');
+                const ini = new Date(iniStr.replace(' ', 'T')).getTime();
+                if (isNaN(ini)) return;
+                const ms = ahora - ini;
+                el.textContent = '⏱ ' + _fmtDuracionCorriendo(ms);
+                if ((ms / 3600000) >= 6) {
+                    el.classList.add('alerta6h');
+                    el.title = 'Lleva 6+ horas corriendo';
+                } else {
+                    el.classList.remove('alerta6h');
+                }
+            });
+        }
+        function _iniciarContadoresCorriendo() {
+            _tickContadoresCorriendo();
+            if (_contadorCorriendoInterval) clearInterval(_contadorCorriendoInterval);
+            _contadorCorriendoInterval = setInterval(_tickContadoresCorriendo, 1000);
+        }
+
         async function cargarDashboard() {
             try {
                 const kpisRes = await fetchAuth('/api/dashboard/kpis');
@@ -930,6 +977,10 @@ async def dashboard():
                         const compSet    = new Set(asignaciones.filter(a=>a.estado==='completada').map(a=>a.unidad+'||'+a.actividad_id));
                         const procesoSet = new Set(asignaciones.filter(a=>a.estado==='en_proceso').map(a=>a.unidad+'||'+a.actividad_id));
                         const pendSet    = new Set(asignaciones.filter(a=>a.estado==='pendiente').map(a=>a.unidad+'||'+a.actividad_id));
+                        // Mapa unidad -> fecha_inicio de la actividad 'Corriendo' activa (para el contador de horas)
+                        const corriendoInicio = {};
+                        asignaciones.filter(a=>a.actividad_id==='Corriendo' && a.estado==='en_proceso' && a.fecha_inicio)
+                            .forEach(a => { corriendoInicio[a.unidad] = a.fecha_inicio; });
                         let tbl = '<table class="status-tbl"><thead><tr><th>LOTE</th><th>#Económico</th>';
                         actividades.forEach(a => { tbl += `<th>${a}</th>`; });
                         tbl += '</tr></thead><tbody>';
@@ -939,6 +990,9 @@ async def dashboard():
                                 const key = u.unit_number+'||'+act;
                                 if (compSet.has(key)) {
                                     tbl += '<td><span class="check">✔</span></td>';
+                                } else if (act === 'Corriendo' && procesoSet.has(key) && corriendoInicio[u.unit_number]) {
+                                    // Contador en vivo de horas corriendo (se actualiza cada segundo)
+                                    tbl += `<td><span class="badge-corriendo" data-inicio="${corriendoInicio[u.unit_number]}" title="Corriendo desde ${corriendoInicio[u.unit_number]}">⏱ --:--:--</span></td>`;
                                 } else if (procesoSet.has(key)) {
                                     tbl += '<td><span class="badge-proceso" title="En proceso">⚙ En proceso</span></td>';
                                 } else if (pendSet.has(key)) {
@@ -951,6 +1005,7 @@ async def dashboard():
                         });
                         tbl += '</tbody></table>';
                         document.getElementById('statusTable').innerHTML = tbl;
+                        _iniciarContadoresCorriendo();
 
                         // Lotes y series
                         const lotesMap = {};

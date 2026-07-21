@@ -49,6 +49,7 @@ _PUSH_LABELS = {
     "actividad_iniciada":   ("▶️ Actividad iniciada",      "Un técnico inició una actividad"),
     "actividad_completada": ("🏁 Actividad completada",    "Una actividad fue completada"),
     "ticket_nuevo":         ("🎫 Nuevo ticket",             "Se creó un nuevo ticket de servicio"),
+    "corriendo_6h":         ("⏱️ 6 horas corriendo",        "Una unidad lleva 6 horas corriendo"),
 }
 
 
@@ -75,6 +76,44 @@ async def notify(event: str, payload: dict = None):
         loop = asyncio.get_event_loop()
         from routers.push_router import send_push_to_all
         await loop.run_in_executor(None, send_push_to_all, title, body, event)
+
+
+UMBRAL_HORAS_CORRIENDO = 6
+
+async def monitor_corriendo_6h():
+    """
+    Tarea en segundo plano (independiente de conexiones WebSocket activas).
+    Cada 60s revisa las actividades 'Corriendo' en curso y, si alguna ya lleva
+    6+ horas y no se ha notificado, dispara WebSocket + push y marca la bandera
+    para no repetir el aviso.
+    """
+    while True:
+        try:
+            rows = execute_read(
+                "SELECT a.id, a.unidad, a.fecha_inicio "
+                "FROM asignaciones a "
+                "WHERE a.actividad_id='Corriendo' AND a.estado='en_proceso' "
+                "AND a.alerta_6h_enviada=0 "
+                "AND a.fecha_inicio <= (NOW() - INTERVAL %s HOUR)",
+                (UMBRAL_HORAS_CORRIENDO,)
+            )
+            for r in rows:
+                from db import execute_write
+                execute_write(
+                    "UPDATE asignaciones SET alerta_6h_enviada=1 WHERE id=%s",
+                    (r["id"],)
+                )
+                await notify("corriendo_6h", {
+                    "asignacion_id": r["id"],
+                    "unidad": r["unidad"],
+                    "unit_number": r["unidad"],
+                    "fecha_inicio": str(r["fecha_inicio"]),
+                    "horas": UMBRAL_HORAS_CORRIENDO,
+                })
+                logger.info(f"[corriendo_6h] Alerta enviada — unidad {r['unidad']} (asignacion {r['id']})")
+        except Exception as e:
+            logger.error(f"monitor_corriendo_6h error: {e}")
+        await asyncio.sleep(60)
 
 
 @router.websocket("/ws")

@@ -147,7 +147,7 @@ def rechazar(asig_id: int, current_user=Depends(verify_token)):
 @router.patch("/{asig_id}/iniciar")
 def iniciar(asig_id: int, current_user=Depends(verify_token)):
     execute_write(
-        "UPDATE asignaciones SET estado='en_proceso', fecha_inicio=%s WHERE id=%s",
+        "UPDATE asignaciones SET estado='en_proceso', fecha_inicio=%s, alerta_6h_enviada=0 WHERE id=%s",
         (datetime.now(TZ), asig_id)
     )
     _notify("actividad_iniciada", {"asignacion_id": asig_id})

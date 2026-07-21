@@ -325,6 +325,22 @@ def _run_migrations():
                 conn.commit()
                 print("✅ Migración: columna nombre_completo añadida a users")
 
+            # ── alerta_6h_enviada en asignaciones (contador de horas 'Corriendo') ──
+            cur.execute("""
+                SELECT COUNT(*) FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME   = 'asignaciones'
+                  AND COLUMN_NAME  = 'alerta_6h_enviada'
+            """)
+            row_a6 = cur.fetchone()
+            count_a6 = row_a6[0] if isinstance(row_a6, tuple) else list(row_a6.values())[0]
+            if count_a6 == 0:
+                cur.execute(
+                    "ALTER TABLE asignaciones ADD COLUMN alerta_6h_enviada TINYINT(1) NOT NULL DEFAULT 0"
+                )
+                conn.commit()
+                print("✅ Migración: columna alerta_6h_enviada añadida a asignaciones")
+
     except Exception as e:
         print(f"⚠️  Migración omitida: {e}")
     finally:
