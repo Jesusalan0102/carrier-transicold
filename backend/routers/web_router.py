@@ -3874,7 +3874,7 @@ async def mis_tareas():
 
                     <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">📸 Evidencia fotográfica</label>
                     ${fotosPrevias > 0 ? `<p style="font-size:0.8rem;color:#16a34a;margin:0 0 8px;">✔ Ya tienes ${fotosPrevias} foto(s) guardada(s) para esta actividad. Puedes agregar más o continuar.</p>` : ''}
-                    <input type="file" id="fotosFinalizarInput" multiple accept="image/*" capture="environment" style="width:100%;margin-bottom:8px;">
+                    <input type="file" id="fotosFinalizarInput" multiple accept="image/*" style="width:100%;margin-bottom:8px;">
                     <div id="previewFotosFinalizar" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;"></div>
                     <div id="compressInfoFinalizar" style="font-size:12px;color:#666;margin-bottom:8px;"></div>
 
