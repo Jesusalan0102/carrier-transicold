@@ -83,7 +83,14 @@ async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_
         if len(contenido) > MAX_BYTES_BEFORE:
             contenido = await run_in_threadpool(comprimir_imagen, contenido, file.filename)
 
-        ok = execute_write(
+        # execute_write es una llamada SÍNCRONA a MySQL; si se llama directo
+        # dentro de un endpoint async bloquea TODO el event loop (la app corre
+        # con 1 solo worker en Clever Cloud). Con varias fotos subiendo a la
+        # vez esto acumula bloqueo suficiente para que el gateway corte la
+        # conexión antes de recibir respuesta. Se ejecuta en threadpool para
+        # no bloquear el loop mientras se escribe el BLOB en la base de datos.
+        ok = await run_in_threadpool(
+            execute_write,
             "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico, asignacion_id) VALUES (%s,%s,%s,%s,%s)",
             (unidad, file.filename, contenido, tecnico, asignacion_id)
         )
@@ -172,13 +179,15 @@ async def subir_evidencias(
     # unidad. Si no viene asignacion_id (uso legado), se conserva el límite
     # acumulado por unidad+técnico como respaldo.
     if asignacion_id is not None:
-        res = execute_read(
+        res = await run_in_threadpool(
+            execute_read,
             "SELECT COUNT(*) AS total FROM evidencias WHERE asignacion_id=%s",
             (asignacion_id,)
         )
         limite_detalle = "para esta actividad"
     else:
-        res = execute_read(
+        res = await run_in_threadpool(
+            execute_read,
             "SELECT COUNT(*) AS total FROM evidencias WHERE unit_number=%s AND tecnico=%s",
             (unidad, tecnico)
         )
