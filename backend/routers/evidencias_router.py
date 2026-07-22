@@ -166,16 +166,30 @@ async def subir_evidencias(
     current_user=Depends(verify_token)
 ):
     # Verificar límite
-    res = execute_read(
-        "SELECT COUNT(*) AS total FROM evidencias WHERE unit_number=%s AND tecnico=%s",
-        (unidad, tecnico)
-    )
+    # El tope de MAX_FOTOS se aplica por actividad (asignacion_id) cuando se
+    # conoce, para que cada finalización de actividad permita hasta 100 fotos
+    # sin importar cuántas se hayan subido ya en otras actividades de la misma
+    # unidad. Si no viene asignacion_id (uso legado), se conserva el límite
+    # acumulado por unidad+técnico como respaldo.
+    if asignacion_id is not None:
+        res = execute_read(
+            "SELECT COUNT(*) AS total FROM evidencias WHERE asignacion_id=%s",
+            (asignacion_id,)
+        )
+        limite_detalle = "para esta actividad"
+    else:
+        res = execute_read(
+            "SELECT COUNT(*) AS total FROM evidencias WHERE unit_number=%s AND tecnico=%s",
+            (unidad, tecnico)
+        )
+        limite_detalle = "para esta unidad"
+
     ya_guardadas = res[0]["total"] if res else 0
     disponibles  = MAX_FOTOS - ya_guardadas
     if disponibles <= 0:
         raise HTTPException(
             status_code=400,
-            detail=f"Ya alcanzaste el límite de {MAX_FOTOS} fotos"
+            detail=f"Ya alcanzaste el límite de {MAX_FOTOS} fotos {limite_detalle}"
         )
 
     files_a_guardar = files[:disponibles]
