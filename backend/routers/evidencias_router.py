@@ -74,7 +74,7 @@ def comprimir_imagen(contenido: bytes, filename: str) -> bytes:
 
 
 # ── TAREA PARA UNA SOLA FOTO ──────────────────────────────────────────────
-async def procesar_foto(file: UploadFile, unidad: str, tecnico: str) -> dict:
+async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_id: int = None) -> dict:
     """Lee, comprime y guarda una foto. Devuelve {'filename', 'ok', 'error'}."""
     try:
         contenido = await file.read()
@@ -84,8 +84,8 @@ async def procesar_foto(file: UploadFile, unidad: str, tecnico: str) -> dict:
             contenido = await run_in_threadpool(comprimir_imagen, contenido, file.filename)
 
         ok = execute_write(
-            "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico) VALUES (%s,%s,%s,%s)",
-            (unidad, file.filename, contenido, tecnico)
+            "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico, asignacion_id) VALUES (%s,%s,%s,%s,%s)",
+            (unidad, file.filename, contenido, tecnico, asignacion_id)
         )
 
         # OneDrive en background — no bloquea la respuesta al celular
@@ -125,12 +125,44 @@ def total_por_unidad(unit_number: str, current_user=Depends(verify_token)):
     return {"total": res[0]["total"] if res else 0}
 
 
+# ── CONTAR FOTOS DE UNA ACTIVIDAD ESPECÍFICA (asignación) ────────────────
+@router.get("/count-asignacion/{asignacion_id}")
+def contar_evidencias_asignacion(asignacion_id: int, current_user=Depends(verify_token)):
+    res = execute_read(
+        "SELECT COUNT(*) AS total FROM evidencias WHERE asignacion_id=%s",
+        (asignacion_id,)
+    )
+    return {"total": res[0]["total"] if res else 0}
+
+
+# ── LISTAR FOTOS DE UNA ACTIVIDAD ESPECÍFICA — solo admin/visor ──────────
+@router.get("/por-actividad/{asignacion_id}")
+def evidencias_por_actividad(asignacion_id: int, current_user=Depends(require_admin_or_visor)):
+    rows = execute_read(
+        """SELECT id, nombre_archivo, tecnico, unit_number,
+                  COALESCE(created_at, '') AS fecha
+           FROM evidencias
+           WHERE asignacion_id=%s
+           ORDER BY id ASC""",
+        (asignacion_id,)
+    )
+    fotos = [{
+        "id": r["id"],
+        "nombre": r["nombre_archivo"] or f"foto_{r['id']}.jpg",
+        "tecnico": r["tecnico"] or "",
+        "unit_number": r["unit_number"],
+        "fecha": str(r["fecha"]) if r["fecha"] else "",
+    } for r in (rows or [])]
+    return {"asignacion_id": asignacion_id, "total": len(fotos), "fotos": fotos}
+
+
 # ── SUBIR FOTOS ───────────────────────────────────────────────────────────
 @router.post("/upload")
 async def subir_evidencias(
     unidad: str = Form(...),
     tecnico: str = Form(...),
     files: List[UploadFile] = File(...),
+    asignacion_id: int = Form(None),
     current_user=Depends(verify_token)
 ):
     # Verificar límite
@@ -153,7 +185,7 @@ async def subir_evidencias(
 
     async def procesar_con_limite(file):
         async with semaforo:
-            return await procesar_foto(file, unidad, tecnico)
+            return await procesar_foto(file, unidad, tecnico, asignacion_id)
 
     resultados = await asyncio.gather(
         *[procesar_con_limite(f) for f in files_a_guardar],
@@ -288,11 +320,13 @@ def listar_evidencias(
     total = total_res[0]["total"] if total_res else 0
 
     rows = execute_read(
-        """SELECT id, nombre_archivo, tecnico,
-                  COALESCE(created_at, '') AS fecha
-           FROM evidencias
-           WHERE unit_number=%s
-           ORDER BY id DESC
+        """SELECT e.id, e.nombre_archivo, e.tecnico, e.asignacion_id,
+                  COALESCE(e.created_at, '') AS fecha,
+                  a.actividad_id AS actividad
+           FROM evidencias e
+           LEFT JOIN asignaciones a ON a.id = e.asignacion_id
+           WHERE e.unit_number=%s
+           ORDER BY e.id DESC
            LIMIT %s OFFSET %s""",
         (unit_number, per_page, offset)
     )
@@ -303,6 +337,7 @@ def listar_evidencias(
             "nombre": r["nombre_archivo"] or f"foto_{r['id']}.jpg",
             "tecnico": r["tecnico"] or "",
             "fecha": str(r["fecha"]) if r["fecha"] else "",
+            "actividad": r.get("actividad") or "",
         })
 
     return {

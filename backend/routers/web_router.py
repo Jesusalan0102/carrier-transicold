@@ -3114,7 +3114,7 @@ async def admin():
                         ev.stopPropagation();
                         evToggleFoto(f.id, card);
                     } else {
-                        evAbrirLightbox(f.id, f.nombre, f.tecnico, f.fecha);
+                        evAbrirLightbox(f.id, f.nombre, f.tecnico, f.fecha, f.actividad);
                     }
                 };
 
@@ -3122,16 +3122,28 @@ async def admin():
                 img.alt   = f.nombre;
                 img.loading = 'lazy';
                 img.style.cssText = 'width:100%;height:130px;object-fit:cover;display:block;';
-                img.onerror = ()=>{ img.style.display='none'; };
+                img.onerror = ()=>{
+                    // En vez de ocultar la foto silenciosamente (lo que la hacía "desaparecer"
+                    // sin aviso), mostramos un placeholder visible de error de carga.
+                    img.style.display = 'none';
+                    if (!card.querySelector('.ev-error-placeholder')) {
+                        const ph = document.createElement('div');
+                        ph.className = 'ev-error-placeholder';
+                        ph.style.cssText = 'width:100%;height:130px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;background:#fef2f2;color:#b91c1c;font-size:11px;text-align:center;padding:6px;';
+                        ph.innerHTML = '⚠️<br>Error al cargar<br>esta foto';
+                        card.insertBefore(ph, card.firstChild);
+                    }
+                };
                 fetchAuth(`/api/evidencias/foto/${f.id}`)
                     .then(r => r.ok ? r.blob() : Promise.reject())
                     .then(blob => { img.src = URL.createObjectURL(blob); })
-                    .catch(() => { img.style.display='none'; });
+                    .catch(() => { img.onerror(); });
 
                 const info = document.createElement('div');
                 info.style.cssText = 'padding:6px 8px;font-size:11px;color:var(--color-text-secondary);line-height:1.5;';
                 info.innerHTML = `<b style="color:var(--color-text-primary);font-size:12px;">${f.nombre.length>22?f.nombre.slice(0,19)+'…':f.nombre}</b><br>
                   👷 ${f.tecnico||'—'}<br>
+                  ${f.actividad ? '🛠 '+f.actividad+'<br>' : ''}
                   ${f.fecha ? '🗓 '+f.fecha.slice(0,10) : ''}`;
 
                 const checkbox = document.createElement('div');
@@ -3181,17 +3193,21 @@ async def admin():
         }
     }
 
-    function evAbrirLightbox(id, nombre, tecnico, fecha) {
+    function evAbrirLightbox(id, nombre, tecnico, fecha, actividad) {
         const lb  = document.getElementById('ev-lightbox');
         const img = document.getElementById('ev-lb-img');
         const cap = document.getElementById('ev-lb-caption');
         img.src   = '';
-        cap.textContent = `${nombre}  ·  👷 ${tecnico||'—'}  ·  ${fecha?fecha.slice(0,10):''}`;
+        img.style.display = '';
+        cap.textContent = `${nombre}  ·  👷 ${tecnico||'—'}  ${actividad?'·  🛠 '+actividad+'  ':''}·  ${fecha?fecha.slice(0,10):''}`;
         lb.style.display = 'flex';
         fetchAuth(`/api/evidencias/foto/${id}`)
             .then(r => r.ok ? r.blob() : Promise.reject())
             .then(blob => { img.src = URL.createObjectURL(blob); })
-            .catch(() => { img.alt = 'Error al cargar imagen'; });
+            .catch(() => {
+                img.style.display = 'none';
+                cap.textContent = `⚠️ No se pudo cargar esta foto (${nombre}). El archivo podría estar dañado o incompleto.`;
+            });
     }
 
     function evCloseLightbox(e) {
@@ -3780,9 +3796,8 @@ async def mis_tareas():
                     let btn = '';
                     if (t.estado === 'pendiente') btn = `<button class="btn-primary" onclick="iniciarTarea(${t.id})">▶️ Iniciar Actividad</button>`;
                     else if (t.estado === 'en_proceso') {
-                        btn = `<button class="btn-success" onclick="completarTarea(${t.id})">✅ Finalizar</button>`;
+                        btn = `<button class="btn-success" onclick="completarTarea(${t.id}, '${t.unidad}', '${t.actividad_id}')">✅ Finalizar</button>`;
                         if (t.actividad_id === 'Corriendo') btn += `<button class="btn-primary" onclick="pausarTarea(${t.id})">⏸️ Pausar</button>`;
-                        if (t.actividad_id === 'Evidencia') btn += `<button class="btn-primary" onclick="subirEvidencia(${t.id}, '${t.unidad}')">📸 Subir Fotos</button>`;
                         if (t.actividad_id === 'Toma de Valores') btn += `<button class="btn-primary" onclick="tomarValores(${t.id})">📊 Ingresar Valores</button>`;
                         if (t.actividad_id === 'Toma de Series') btn += `<button class="btn-primary" onclick="tomarSeries(${t.id})">🔢 Ingresar Series</button>`;
                     }
@@ -3798,23 +3813,71 @@ async def mis_tareas():
             if (res.ok) cargarTareas();
             else { const d = await res.json().catch(()=>({})); alert(d.detail || 'Error al pausar la tarea'); }
         }
-        async function completarTarea(id) {
+        // Comprime una imagen con Canvas API (max 1200px, calidad 0.75 JPEG) — compartida
+        async function _comprimirImagenCanvas(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = ev => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const MAX = 1200;
+                        let { width: w, height: h } = img;
+                        if (w > MAX || h > MAX) {
+                            if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+                            else       { w = Math.round(w * MAX / h); h = MAX; }
+                        }
+                        const canvas = document.createElement('canvas');
+                        canvas.width = w; canvas.height = h;
+                        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                        canvas.toBlob(blob => {
+                            if (blob && blob.size < file.size) {
+                                resolve(new File([blob], file.name.replace(/[.][^.]+$/, '.jpg'), { type: 'image/jpeg' }));
+                            } else {
+                                resolve(file); // si ya era pequeño, usar original
+                            }
+                        }, 'image/jpeg', 0.75);
+                    };
+                    img.onerror = () => resolve(file); // fallback al original
+                    img.src = ev.target.result;
+                };
+                reader.onerror = () => resolve(file);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        async function completarTarea(id, unidad, actividad) {
             const prev = document.getElementById('modalFinalizar');
             if (prev) prev.remove();
 
+            // ¿Ya tiene fotos guardadas esta actividad? (por si se subieron antes o se reintenta)
+            let fotosPrevias = 0;
+            try {
+                const cntRes = await fetchAuth(`/api/evidencias/count-asignacion/${id}`);
+                if (cntRes.ok) fotosPrevias = (await cntRes.json()).total || 0;
+            } catch(e) {}
+
             const modal = document.createElement('div');
             modal.id = 'modalFinalizar';
-            modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);display:flex;justify-content:center;align-items:center;z-index:500;';
+            modal.dataset.unidad = unidad || '';
+            modal.dataset.fotosPrevias = fotosPrevias;
+            modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);display:flex;justify-content:center;align-items:center;z-index:500;overflow-y:auto;padding:20px 0;';
             modal.innerHTML = `
                 <div style="background:white;border-radius:20px;padding:32px;width:90%;max-width:520px;box-shadow:0 20px 60px rgba(0,43,91,0.25);animation:fadeInM 0.2s ease;">
                     <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
                         <div style="background:#f0fdf4;border-radius:12px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">✅</div>
                         <div>
                             <h3 style="margin:0;color:var(--carrier-blue);font-size:1.2rem;font-weight:800;">Finalizar Actividad</h3>
-                            <p style="margin:2px 0 0;font-size:0.82rem;color:#6b7280;">Agrega un comentario antes de cerrar esta tarea.</p>
+                            <p style="margin:2px 0 0;font-size:0.82rem;color:#6b7280;">Agrega evidencia fotográfica y un comentario antes de cerrar esta tarea.</p>
                         </div>
                     </div>
                     <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0;">
+
+                    <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">📸 Evidencia fotográfica</label>
+                    ${fotosPrevias > 0 ? `<p style="font-size:0.8rem;color:#16a34a;margin:0 0 8px;">✔ Ya tienes ${fotosPrevias} foto(s) guardada(s) para esta actividad. Puedes agregar más o continuar.</p>` : ''}
+                    <input type="file" id="fotosFinalizarInput" multiple accept="image/*" capture="environment" style="width:100%;margin-bottom:8px;">
+                    <div id="previewFotosFinalizar" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;"></div>
+                    <div id="compressInfoFinalizar" style="font-size:12px;color:#666;margin-bottom:8px;"></div>
+
                     <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">📝 Comentario del técnico</label>
                     <textarea id="comentarioTexto" rows="4" placeholder="Describe brevemente el trabajo realizado, observaciones, etc." style="width:100%;border:1.5px solid #d1d5db;border-radius:12px;padding:12px;font-size:0.95rem;resize:vertical;font-family:inherit;transition:border-color 0.2s;"></textarea>
                     <p id="comentarioError" style="color:var(--carrier-danger);font-size:0.82rem;min-height:18px;margin:4px 0 12px;"></p>
@@ -3825,6 +3888,27 @@ async def mis_tareas():
                 </div>
                 <style>@keyframes fadeInM{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}</style>`;
             document.body.appendChild(modal);
+
+            document.getElementById('fotosFinalizarInput').addEventListener('change', e => {
+                const files = Array.from(e.target.files).slice(0, 100);
+                const previewDiv = document.getElementById('previewFotosFinalizar');
+                previewDiv.innerHTML = '';
+                let totalKB = 0;
+                files.forEach(f => {
+                    totalKB += f.size / 1024;
+                    const r = new FileReader();
+                    r.onload = ev => {
+                        const img = document.createElement('img');
+                        img.src = ev.target.result;
+                        img.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:8px;';
+                        previewDiv.appendChild(img);
+                    };
+                    r.readAsDataURL(f);
+                });
+                document.getElementById('compressInfoFinalizar').textContent =
+                    files.length ? `${files.length} foto(s) seleccionada(s) · ${(totalKB/1024).toFixed(1)} MB` : '';
+            });
+
             setTimeout(() => document.getElementById('comentarioTexto').focus(), 100);
         }
 
@@ -3832,8 +3916,42 @@ async def mis_tareas():
             const comentario = document.getElementById('comentarioTexto').value.trim();
             const errorEl   = document.getElementById('comentarioError');
             if (!comentario) { errorEl.textContent = 'El comentario no puede estar vacío.'; return; }
+
+            const modal = document.getElementById('modalFinalizar');
+            const unidad = modal.dataset.unidad;
+            const fotosPrevias = parseInt(modal.dataset.fotosPrevias, 10) || 0;
+            const input = document.getElementById('fotosFinalizarInput');
+            const archivosNuevos = input && input.files ? Array.from(input.files) : [];
+
+            if (fotosPrevias === 0 && archivosNuevos.length === 0) {
+                errorEl.textContent = 'Debes agregar al menos una foto de evidencia de tu trabajo.';
+                return;
+            }
+
             const btn = document.getElementById('btnConfirmarFinalizar');
-            btn.textContent = 'Guardando...'; btn.disabled = true;
+            btn.disabled = true;
+
+            // 1) Subir evidencia (si hay fotos nuevas), vinculada a esta actividad exacta
+            if (archivosNuevos.length > 0) {
+                btn.textContent = '⏳ Comprimiendo fotos...';
+                const comprimidos = await Promise.all(archivosNuevos.map(f => _comprimirImagenCanvas(f)));
+                btn.textContent = '📤 Subiendo evidencia...';
+                const fd = new FormData();
+                fd.append('unidad', unidad);
+                fd.append('tecnico', username);
+                fd.append('asignacion_id', id);
+                comprimidos.forEach(f => fd.append('files', f));
+                const upRes = await fetchAuth('/api/evidencias/upload', { method: 'POST', body: fd });
+                if (!upRes.ok) {
+                    const upErr = await upRes.json().catch(()=>({}));
+                    errorEl.textContent = upErr.detail || 'No se pudieron subir las fotos. Intenta de nuevo.';
+                    btn.textContent = '✅ Confirmar y Finalizar'; btn.disabled = false;
+                    return;
+                }
+            }
+
+            // 2) Marcar la actividad como finalizada con el comentario
+            btn.textContent = 'Guardando...';
             const res = await fetchAuth('/api/asignaciones/' + id + '/finalizar', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ comentario }) });
             if (res.ok) {
                 document.getElementById('modalFinalizar').remove();
@@ -3848,62 +3966,6 @@ async def mis_tareas():
                 errorEl.textContent = err.detail || 'No se pudo finalizar. Intenta de nuevo.';
                 btn.textContent = '✅ Confirmar y Finalizar'; btn.disabled = false;
             }
-        }
-
-        // ---------- EVIDENCIA ----------
-        async function subirEvidencia(tareaId, unidad) {
-            const cntRes = await fetchAuth(`/api/evidencias/count?unit_number=${unidad}&tecnico=${username}`); const cnt = await cntRes.json();
-            const totalPrev = cnt.total || 0; const restantes = 100 - totalPrev;
-            if (restantes <= 0) return alert('Límite de 100 fotos alcanzado');
-            const modal = mostrarModal(`<div class="modal-content"><h3>📸 Subir Evidencia – ${unidad}</h3><p>Guardadas: <b>${totalPrev}</b> · Disponibles: <b>${restantes}</b></p><input type="file" id="fotosInput" multiple accept="image/*"><div id="previewFotos" style="display:flex; flex-wrap:wrap; gap:8px; margin:12px 0;"></div><div id="compressInfo" style="font-size:12px;color:#666;margin-bottom:8px;"></div><button class="btn-primary" id="btnGuardarFotos">💾 Guardar Fotos</button><button class="btn-danger" onclick="cerrarModal()">Cancelar</button></div>`);
-
-            // Comprime una imagen con Canvas API (max 1200px, calidad 0.75 JPEG)
-            async function comprimirImagen(file) {
-                return new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onload = ev => {
-                        const img = new Image();
-                        img.onload = () => {
-                            const MAX = 1200;
-                            let { width: w, height: h } = img;
-                            if (w > MAX || h > MAX) {
-                                if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
-                                else       { w = Math.round(w * MAX / h); h = MAX; }
-                            }
-                            const canvas = document.createElement('canvas');
-                            canvas.width = w; canvas.height = h;
-                            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-                            canvas.toBlob(blob => {
-                                if (blob && blob.size < file.size) {
-                                    resolve(new File([blob], file.name.replace(/[.][^.]+$/, '.jpg'), { type: 'image/jpeg' }));
-                                } else {
-                                    resolve(file); // si ya era pequeño, usar original
-                                }
-                            }, 'image/jpeg', 0.75);
-                        };
-                        img.onerror = () => resolve(file); // fallback al original
-                        img.src = ev.target.result;
-                    };
-                    reader.onerror = () => resolve(file);
-                    reader.readAsDataURL(file);
-                });
-            }
-
-            document.getElementById('fotosInput').addEventListener('change', e => {
-                const files = Array.from(e.target.files).slice(0, restantes), previewDiv = document.getElementById('previewFotos'); previewDiv.innerHTML = '';
-                let totalKB = 0; files.forEach(f => { totalKB += f.size / 1024; const r = new FileReader(); r.onload = ev => { const img = document.createElement('img'); img.src = ev.target.result; img.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:8px;'; previewDiv.appendChild(img); }; r.readAsDataURL(f); });
-                document.getElementById('compressInfo').textContent = `${files.length} foto(s) · ${(totalKB/1024).toFixed(1)} MB → se comprimirán a ~${Math.round(totalKB * 0.05 / 1024 * 10) / 10 || '<0.5'} MB antes de subir`;
-            });
-
-            document.getElementById('btnGuardarFotos').onclick = async () => {
-                const input = document.getElementById('fotosInput'); if (!input.files.length) return alert('Selecciona fotos');
-                const btn = document.getElementById('btnGuardarFotos'); btn.disabled = true; btn.textContent = '⏳ Comprimiendo...';
-                const archivos = Array.from(input.files).slice(0, restantes);
-                const comprimidos = await Promise.all(archivos.map(f => comprimirImagen(f)));
-                btn.textContent = '📤 Subiendo...';
-                const fd = new FormData(); fd.append('unidad', unidad); fd.append('tecnico', username); comprimidos.forEach(f => fd.append('files', f));
-                await fetchAuth('/api/evidencias/upload', { method: 'POST', body: fd }); alert('Fotos guardadas'); cerrarModal();
-            };
         }
 
         // ---------- VALORES ----------

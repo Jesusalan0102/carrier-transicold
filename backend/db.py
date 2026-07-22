@@ -364,6 +364,51 @@ def _run_migrations():
                 conn.commit()
                 print("✅ Migración: tabla corriendo_tracking creada")
 
+            # ── evidencias: columna contenido con tamaño suficiente ───────────
+            # Si la columna es un BLOB normal (límite 64KB), las fotos comprimidas
+            # (hasta ~800KB antes de comprimir) se truncan/corrompen en silencio,
+            # causando que "no aparezcan" algunas imágenes. La ampliamos a LONGBLOB.
+            cur.execute("""
+                SELECT COUNT(*) FROM information_schema.TABLES
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME   = 'evidencias'
+            """)
+            row_ev_ex = cur.fetchone()
+            count_ev_ex = row_ev_ex[0] if isinstance(row_ev_ex, tuple) else list(row_ev_ex.values())[0]
+            if count_ev_ex > 0:
+                cur.execute("""
+                    SELECT DATA_TYPE FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME   = 'evidencias'
+                      AND COLUMN_NAME  = 'contenido'
+                """)
+                row_ec = cur.fetchone()
+                if row_ec:
+                    dtype_ec = (row_ec[0] if isinstance(row_ec, tuple) else list(row_ec.values())[0] or "").lower()
+                    if dtype_ec in ("blob", "tinyblob"):
+                        cur.execute(
+                            "ALTER TABLE evidencias MODIFY COLUMN contenido LONGBLOB"
+                        )
+                        conn.commit()
+                        print(f"✅ Migración: evidencias.contenido ampliada de {dtype_ec} a LONGBLOB")
+
+                # ── evidencias: asignacion_id (vincula la foto a la actividad exacta) ─
+                cur.execute("""
+                    SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME   = 'evidencias'
+                      AND COLUMN_NAME  = 'asignacion_id'
+                """)
+                row_eai = cur.fetchone()
+                count_eai = row_eai[0] if isinstance(row_eai, tuple) else list(row_eai.values())[0]
+                if count_eai == 0:
+                    cur.execute(
+                        "ALTER TABLE evidencias ADD COLUMN asignacion_id INT DEFAULT NULL, "
+                        "ADD INDEX idx_asignacion_id (asignacion_id)"
+                    )
+                    conn.commit()
+                    print("✅ Migración: columna asignacion_id añadida a evidencias")
+
     except Exception as e:
         print(f"⚠️  Migración omitida: {e}")
     finally:
