@@ -3941,10 +3941,19 @@ async def mis_tareas():
                 fd.append('tecnico', username);
                 fd.append('asignacion_id', id);
                 comprimidos.forEach(f => fd.append('files', f));
-                const upRes = await fetchAuth('/api/evidencias/upload', { method: 'POST', body: fd });
+                let upRes;
+                try {
+                    upRes = await fetchAuth('/api/evidencias/upload', { method: 'POST', body: fd });
+                } catch (netErr) {
+                    errorEl.textContent = 'No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo.';
+                    btn.textContent = '✅ Confirmar y Finalizar'; btn.disabled = false;
+                    return;
+                }
                 if (!upRes.ok) {
-                    const upErr = await upRes.json().catch(()=>({}));
-                    errorEl.textContent = upErr.detail || 'No se pudieron subir las fotos. Intenta de nuevo.';
+                    const rawText = await upRes.text().catch(()=> '');
+                    let detail = '';
+                    try { detail = JSON.parse(rawText).detail; } catch(e) {}
+                    errorEl.textContent = detail || `No se pudieron subir las fotos (error ${upRes.status}). Intenta de nuevo.`;
                     btn.textContent = '✅ Confirmar y Finalizar'; btn.disabled = false;
                     return;
                 }
