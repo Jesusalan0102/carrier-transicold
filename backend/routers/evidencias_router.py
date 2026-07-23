@@ -376,13 +376,18 @@ def listar_evidencias(
 # ── LISTAR TODAS LAS UNIDADES CON EVIDENCIAS — solo admin/visor ───────────
 @router.get("/unidades-con-fotos")
 def unidades_con_fotos(current_user=Depends(require_admin_or_visor)):
+    # Mismo criterio que el dashboard: solo unidades de lotes activos (oculto=0),
+    # ordenadas por lote y luego por número de unidad para que la vista de
+    # evidencias no aparezca mezclada.
     rows = execute_read(
-        """SELECT unit_number, COUNT(*) AS total
-           FROM evidencias
-           GROUP BY unit_number
-           ORDER BY total DESC"""
+        """SELECT e.unit_number AS unit_number, COUNT(*) AS total, u.id_lote AS id_lote
+           FROM evidencias e
+           INNER JOIN unidades u ON u.unit_number = e.unit_number
+           WHERE u.oculto = 0
+           GROUP BY e.unit_number, u.id_lote
+           ORDER BY u.id_lote, e.unit_number"""
     )
-    return [{"unit_number": r["unit_number"], "total": r["total"]} for r in (rows or [])]
+    return [{"unit_number": r["unit_number"], "total": r["total"], "id_lote": r["id_lote"]} for r in (rows or [])]
 
 
 # ── SERVIR UNA FOTO INDIVIDUAL — solo admin/visor ─────────────────────────
