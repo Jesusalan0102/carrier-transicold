@@ -3061,11 +3061,19 @@ async def admin():
             const res = await fetchAuth('/api/evidencias/unidades-con-fotos');
             if (!res.ok) return;
             const data = await res.json();
+            let grupoActual = null, optgroup = null;
             data.forEach(u => {
+                const lote = u.id_lote || 'Sin lote';
+                if (lote !== grupoActual) {
+                    grupoActual = lote;
+                    optgroup = document.createElement('optgroup');
+                    optgroup.label = lote;
+                    sel.appendChild(optgroup);
+                }
                 const opt = document.createElement('option');
                 opt.value = u.unit_number;
                 opt.textContent = `${u.unit_number}  (${u.total} foto${u.total===1?'':'s'})`;
-                sel.appendChild(opt);
+                optgroup.appendChild(opt);
             });
         } catch(e) { console.error('evInicializar', e); }
     }
