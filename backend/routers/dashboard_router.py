@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from db import execute_read
+from db import execute_read, execute_write
 from auth import verify_token
+from pydantic import BaseModel
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import io
@@ -86,6 +87,35 @@ def get_distribucion_global(current_user: dict = Depends(verify_token)):
         if r["estado"] in cnt:
             cnt[r["estado"]] = r["total"]
     return cnt
+
+# ── ACTIVIDADES OCULTAS DEL DASHBOARD (columnas de la tabla de estatus) ───
+@router.get("/actividades_ocultas")
+def get_actividades_ocultas(current_user: dict = Depends(verify_token)):
+    rows = execute_read("SELECT actividad FROM actividades_ocultas")
+    return [r["actividad"] for r in rows]
+
+
+@router.post("/actividades_ocultas/{actividad}")
+def ocultar_actividad(actividad: str, current_user: dict = Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    execute_write(
+        "INSERT IGNORE INTO actividades_ocultas (actividad) VALUES (%s)",
+        (actividad,)
+    )
+    return {"mensaje": f"Actividad '{actividad}' ocultada del dashboard"}
+
+
+@router.delete("/actividades_ocultas/{actividad}")
+def mostrar_actividad(actividad: str, current_user: dict = Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    execute_write(
+        "DELETE FROM actividades_ocultas WHERE actividad=%s",
+        (actividad,)
+    )
+    return {"mensaje": f"Actividad '{actividad}' visible nuevamente en el dashboard"}
+
 
 # ── ESTATUS POR UNIDAD ─────────────────────────────────────────────────────
 @router.get("/estatus_unidades")

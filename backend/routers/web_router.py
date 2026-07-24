@@ -822,8 +822,21 @@ async def dashboard():
         </div>
     </div>
 
-    <div class="section-title">📋 Estatus de Proceso por Unidad</div>
+    <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <span>📋 Estatus de Proceso por Unidad</span>
+        <button class="btn-primary admin-only" style="width:auto;padding:8px 16px;font-size:.82rem;" onclick="abrirModalColumnas()">⚙️ Gestionar columnas</button>
+    </div>
     <div id="statusTable" style="overflow-x:auto; margin-bottom:32px; border-radius:12px;"></div>
+
+    <!-- Modal: Gestionar columnas ocultas del dashboard -->
+    <div id="columnas-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;align-items:center;justify-content:center;">
+        <div style="background:white;border-radius:12px;max-width:420px;width:92%;max-height:80vh;overflow-y:auto;padding:24px;">
+            <h3 style="margin-top:0;color:var(--carrier-blue);">⚙️ Columnas del dashboard</h3>
+            <p style="color:var(--text-secondary);font-size:.85rem;">Desmarca una actividad para ocultarla de la tabla. Puedes volver a mostrarla cuando quieras.</p>
+            <div id="columnas-modal-body" style="display:flex;flex-direction:column;gap:8px;margin:16px 0;"></div>
+            <button class="btn-primary" style="width:100%;" onclick="document.getElementById('columnas-modal').style.display='none'">Cerrar</button>
+        </div>
+    </div>
 
     <div class="section-title">📦 Lotes y Series por Unidad</div>
     <div id="lotesContainer" style="margin-bottom:32px;"></div>
@@ -993,6 +1006,16 @@ async def dashboard():
                     const unidadesRes = await fetchAuth('/api/unidades/');
                     const unidades = await unidadesRes.json();
                     if (unidades.length) {
+                        // Actividades ocultas del dashboard (solo afecta esta tabla, no los
+                        // selects de asignación de actividades en otras pestañas)
+                        let actividadesOcultas = [];
+                        try {
+                            const ocRes = await fetchAuth('/api/dashboard/actividades_ocultas');
+                            if (ocRes.ok) actividadesOcultas = await ocRes.json();
+                        } catch(e) { console.warn('No se pudo cargar actividades_ocultas:', e); }
+                        window._actividadesOcultas = actividadesOcultas;
+                        const actividadesVisibles = actividades.filter(a => !actividadesOcultas.includes(a));
+
                         // Tabla de estatus – CSS correcta
                         const compSet    = new Set(asignaciones.filter(a=>a.estado==='completada').map(a=>a.unidad+'||'+a.actividad_id));
                         const procesoSet = new Set(asignaciones.filter(a=>a.estado==='en_proceso').map(a=>a.unidad+'||'+a.actividad_id));
@@ -1009,11 +1032,11 @@ async def dashboard():
                         } catch(e) { console.warn('No se pudo cargar corriendo_tracking:', e); }
 
                         let tbl = '<table class="status-tbl"><thead><tr><th>LOTE</th><th>#Económico</th>';
-                        actividades.forEach(a => { tbl += `<th>${a}</th>`; });
-                        tbl += '</tr></thead><tbody>';
+                        actividadesVisibles.forEach(a => { tbl += `<th>${a}</th>`; });
+                        tbl += '<th>📝 Comentario</th></tr></thead><tbody>';
                         unidades.forEach(u => {
                             tbl += `<tr><td>${u.id_lote||''}</td><td>${u.unit_number}</td>`;
-                            actividades.forEach(act => {
+                            actividadesVisibles.forEach(act => {
                                 const key = u.unit_number+'||'+act;
                                 const track = act === 'Corriendo' ? corriendoTrack[u.unit_number] : null;
                                 if (act === 'Corriendo' && track && (track.corriendo_desde || track.segundos_acumulados > 0)) {
@@ -1030,6 +1053,12 @@ async def dashboard():
                                     tbl += '<td><span class="dash">—</span></td>';
                                 }
                             });
+                            const comentarioEsc = (u.comentario||'').replace(/"/g,'&quot;');
+                            if (window.role === 'admin') {
+                                tbl += `<td style="min-width:180px;"><input type="text" class="comentario-unidad-input" data-unidad="${u.unit_number}" data-valor-guardado="${comentarioEsc}" value="${comentarioEsc}" placeholder="Sin comentario" onblur="guardarComentarioUnidad(this)" style="width:100%;border:1px solid #d8dee6;border-radius:6px;padding:6px 8px;font-size:.82rem;"></td>`;
+                            } else {
+                                tbl += `<td style="min-width:150px;font-size:.82rem;color:var(--text-secondary);">${u.comentario||'—'}</td>`;
+                            }
                             tbl += '</tr>';
                         });
                         tbl += '</tbody></table>';
@@ -1068,6 +1097,60 @@ async def dashboard():
             } catch(err) {
                 console.error('Dashboard error:', err);
                 document.getElementById('kpiContainer').innerHTML = '<p style="color:red;grid-column:1/-1;">Error al conectar con el servidor.</p>';
+            }
+        }
+
+        // ── Comentario libre por unidad (editable solo por admin) ─────────────
+        async function guardarComentarioUnidad(input) {
+            const unidad = input.dataset.unidad;
+            const valorPrevio = input.dataset.valorGuardado !== undefined ? input.dataset.valorGuardado : input.value;
+            const comentario = input.value;
+            if (comentario === valorPrevio) return; // sin cambios, no llamar al servidor
+            try {
+                const res = await fetchAuth(`/api/unidades/${encodeURIComponent(unidad)}/comentario`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ comentario })
+                });
+                if (res.ok) {
+                    input.dataset.valorGuardado = comentario;
+                    input.style.borderColor = '#16a34a';
+                    setTimeout(() => { input.style.borderColor = '#d8dee6'; }, 800);
+                } else {
+                    input.style.borderColor = '#dc2626';
+                }
+            } catch(e) {
+                console.error('guardarComentarioUnidad', e);
+                input.style.borderColor = '#dc2626';
+            }
+        }
+
+        // ── Gestionar columnas (actividades) ocultas del dashboard ────────────
+        async function abrirModalColumnas() {
+            const body = document.getElementById('columnas-modal-body');
+            body.innerHTML = 'Cargando...';
+            document.getElementById('columnas-modal').style.display = 'flex';
+            let ocultas = window._actividadesOcultas || [];
+            try {
+                const res = await fetchAuth('/api/dashboard/actividades_ocultas');
+                if (res.ok) ocultas = await res.json();
+            } catch(e) { console.warn('abrirModalColumnas', e); }
+            body.innerHTML = actividades.map(a => `
+                <label style="display:flex;align-items:center;gap:8px;font-size:.88rem;cursor:pointer;">
+                    <input type="checkbox" ${ocultas.includes(a) ? '' : 'checked'} onchange="toggleColumnaActividad('${a.replace(/'/g,"\\'")}', this.checked)">
+                    ${a}
+                </label>
+            `).join('');
+        }
+
+        async function toggleColumnaActividad(actividad, mostrar) {
+            try {
+                const url = `/api/dashboard/actividades_ocultas/${encodeURIComponent(actividad)}`;
+                await fetchAuth(url, { method: mostrar ? 'DELETE' : 'POST' });
+                await cargarDashboard();
+            } catch(e) {
+                console.error('toggleColumnaActividad', e);
+                alert('No se pudo actualizar la columna. Intenta de nuevo.');
             }
         }
 
@@ -3061,11 +3144,19 @@ async def admin():
             const res = await fetchAuth('/api/evidencias/unidades-con-fotos');
             if (!res.ok) return;
             const data = await res.json();
+            let grupoActual = null, optgroup = null;
             data.forEach(u => {
+                const lote = u.id_lote || 'Sin lote';
+                if (lote !== grupoActual) {
+                    grupoActual = lote;
+                    optgroup = document.createElement('optgroup');
+                    optgroup.label = lote;
+                    sel.appendChild(optgroup);
+                }
                 const opt = document.createElement('option');
                 opt.value = u.unit_number;
                 opt.textContent = `${u.unit_number}  (${u.total} foto${u.total===1?'':'s'})`;
-                sel.appendChild(opt);
+                optgroup.appendChild(opt);
             });
         } catch(e) { console.error('evInicializar', e); }
     }
@@ -3941,10 +4032,19 @@ async def mis_tareas():
                 fd.append('tecnico', username);
                 fd.append('asignacion_id', id);
                 comprimidos.forEach(f => fd.append('files', f));
-                const upRes = await fetchAuth('/api/evidencias/upload', { method: 'POST', body: fd });
+                let upRes;
+                try {
+                    upRes = await fetchAuth('/api/evidencias/upload', { method: 'POST', body: fd });
+                } catch (netErr) {
+                    errorEl.textContent = 'No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo.';
+                    btn.textContent = '✅ Confirmar y Finalizar'; btn.disabled = false;
+                    return;
+                }
                 if (!upRes.ok) {
-                    const upErr = await upRes.json().catch(()=>({}));
-                    errorEl.textContent = upErr.detail || 'No se pudieron subir las fotos. Intenta de nuevo.';
+                    const rawText = await upRes.text().catch(()=> '');
+                    let detail = '';
+                    try { detail = JSON.parse(rawText).detail; } catch(e) {}
+                    errorEl.textContent = detail || `No se pudieron subir las fotos (error ${upRes.status}). Intenta de nuevo.`;
                     btn.textContent = '✅ Confirmar y Finalizar'; btn.disabled = false;
                     return;
                 }

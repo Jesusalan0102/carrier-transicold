@@ -83,7 +83,14 @@ async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_
         if len(contenido) > MAX_BYTES_BEFORE:
             contenido = await run_in_threadpool(comprimir_imagen, contenido, file.filename)
 
-        ok = execute_write(
+        # execute_write es una llamada SÍNCRONA a MySQL; si se llama directo
+        # dentro de un endpoint async bloquea TODO el event loop (la app corre
+        # con 1 solo worker en Clever Cloud). Con varias fotos subiendo a la
+        # vez esto acumula bloqueo suficiente para que el gateway corte la
+        # conexión antes de recibir respuesta. Se ejecuta en threadpool para
+        # no bloquear el loop mientras se escribe el BLOB en la base de datos.
+        ok = await run_in_threadpool(
+            execute_write,
             "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico, asignacion_id) VALUES (%s,%s,%s,%s,%s)",
             (unidad, file.filename, contenido, tecnico, asignacion_id)
         )
@@ -172,13 +179,15 @@ async def subir_evidencias(
     # unidad. Si no viene asignacion_id (uso legado), se conserva el límite
     # acumulado por unidad+técnico como respaldo.
     if asignacion_id is not None:
-        res = execute_read(
+        res = await run_in_threadpool(
+            execute_read,
             "SELECT COUNT(*) AS total FROM evidencias WHERE asignacion_id=%s",
             (asignacion_id,)
         )
         limite_detalle = "para esta actividad"
     else:
-        res = execute_read(
+        res = await run_in_threadpool(
+            execute_read,
             "SELECT COUNT(*) AS total FROM evidencias WHERE unit_number=%s AND tecnico=%s",
             (unidad, tecnico)
         )
@@ -367,13 +376,18 @@ def listar_evidencias(
 # ── LISTAR TODAS LAS UNIDADES CON EVIDENCIAS — solo admin/visor ───────────
 @router.get("/unidades-con-fotos")
 def unidades_con_fotos(current_user=Depends(require_admin_or_visor)):
+    # Mismo criterio que el dashboard: solo unidades de lotes activos (oculto=0),
+    # ordenadas por lote y luego por número de unidad para que la vista de
+    # evidencias no aparezca mezclada.
     rows = execute_read(
-        """SELECT unit_number, COUNT(*) AS total
-           FROM evidencias
-           GROUP BY unit_number
-           ORDER BY total DESC"""
+        """SELECT e.unit_number AS unit_number, COUNT(*) AS total, u.id_lote AS id_lote
+           FROM evidencias e
+           INNER JOIN unidades u ON u.unit_number = e.unit_number
+           WHERE u.oculto = 0
+           GROUP BY e.unit_number, u.id_lote
+           ORDER BY u.id_lote, e.unit_number"""
     )
-    return [{"unit_number": r["unit_number"], "total": r["total"]} for r in (rows or [])]
+    return [{"unit_number": r["unit_number"], "total": r["total"], "id_lote": r["id_lote"]} for r in (rows or [])]
 
 
 # ── SERVIR UNA FOTO INDIVIDUAL — solo admin/visor ─────────────────────────

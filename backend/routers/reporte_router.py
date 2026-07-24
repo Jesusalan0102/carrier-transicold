@@ -97,7 +97,7 @@ def _sheet_resumen(wb, conn):
 
     kpis = []
     try:
-        kpis.append(("Unidades Registradas",   _query(conn, "SELECT COUNT(*) c FROM unidades")[0]["c"]))
+        kpis.append(("Unidades Registradas",   _query(conn, "SELECT COUNT(*) c FROM unidades WHERE oculto=0")[0]["c"]))
         kpis.append(("Tickets Abiertos",        _query(conn, "SELECT COUNT(*) c FROM tickets WHERE atendido=0")[0]["c"]))
         kpis.append(("Tickets Cerrados",        _query(conn, "SELECT COUNT(*) c FROM tickets WHERE atendido=1")[0]["c"]))
         kpis.append(("Asignaciones Totales",    _query(conn, "SELECT COUNT(*) c FROM asignaciones")[0]["c"]))
@@ -140,6 +140,7 @@ def _sheet_unidades(wb, conn):
             battery_charger_serial   AS `Serie Cargador Batería`,
             fecha_registro           AS `Fecha y Hora de Registro`
         FROM unidades
+        WHERE oculto = 0
         ORDER BY id_lote, unit_number
     """)
     if not rows_db:
@@ -190,6 +191,7 @@ def _sheet_actividades(wb, conn):
                COALESCE(c.comentarios, a.comentario) AS comentario,
                a.fecha_asignacion, a.fecha_inicio, a.fecha_fin, a.ticket_id
         FROM asignaciones a
+        INNER JOIN unidades u ON u.unit_number = a.unidad
         LEFT JOIN (
             SELECT asignacion_id,
                    GROUP_CONCAT(
@@ -199,6 +201,7 @@ def _sheet_actividades(wb, conn):
             FROM comentarios_actividades
             GROUP BY asignacion_id
         ) c ON c.asignacion_id = a.id
+        WHERE u.oculto = 0
         ORDER BY a.fecha_asignacion DESC
     """)
     if not rows_db:
@@ -226,6 +229,7 @@ def _sheet_tickets(wb, conn):
         FROM tickets t
         LEFT JOIN unidades u ON u.unit_number = t.unit_number
         LEFT JOIN asignaciones a ON a.ticket_id = t.id
+        WHERE COALESCE(u.oculto, 0) = 0
         ORDER BY t.ticket_num DESC
     """)
     if not rows_db:

@@ -409,6 +409,31 @@ def _run_migrations():
                     conn.commit()
                     print("✅ Migración: columna asignacion_id añadida a evidencias")
 
+                # ── comentario en unidades (nota libre del admin en el dashboard) ─
+                cur.execute("""
+                    SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME   = 'unidades'
+                      AND COLUMN_NAME  = 'comentario'
+                """)
+                row_com = cur.fetchone()
+                count_com = row_com[0] if isinstance(row_com, tuple) else list(row_com.values())[0]
+                if count_com == 0:
+                    cur.execute(
+                        "ALTER TABLE unidades ADD COLUMN comentario TEXT DEFAULT NULL"
+                    )
+                    conn.commit()
+                    print("✅ Migración: columna comentario añadida a unidades")
+
+                # ── actividades_ocultas (columnas del dashboard ocultables por admin) ─
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS actividades_ocultas (
+                        actividad VARCHAR(50) NOT NULL PRIMARY KEY,
+                        fecha_ocultada DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.commit()
+
     except Exception as e:
         print(f"⚠️  Migración omitida: {e}")
     finally:

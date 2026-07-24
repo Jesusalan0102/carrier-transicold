@@ -643,3 +643,22 @@ def reiniciar_contador_corriendo(unit_number: str, current_user=Depends(verify_t
     import corriendo_tracking
     corriendo_tracking.reiniciar(unit_number)
     return {"mensaje": f"Contador de horas corriendo reiniciado para la unidad {unit_number}"}
+
+
+# ── COMENTARIO LIBRE POR UNIDAD (nota del admin en el dashboard) ──────────
+class ComentarioUnidadIn(BaseModel):
+    comentario: Optional[str] = None
+
+
+@router.patch("/{unit_number}/comentario")
+def actualizar_comentario_unidad(unit_number: str, body: ComentarioUnidadIn, current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    existentes = execute_read("SELECT id FROM unidades WHERE unit_number=%s", (unit_number,))
+    if not existentes:
+        raise HTTPException(status_code=404, detail=f"Unidad '{unit_number}' no encontrada")
+    execute_write(
+        "UPDATE unidades SET comentario=%s WHERE unit_number=%s",
+        (body.comentario, unit_number)
+    )
+    return {"mensaje": f"Comentario actualizado para la unidad {unit_number}"}
