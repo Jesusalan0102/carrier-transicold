@@ -198,6 +198,60 @@ def _sheet_unidades(wb, conn):
     _autofit(ws)
 
 
+# ── Hoja 2b: Toma de Valores (al lado del libro de Series) ───────────────────
+def _sheet_toma_valores(wb, conn):
+    ws = wb.create_sheet("Toma_de_Valores")
+
+    campos_db = _query(conn, "SELECT campo_nombre FROM toma_valores_campos ORDER BY campo_orden") or []
+    campos = [c["campo_nombre"] for c in campos_db]
+
+    # Una fila por cada asignación de "Toma de Valores" de una unidad de lote activo
+    asigs = _query(conn, """
+        SELECT a.id AS asignacion_id, a.unidad AS `Número de Unidad`,
+               u.id_lote AS `Lote / Flota`, u.vin_number AS `VIN (Chasis)`,
+               u.reefer_model AS `Modelo Reefer`, u.reefer_serial AS `Serie Reefer`,
+               a.tecnico, a.estado AS Estado,
+               a.fecha_fin AS `Fecha de Toma`
+        FROM asignaciones a
+        INNER JOIN unidades u ON u.unit_number = a.unidad
+        WHERE a.actividad_id = 'Toma de Valores' AND u.oculto = 0
+        ORDER BY u.id_lote, a.unidad, a.fecha_asignacion DESC
+    """) or []
+
+    if not asigs:
+        ws.cell(1, 1, "Sin registros de toma de valores").font = Font(italic=True)
+        return
+
+    nombres = _nombres_tecnicos(conn)
+    valores_por_asig = {}
+    if campos:
+        datos = _query(conn, """
+            SELECT d.asignacion_id, d.campo_nombre, d.valor
+            FROM toma_valores_datos d
+            INNER JOIN asignaciones a ON a.id = d.asignacion_id
+            INNER JOIN unidades u ON u.unit_number = a.unidad
+            WHERE u.oculto = 0
+        """) or []
+        for d in datos:
+            valores_por_asig.setdefault(d["asignacion_id"], {})[d["campo_nombre"]] = d["valor"] or ""
+
+    cols = ["Número de Unidad", "Lote / Flota", "VIN (Chasis)", "Modelo Reefer",
+            "Serie Reefer", "Técnico", "Estado", "Fecha de Toma"] + campos
+
+    filas = []
+    for a in asigs:
+        fila = [
+            a["Número de Unidad"], a["Lote / Flota"], a["VIN (Chasis)"],
+            a["Modelo Reefer"], a["Serie Reefer"],
+            _nombre(nombres, a["tecnico"]), a["Estado"], a["Fecha de Toma"],
+        ]
+        valores = valores_por_asig.get(a["asignacion_id"], {})
+        fila += [valores.get(campo, "") for campo in campos]
+        filas.append([_safe_str(v) for v in fila])
+
+    _write_sheet(ws, cols, filas)
+
+
 # ── Hoja 3: Actividades ───────────────────────────────────────────────────────
 def _sheet_actividades(wb, conn):
     ws = wb.create_sheet("Actividades")
@@ -850,6 +904,7 @@ def exportar_sistema_completo(current_user=Depends(verify_token)):
         builders = [
             ("Resumen_KPIs",             _sheet_resumen),
             ("Series_Unidades",          _sheet_unidades),
+            ("Toma_de_Valores",          _sheet_toma_valores),
             ("Actividades",              _sheet_actividades),
             ("Tickets",                  _sheet_tickets),
             ("Horarios_Semanales",       _sheet_horarios),
