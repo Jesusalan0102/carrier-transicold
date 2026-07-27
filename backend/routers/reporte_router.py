@@ -76,6 +76,21 @@ def _query(conn, sql, params=None):
         return cur.fetchall()
 
 
+def _nombres_tecnicos(conn):
+    """Mapa {username: nombre_completo}. Si un usuario no tiene nombre_completo
+    capturado, usa el username como respaldo para no dejar celdas vacías."""
+    rows = _query(conn, "SELECT username, nombre_completo FROM users") or []
+    return {r["username"]: (r["nombre_completo"] or r["username"]) for r in rows}
+
+
+def _nombre(mapa, username):
+    """Devuelve el nombre completo de un username; si es None o no está
+    registrado, regresa el valor original tal cual."""
+    if not username:
+        return username
+    return mapa.get(username, username)
+
+
 # ── Hoja 1: Resumen KPIs ──────────────────────────────────────────────────────
 def _sheet_resumen(wb, conn):
     ws = wb.create_sheet("Resumen_KPIs")
@@ -193,13 +208,14 @@ def _sheet_actividades(wb, conn):
         FROM asignaciones a
         INNER JOIN unidades u ON u.unit_number = a.unidad
         LEFT JOIN (
-            SELECT asignacion_id,
+            SELECT ca.asignacion_id,
                    GROUP_CONCAT(
-                       CONCAT(tecnico, ' (', DATE_FORMAT(fecha, '%%d/%%m/%%Y %%H:%%i'), '): ', comentario)
-                       ORDER BY fecha SEPARATOR '  |  '
+                       CONCAT(COALESCE(ut.nombre_completo, ca.tecnico), ' (', DATE_FORMAT(ca.fecha, '%%d/%%m/%%Y %%H:%%i'), '): ', ca.comentario)
+                       ORDER BY ca.fecha SEPARATOR '  |  '
                    ) AS comentarios
-            FROM comentarios_actividades
-            GROUP BY asignacion_id
+            FROM comentarios_actividades ca
+            LEFT JOIN users ut ON ut.username = ca.tecnico
+            GROUP BY ca.asignacion_id
         ) c ON c.asignacion_id = a.id
         WHERE u.oculto = 0
         ORDER BY a.fecha_asignacion DESC
@@ -207,6 +223,9 @@ def _sheet_actividades(wb, conn):
     if not rows_db:
         ws.cell(1, 1, "Sin registros").font = Font(italic=True)
         return
+    nombres = _nombres_tecnicos(conn)
+    for r in rows_db:
+        r["tecnico"] = _nombre(nombres, r["tecnico"])
     cols = list(rows_db[0].keys())
     _write_sheet(ws, cols, [[_safe_str(r[c]) for c in cols] for r in rows_db])
 
@@ -235,6 +254,10 @@ def _sheet_tickets(wb, conn):
     if not rows_db:
         ws.cell(1, 1, "Sin registros").font = Font(italic=True)
         return
+    nombres = _nombres_tecnicos(conn)
+    for r in rows_db:
+        r["Creado Por"] = _nombre(nombres, r["Creado Por"])
+        r["Técnico Asignado"] = _nombre(nombres, r["Técnico Asignado"])
     cols = list(rows_db[0].keys())
     _write_sheet(ws, cols, [[_safe_str(r[c]) for c in cols] for r in rows_db])
 
@@ -250,7 +273,7 @@ def _sheet_horarios(wb, conn):
         ORDER BY username, fecha
     """)
 
-    cols = ["Técnico (username)", "Nombre Completo",
+    cols = ["Técnico",
             "Lunes Entrada",  "Lunes Salida",
             "Martes Entrada", "Martes Salida",
             "Miércoles Entrada", "Miércoles Salida",
@@ -260,17 +283,7 @@ def _sheet_horarios(wb, conn):
 
     _write_sheet(ws, cols, [], hdr_color=VERDE)
 
-    # Obtener nombres completos de users si hay columna nombre
-    try:
-        users_db = _query(conn, "SELECT username, username AS nombre FROM users")
-        # try nombre_completo column
-        try:
-            users_db = _query(conn, "SELECT username, nombre_completo AS nombre FROM users")
-        except Exception:
-            pass
-        nombres = {u["username"]: u["nombre"] for u in (users_db or [])}
-    except Exception:
-        nombres = {}
+    nombres = _nombres_tecnicos(conn)
 
     # Agrupar por técnico
     from collections import defaultdict
@@ -300,9 +313,8 @@ def _sheet_horarios(wb, conn):
             continue
 
     row_i = 2
-    for tec, days in sorted(tec_data.items()):
+    for tec, days in sorted(tec_data.items(), key=lambda item: nombres.get(item[0], item[0])):
         row = [
-            tec,
             nombres.get(tec, tec),
             days.get("Lunes Entrada", ""),    days.get("Lunes Salida", ""),
             days.get("Martes Entrada", ""),   days.get("Martes Salida", ""),
@@ -342,6 +354,7 @@ def _sheet_asistencia(wb, conn):
 
     # Horarios programados index por (username, fecha)
     horarios_db = _query(conn, "SELECT username, fecha, hora_entrada, hora_salida FROM horarios") or []
+    nombres = _nombres_tecnicos(conn)
     from collections import defaultdict
     import datetime as _dt
 
@@ -397,7 +410,7 @@ def _sheet_asistencia(wb, conn):
         else:
             estado = "✅ A tiempo"
 
-        row = [fecha_str, r["username"], tipo, hora_checkin,
+        row = [fecha_str, _nombre(nombres, r["username"]), tipo, hora_checkin,
                hor_e, hor_s,
                retardo if retardo else "",
                distancia, "Sí" if aprobado else "No", estado]
@@ -449,11 +462,12 @@ def _sheet_resumen_retardos(wb, conn):
 
     row_i = 2
     fill_warn = PatternFill("solid", start_color="FFF2CC", end_color="FFF2CC")
+    nombres = _nombres_tecnicos(conn)
 
     for r in rows_db:
         con_ret = int(r.get("con_retardo") or 0)
         row = [
-            r["username"],
+            _nombre(nombres, r["username"]),
             r.get("total_entradas", 0),
             r.get("a_tiempo", 0),
             con_ret,
@@ -494,11 +508,11 @@ def _sheet_inventario(wb, conn):
 def _sheet_usuarios(wb, conn):
     ws = wb.create_sheet("Usuarios")
     rows_db = _query(conn, """
-        SELECT id, username, role,
+        SELECT id, username, nombre_completo, role,
                CASE WHEN role = 'inactivo' THEN 'No' ELSE 'Sí' END AS activo
         FROM users ORDER BY role, username
     """) or []
-    cols = ["ID", "Username", "Rol", "Activo"]
+    cols = ["ID", "Username", "Nombre Completo", "Rol", "Activo"]
     _write_sheet(ws, cols, [[_safe_str(r[c]) for c in list(r.keys())] for r in rows_db])
 
 
@@ -614,13 +628,14 @@ def _sheet_lote_actividades(wb, conn, id_lote):
         FROM asignaciones a
         INNER JOIN unidades u ON u.unit_number = a.unidad
         LEFT JOIN (
-            SELECT asignacion_id,
+            SELECT ca.asignacion_id,
                    GROUP_CONCAT(
-                       CONCAT(tecnico, ' (', DATE_FORMAT(fecha, '%%d/%%m/%%Y %%H:%%i'), '): ', comentario)
-                       ORDER BY fecha SEPARATOR '  |  '
+                       CONCAT(COALESCE(ut.nombre_completo, ca.tecnico), ' (', DATE_FORMAT(ca.fecha, '%%d/%%m/%%Y %%H:%%i'), '): ', ca.comentario)
+                       ORDER BY ca.fecha SEPARATOR '  |  '
                    ) AS comentarios
-            FROM comentarios_actividades
-            GROUP BY asignacion_id
+            FROM comentarios_actividades ca
+            LEFT JOIN users ut ON ut.username = ca.tecnico
+            GROUP BY ca.asignacion_id
         ) c ON c.asignacion_id = a.id
         WHERE u.id_lote=%s
         ORDER BY a.unidad, a.fecha_asignacion DESC
@@ -628,6 +643,9 @@ def _sheet_lote_actividades(wb, conn, id_lote):
     if not rows_db:
         ws.cell(1, 1, "Sin actividades registradas para este lote").font = Font(italic=True)
         return
+    nombres = _nombres_tecnicos(conn)
+    for r in rows_db:
+        r["Técnico"] = _nombre(nombres, r["Técnico"])
     cols = list(rows_db[0].keys())
     _write_sheet(ws, cols, [[_safe_str(r[c]) for c in cols] for r in rows_db])
     colorear_idx = cols.index("Estado") + 1 if "Estado" in cols else None
