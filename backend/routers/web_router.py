@@ -4307,12 +4307,23 @@ async def pagina_juegos():
         .trivia-opcion.incorrecta { background:#fee2e2; border-color:#dc2626; }
         .leaderboard-fila { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #f1f5f9; font-size:0.85rem; }
         .leaderboard-fila:first-child { font-weight:800; color:#b45309; }
+        .gatito-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; max-width:300px; margin:0 auto; }
+        .gatito-celda { aspect-ratio:1; background:#eef2f7; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:2.2rem; font-weight:800; cursor:pointer; }
+        .gatito-celda.ocupada { cursor:default; }
+        .juegos-canvas { display:block; margin:0 auto; background:#0f172a; border-radius:12px; touch-action:none; }
+        .carta-vista { display:inline-flex; align-items:center; justify-content:center; width:52px; height:74px; background:white; border:2px solid #334155; border-radius:8px; font-weight:800; font-size:1.1rem; margin:4px; }
+        .carta-roja { color:#dc2626; }
+        .carta-negra { color:#0f172a; }
     </style>
 
     <div class="juegos-tabs">
         <button class="juegos-tab active" id="tab-memoria" onclick="cambiarJuego('memoria')">🧠 Memoria</button>
         <button class="juegos-tab" id="tab-2048" onclick="cambiarJuego('2048')">🔢 2048</button>
         <button class="juegos-tab" id="tab-trivia" onclick="cambiarJuego('trivia')">❄️ Trivia Refrigeración</button>
+        <button class="juegos-tab" id="tab-gatito" onclick="cambiarJuego('gatito')">❌⭕ Gatito</button>
+        <button class="juegos-tab" id="tab-culebra" onclick="cambiarJuego('culebra')">🐍 Culebra</button>
+        <button class="juegos-tab" id="tab-billar" onclick="cambiarJuego('billar')">🎱 Billar</button>
+        <button class="juegos-tab" id="tab-cartas" onclick="cambiarJuego('cartas')">🃏 21 (Cartas)</button>
     </div>
 
     <div class="juegos-layout">
@@ -4326,14 +4337,19 @@ async def pagina_juegos():
 
     <script>
         const fetchAuth = window.fetchAuth;
+        const LISTA_JUEGOS = ['memoria','2048','trivia','gatito','culebra','billar','cartas'];
         let juegoActual = 'memoria';
 
         async function cambiarJuego(juego) {
             juegoActual = juego;
-            ['memoria','2048','trivia'].forEach(j => document.getElementById('tab-'+j).classList.toggle('active', j===juego));
+            LISTA_JUEGOS.forEach(j => document.getElementById('tab-'+j).classList.toggle('active', j===juego));
             if (juego === 'memoria') iniciarMemoria();
             else if (juego === '2048') iniciar2048();
-            else iniciarTrivia();
+            else if (juego === 'trivia') iniciarTrivia();
+            else if (juego === 'gatito') iniciarGatito();
+            else if (juego === 'culebra') iniciarCulebra();
+            else if (juego === 'billar') iniciarBillar();
+            else iniciarCartas();
             cargarLeaderboard();
         }
 
@@ -4593,6 +4609,409 @@ async def pagina_juegos():
                 if (correctaBtn) correctaBtn.classList.add('correcta');
             }
             setTimeout(() => { triviaEstado.indice++; renderTrivia(); }, 900);
+        }
+
+        // ══════════════ GATITO (Tic-Tac-Toe vs CPU) ══════════════
+        let gatEstado = null;
+        function iniciarGatito() {
+            gatEstado = { tablero: Array(9).fill(''), terminado: false, turnoJugador: true };
+            renderGatito();
+        }
+        function renderGatito(mensaje) {
+            const cont = document.getElementById('juego-contenedor');
+            cont.innerHTML = `
+                <h3 style="margin-top:0;color:var(--carrier-blue);">❌⭕ Gatito (vs Computadora)</h3>
+                <p style="text-align:center;min-height:24px;font-weight:700;color:var(--carrier-blue);">${mensaje || (gatEstado.turnoJugador ? 'Tu turno (❌)' : 'Pensando...')}</p>
+                <div class="gatito-grid" id="gatito-grid"></div>
+                <p style="text-align:center;margin-top:14px;"><button class="btn-primary" style="width:auto;padding:8px 18px;" onclick="iniciarGatito()">🔄 Reiniciar</button></p>
+            `;
+            const grid = document.getElementById('gatito-grid');
+            grid.innerHTML = gatEstado.tablero.map((v,i) =>
+                `<div class="gatito-celda${v?' ocupada':''}" onclick="jugarGatito(${i})">${v}</div>`
+            ).join('');
+        }
+        function _gatGanador(t) {
+            const lineas = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+            for (const [a,b,c] of lineas) if (t[a] && t[a]===t[b] && t[b]===t[c]) return t[a];
+            return t.includes('') ? null : 'empate';
+        }
+        function jugarGatito(i) {
+            if (!gatEstado.turnoJugador || gatEstado.tablero[i] || gatEstado.terminado) return;
+            gatEstado.tablero[i] = '❌';
+            let resultado = _gatGanador(gatEstado.tablero);
+            if (resultado) { _finGatito(resultado); return; }
+            gatEstado.turnoJugador = false;
+            renderGatito();
+            setTimeout(() => {
+                const i2 = _gatMejorJugada(gatEstado.tablero);
+                if (i2 !== -1) gatEstado.tablero[i2] = '⭕';
+                resultado = _gatGanador(gatEstado.tablero);
+                gatEstado.turnoJugador = true;
+                if (resultado) { _finGatito(resultado); return; }
+                renderGatito();
+            }, 500);
+        }
+        function _finGatito(resultado) {
+            gatEstado.terminado = true;
+            let msg, puntaje;
+            if (resultado === 'empate') { msg = '🤝 ¡Empate!'; puntaje = 50; }
+            else if (resultado === '❌') { msg = '🎉 ¡Ganaste!'; puntaje = 100; }
+            else { msg = '😅 Ganó la computadora'; puntaje = 0; }
+            renderGatito(msg);
+            guardarPuntaje('gatito', puntaje);
+        }
+        function _gatMejorJugada(t) {
+            // Minimax simple (tablero de 9 celdas, muy rápido)
+            function minimax(tab, esMax) {
+                const res = _gatGanador(tab);
+                if (res === '⭕') return { puntaje: 10 };
+                if (res === '❌') return { puntaje: -10 };
+                if (res === 'empate') return { puntaje: 0 };
+                const jugadas = [];
+                for (let i = 0; i < 9; i++) {
+                    if (!tab[i]) {
+                        const copia = [...tab];
+                        copia[i] = esMax ? '⭕' : '❌';
+                        const r = minimax(copia, !esMax);
+                        jugadas.push({ i, puntaje: r.puntaje });
+                    }
+                }
+                if (esMax) return jugadas.reduce((m,j) => j.puntaje > m.puntaje ? j : m);
+                return jugadas.reduce((m,j) => j.puntaje < m.puntaje ? j : m);
+            }
+            const vacias = t.filter(v => v === '').length;
+            if (vacias === 9) return 4; // primera jugada: centro (evita cálculo innecesario)
+            const mejor = minimax(t, true);
+            return mejor.i !== undefined ? mejor.i : -1;
+        }
+
+        // ══════════════ CULEBRA (Snake) ══════════════
+        let culEstado = null;
+        function iniciarCulebra() {
+            const cont = document.getElementById('juego-contenedor');
+            cont.innerHTML = `
+                <h3 style="margin-top:0;color:var(--carrier-blue);">🐍 Culebra</h3>
+                <div class="juegos-stats"><span>🍎 Puntaje: <span id="cul-puntaje">0</span></span></div>
+                <canvas id="cul-canvas" class="juegos-canvas" width="320" height="320"></canvas>
+                <p style="text-align:center;font-size:.8rem;color:#94a3b8;margin-top:8px;">Usa las flechas del teclado. En celular, desliza sobre el tablero.</p>
+                <p style="text-align:center;margin-top:10px;"><button class="btn-primary" style="width:auto;padding:8px 18px;" onclick="iniciarCulebra()">🔄 Reiniciar</button></p>
+            `;
+            const tam = 16, celda = 20;
+            culEstado = {
+                tam, celda, serpiente: [{x:8,y:8}], dir:{x:1,y:0}, dirSiguiente:{x:1,y:0},
+                comida: {x:12,y:8}, puntaje: 0, activo: true
+            };
+            if (culEstado.loop) clearInterval(culEstado.loop);
+            culEstado.loop = setInterval(_culTick, 140);
+            document.removeEventListener('keydown', _culTecla);
+            document.addEventListener('keydown', _culTecla);
+            const canvas = document.getElementById('cul-canvas');
+            let touchStart = null;
+            canvas.addEventListener('touchstart', e => { touchStart = e.touches[0]; });
+            canvas.addEventListener('touchend', e => {
+                if (!touchStart) return;
+                const dx = e.changedTouches[0].clientX - touchStart.clientX;
+                const dy = e.changedTouches[0].clientY - touchStart.clientY;
+                if (Math.abs(dx) > Math.abs(dy)) _culSetDir(dx > 0 ? {x:1,y:0} : {x:-1,y:0});
+                else _culSetDir(dy > 0 ? {x:0,y:1} : {x:0,y:-1});
+            });
+            _culRender();
+        }
+        function _culTecla(e) {
+            const mapa = { ArrowUp:{x:0,y:-1}, ArrowDown:{x:0,y:1}, ArrowLeft:{x:-1,y:0}, ArrowRight:{x:1,y:0} };
+            if (mapa[e.key]) { e.preventDefault(); _culSetDir(mapa[e.key]); }
+        }
+        function _culSetDir(d) {
+            if (!culEstado || !culEstado.activo) return;
+            if (culEstado.dir.x === -d.x && culEstado.dir.y === -d.y) return; // no ir en reversa
+            culEstado.dirSiguiente = d;
+        }
+        function _culTick() {
+            const st = culEstado;
+            if (!st.activo) return;
+            st.dir = st.dirSiguiente;
+            const cabeza = { x: st.serpiente[0].x + st.dir.x, y: st.serpiente[0].y + st.dir.y };
+            if (cabeza.x < 0 || cabeza.y < 0 || cabeza.x >= st.tam || cabeza.y >= st.tam ||
+                st.serpiente.some(s => s.x === cabeza.x && s.y === cabeza.y)) {
+                st.activo = false;
+                clearInterval(st.loop);
+                setTimeout(() => {
+                    alert(`🐍 ¡Choque! Puntaje final: ${st.puntaje}`);
+                    guardarPuntaje('culebra', st.puntaje);
+                }, 100);
+                return;
+            }
+            st.serpiente.unshift(cabeza);
+            if (cabeza.x === st.comida.x && cabeza.y === st.comida.y) {
+                st.puntaje += 10;
+                document.getElementById('cul-puntaje').textContent = st.puntaje;
+                do {
+                    st.comida = { x: Math.floor(Math.random()*st.tam), y: Math.floor(Math.random()*st.tam) };
+                } while (st.serpiente.some(s => s.x === st.comida.x && s.y === st.comida.y));
+            } else {
+                st.serpiente.pop();
+            }
+            _culRender();
+        }
+        function _culRender() {
+            const st = culEstado;
+            const canvas = document.getElementById('cul-canvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#ef4444';
+            ctx.fillRect(st.comida.x*st.celda+2, st.comida.y*st.celda+2, st.celda-4, st.celda-4);
+            st.serpiente.forEach((s,i) => {
+                ctx.fillStyle = i === 0 ? '#22c55e' : '#4ade80';
+                ctx.fillRect(s.x*st.celda+1, s.y*st.celda+1, st.celda-2, st.celda-2);
+            });
+        }
+
+        // ══════════════ BILLAR (2D simplificado) ══════════════
+        let bilEstado = null;
+        function iniciarBillar() {
+            const cont = document.getElementById('juego-contenedor');
+            cont.innerHTML = `
+                <h3 style="margin-top:0;color:var(--carrier-blue);">🎱 Billar</h3>
+                <div class="juegos-stats"><span>🎯 Puntaje: <span id="bil-puntaje">0</span></span></div>
+                <canvas id="bil-canvas" class="juegos-canvas" width="380" height="220"></canvas>
+                <p style="text-align:center;font-size:.8rem;color:#94a3b8;margin-top:8px;">Arrastra desde la bola blanca hacia atrás para apuntar y suelta para tirar.</p>
+                <p style="text-align:center;margin-top:10px;"><button class="btn-primary" style="width:auto;padding:8px 18px;" onclick="iniciarBillar()">🔄 Reiniciar mesa</button></p>
+            `;
+            const radio = 9;
+            const bolas = [{ x:90, y:110, color:'#f8fafc', esBlanca:true, activa:true }];
+            const colores = ['#facc15','#3b82f6','#ef4444','#a855f7','#f97316','#16a34a'];
+            let idx = 0;
+            for (let fila = 0; fila < 3; fila++) {
+                for (let c = 0; c <= fila; c++) {
+                    bolas.push({ x: 280 + fila*18, y: 110 - fila*9 + c*18, color: colores[idx % colores.length], esBlanca:false, activa:true });
+                    idx++;
+                }
+            }
+            bilEstado = { bolas, puntaje:0, arrastrando:false, inicioArrastre:null, animando:false, terminado:false };
+            const canvas = document.getElementById('bil-canvas');
+            const getPos = e => {
+                const r = canvas.getBoundingClientRect();
+                const p = e.touches ? e.touches[0] : e;
+                return { x: p.clientX - r.left, y: p.clientY - r.top };
+            };
+            canvas.onmousedown = canvas.ontouchstart = e => {
+                e.preventDefault();
+                if (bilEstado.animando || bilEstado.terminado) return;
+                const blanca = bilEstado.bolas[0];
+                if (!blanca.activa) return;
+                bilEstado.arrastrando = true;
+                bilEstado.inicioArrastre = getPos(e);
+            };
+            canvas.onmousemove = canvas.ontouchmove = e => {
+                e.preventDefault();
+                if (bilEstado.arrastrando) { bilEstado._posActual = getPos(e); _bilRender(); }
+            };
+            const soltar = e => {
+                if (!bilEstado.arrastrando) return;
+                bilEstado.arrastrando = false;
+                const fin = bilEstado._posActual || bilEstado.inicioArrastre;
+                const blanca = bilEstado.bolas[0];
+                const dx = blanca.x - fin.x, dy = blanca.y - fin.y;
+                const potencia = Math.min(Math.hypot(dx, dy) / 6, 14);
+                if (potencia > 0.5) {
+                    const ang = Math.atan2(dy, dx);
+                    blanca.vx = Math.cos(ang) * potencia;
+                    blanca.vy = Math.sin(ang) * potencia;
+                    _bilAnimar();
+                }
+            };
+            canvas.onmouseup = canvas.ontouchend = soltar;
+            _bilRender();
+        }
+        function _bilAnimar() {
+            const st = bilEstado;
+            st.animando = true;
+            const canvas = document.getElementById('bil-canvas');
+            const radio = 9;
+            const pockets = [[10,10],[190,8],[370,10],[10,210],[190,212],[370,210]];
+            function paso() {
+                let algoMoviendose = false;
+                st.bolas.forEach(b => {
+                    if (!b.activa || !b.vx) return;
+                    b.x += b.vx; b.y += b.vy;
+                    b.vx *= 0.985; b.vy *= 0.985;
+                    if (Math.hypot(b.vx, b.vy) < 0.08) { b.vx = 0; b.vy = 0; }
+                    else algoMoviendose = true;
+                    if (b.x < radio || b.x > canvas.width-radio) b.vx *= -1;
+                    if (b.y < radio || b.y > canvas.height-radio) b.vy *= -1;
+                    b.x = Math.max(radio, Math.min(canvas.width-radio, b.x));
+                    b.y = Math.max(radio, Math.min(canvas.height-radio, b.y));
+                    pockets.forEach(([px,py]) => {
+                        if (b.activa && Math.hypot(b.x-px, b.y-py) < 14) {
+                            b.activa = false; b.vx = 0; b.vy = 0;
+                            if (b.esBlanca) {
+                                st.puntaje = Math.max(0, st.puntaje - 50);
+                                setTimeout(() => { b.activa = true; b.x = 90; b.y = 110; b.vx=0; b.vy=0; _bilRender(); }, 400);
+                            } else {
+                                st.puntaje += 100;
+                            }
+                            document.getElementById('bil-puntaje').textContent = st.puntaje;
+                        }
+                    });
+                });
+                // Colisiones simples bola-bola
+                for (let i = 0; i < st.bolas.length; i++) {
+                    for (let j = i+1; j < st.bolas.length; j++) {
+                        const a = st.bolas[i], b = st.bolas[j];
+                        if (!a.activa || !b.activa) continue;
+                        const dx = b.x-a.x, dy = b.y-a.y;
+                        const dist = Math.hypot(dx, dy);
+                        if (dist < radio*2 && dist > 0) {
+                            const ang = Math.atan2(dy, dx);
+                            const overlap = radio*2 - dist;
+                            a.x -= Math.cos(ang)*overlap/2; a.y -= Math.sin(ang)*overlap/2;
+                            b.x += Math.cos(ang)*overlap/2; b.y += Math.sin(ang)*overlap/2;
+                            const nx = dx/dist, ny = dy/dist;
+                            const va = a.vx*nx + a.vy*ny, vb = b.vx*nx + b.vy*ny;
+                            const dif = va - vb;
+                            a.vx -= dif*nx; a.vy -= dif*ny;
+                            b.vx += dif*nx; b.vy += dif*ny;
+                            algoMoviendose = true;
+                        }
+                    }
+                }
+                _bilRender();
+                if (algoMoviendose) requestAnimationFrame(paso);
+                else {
+                    st.animando = false;
+                    const objetivos = st.bolas.slice(1);
+                    if (objetivos.every(b => !b.activa) && !st.terminado) {
+                        st.terminado = true;
+                        setTimeout(() => {
+                            alert(`🎱 ¡Mesa limpia! Puntaje final: ${st.puntaje}`);
+                            guardarPuntaje('billar', st.puntaje);
+                        }, 150);
+                    }
+                }
+            }
+            requestAnimationFrame(paso);
+        }
+        function _bilRender() {
+            const st = bilEstado;
+            const canvas = document.getElementById('bil-canvas');
+            if (!canvas || !st) return;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#0b6e4f';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            const pockets = [[10,10],[190,8],[370,10],[10,210],[190,212],[370,210]];
+            ctx.fillStyle = '#0f172a';
+            pockets.forEach(([px,py]) => { ctx.beginPath(); ctx.arc(px,py,12,0,7); ctx.fill(); });
+            st.bolas.forEach(b => {
+                if (!b.activa) return;
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, 9, 0, 7);
+                ctx.fillStyle = b.color;
+                ctx.fill();
+                ctx.strokeStyle = '#00000033'; ctx.stroke();
+            });
+            if (st.arrastrando && st._posActual) {
+                const blanca = st.bolas[0];
+                ctx.beginPath();
+                ctx.moveTo(blanca.x, blanca.y);
+                ctx.lineTo(2*blanca.x - st._posActual.x, 2*blanca.y - st._posActual.y);
+                ctx.strokeStyle = '#facc15'; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1;
+            }
+        }
+
+        // ══════════════ CARTAS (21 / Blackjack simplificado) ══════════════
+        let cartEstado = null;
+        function _cartBaraja() {
+            const palos = [{s:'♥',color:'roja'},{s:'♦',color:'roja'},{s:'♣',color:'negra'},{s:'♠',color:'negra'}];
+            const valores = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+            const baraja = [];
+            palos.forEach(p => valores.forEach(v => baraja.push({ v, s: p.s, color: p.color })));
+            return baraja.sort(() => Math.random() - 0.5);
+        }
+        function _cartValor(cartas) {
+            let total = 0, ases = 0;
+            cartas.forEach(c => {
+                if (c.v === 'A') { total += 11; ases++; }
+                else if (['J','Q','K'].includes(c.v)) total += 10;
+                else total += parseInt(c.v);
+            });
+            while (total > 21 && ases > 0) { total -= 10; ases--; }
+            return total;
+        }
+        function iniciarCartas() {
+            cartEstado = { fichas: 500, apuesta: 50, mano: 0, manosTotales: 5, terminado: false };
+            _cartNuevaMano();
+        }
+        function _cartNuevaMano() {
+            const st = cartEstado;
+            st.baraja = _cartBaraja();
+            st.jugador = [st.baraja.pop(), st.baraja.pop()];
+            st.crupier = [st.baraja.pop(), st.baraja.pop()];
+            st.rondaTerminada = false;
+            st.fichas -= st.apuesta;
+            _renderCartas();
+            if (_cartValor(st.jugador) === 21) _cartPlantarse();
+        }
+        function _cartaHTML(c, oculta) {
+            if (oculta) return `<div class="carta-vista" style="background:#334155;color:#334155;">🂠</div>`;
+            return `<div class="carta-vista carta-${c.color}">${c.v}${c.s}</div>`;
+        }
+        function _renderCartas(mensaje) {
+            const st = cartEstado;
+            const cont = document.getElementById('juego-contenedor');
+            cont.innerHTML = `
+                <h3 style="margin-top:0;color:var(--carrier-blue);">🃏 21 (Blackjack)</h3>
+                <div class="juegos-stats"><span>💰 Fichas: ${st.fichas}</span><span>Mano ${st.mano+1}/${st.manosTotales}</span><span>Apuesta: ${st.apuesta}</span></div>
+                <p style="text-align:center;font-weight:700;">Crupier (${st.rondaTerminada ? _cartValor(st.crupier) : '?'})</p>
+                <div style="text-align:center;">${st.crupier.map((c,i) => _cartaHTML(c, i===1 && !st.rondaTerminada)).join('')}</div>
+                <p style="text-align:center;font-weight:700;margin-top:14px;">Tú (${_cartValor(st.jugador)})</p>
+                <div style="text-align:center;">${st.jugador.map(c => _cartaHTML(c)).join('')}</div>
+                <p style="text-align:center;min-height:24px;font-weight:700;color:var(--carrier-blue);">${mensaje || ''}</p>
+                <div style="text-align:center;margin-top:10px;">
+                    ${st.rondaTerminada
+                        ? `<button class="btn-primary" style="width:auto;padding:8px 18px;" onclick="_cartSiguiente()">${st.mano+1 >= st.manosTotales ? '🏁 Ver resultado final' : '➡️ Siguiente mano'}</button>`
+                        : `<button class="btn-primary" style="width:auto;padding:8px 18px;margin-right:8px;" onclick="_cartPedir()">🃏 Pedir</button>
+                           <button class="btn-primary" style="width:auto;padding:8px 18px;" onclick="_cartPlantarse()">✋ Plantarse</button>`
+                    }
+                </div>
+            `;
+        }
+        function _cartPedir() {
+            const st = cartEstado;
+            st.jugador.push(st.baraja.pop());
+            if (_cartValor(st.jugador) > 21) { _cartResolver('pierde'); return; }
+            _renderCartas();
+        }
+        function _cartPlantarse() {
+            const st = cartEstado;
+            while (_cartValor(st.crupier) < 17) st.crupier.push(st.baraja.pop());
+            const vj = _cartValor(st.jugador), vc = _cartValor(st.crupier);
+            if (vj > 21) _cartResolver('pierde');
+            else if (vc > 21 || vj > vc) _cartResolver('gana');
+            else if (vj === vc) _cartResolver('empata');
+            else _cartResolver('pierde');
+        }
+        function _cartResolver(resultado) {
+            const st = cartEstado;
+            st.rondaTerminada = true;
+            let msg;
+            if (resultado === 'gana') { st.fichas += st.apuesta * 2; msg = '🎉 ¡Ganaste esta mano!'; }
+            else if (resultado === 'empata') { st.fichas += st.apuesta; msg = '🤝 Empate (push)'; }
+            else msg = '😅 Perdiste esta mano';
+            _renderCartas(msg);
+        }
+        function _cartSiguiente() {
+            const st = cartEstado;
+            st.mano++;
+            if (st.mano >= st.manosTotales || st.fichas < st.apuesta) {
+                setTimeout(() => {
+                    alert(`🃏 Sesión terminada. Fichas finales: ${st.fichas}`);
+                    guardarPuntaje('cartas', st.fichas);
+                }, 100);
+                return;
+            }
+            _cartNuevaMano();
         }
 
         cambiarJuego('memoria');
