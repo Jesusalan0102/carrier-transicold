@@ -290,6 +290,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/asistencia', label: '📍 Control de Asistencia' }},
                     {{ href: '/app/checkin', label: '🕐 Registrar Mi Asistencia' }},
                     {{ href: '/app/alarmas', label: '🔔 Alarm Troubleshooting' }},
+                    {{ href: '/app/juegos', label: '🎮 Juegos' }},
                     {{ href: '/app/admin', label: '🛠 Panel de Administración' }},
                 ];
                 const visorMenu = [
@@ -301,12 +302,14 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/usuarios', label: '👥 Gestión de Usuarios' }},
                     {{ href: '/app/asistencia', label: '📍 Control de Asistencia' }},
                     {{ href: '/app/alarmas', label: '🔔 Alarm Troubleshooting' }},
+                    {{ href: '/app/juegos', label: '🎮 Juegos' }},
                 ];
                 const techMenu = [
                     {{ href: '/app/mis-tareas', label: '🎯 Mis Tareas' }},
                     {{ href: '/app/solicitud', label: '🔔 Nueva Solicitud' }},
                     {{ href: '/app/mis-tickets', label: '🎫 Mis Tickets' }},
                     {{ href: '/app/checkin', label: '📍 Registrar Asistencia' }},
+                    {{ href: '/app/juegos', label: '🎮 Juegos' }},
                 ];
                 const menu = window.role === 'admin' ? adminMenu : (window.role === 'visor' ? visorMenu : techMenu);
                 let navHtml = '';
@@ -4275,6 +4278,327 @@ async def mis_tickets():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("🎫 Mis Tickets", contenido, "mis-tickets"))
+
+# ------------------------------------------------------------
+# JUEGOS (sección de descanso para técnicos: memoria, 2048, trivia)
+# ------------------------------------------------------------
+@router.get("/app/juegos", response_class=HTMLResponse)
+async def pagina_juegos():
+    contenido = """
+    <style>
+        .juegos-tabs { display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; }
+        .juegos-tab { padding:10px 20px; border-radius:10px; border:none; background:#eef2f7; color:var(--carrier-blue); font-weight:700; cursor:pointer; font-size:0.9rem; }
+        .juegos-tab.active { background:var(--carrier-blue); color:white; }
+        .juegos-layout { display:grid; grid-template-columns:1fr 260px; gap:20px; align-items:start; }
+        @media (max-width:800px) { .juegos-layout { grid-template-columns:1fr; } }
+        .juegos-card { background:white; border-radius:16px; padding:20px; box-shadow:0 2px 10px rgba(0,0,0,0.06); }
+        .memoria-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; max-width:420px; margin:0 auto; }
+        .memoria-celda { aspect-ratio:1; background:var(--carrier-blue); border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:1.8rem; cursor:pointer; user-select:none; transition:transform .15s; }
+        .memoria-celda.volteada, .memoria-celda.encontrada { background:#eef2f7; }
+        .memoria-celda.encontrada { opacity:0.55; cursor:default; }
+        .juegos-stats { display:flex; gap:18px; justify-content:center; margin-bottom:14px; font-weight:700; color:var(--carrier-blue); flex-wrap:wrap; }
+        .g2048-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; max-width:340px; margin:0 auto; background:#cbd5e1; padding:8px; border-radius:12px; }
+        .g2048-celda { aspect-ratio:1; background:#e2e8f0; border-radius:8px; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:1.3rem; color:#334155; }
+        .g2048-controles { display:grid; grid-template-columns:repeat(3,50px); grid-template-rows:repeat(2,44px); gap:6px; justify-content:center; margin-top:14px; }
+        .g2048-btn { background:var(--carrier-blue); color:white; border:none; border-radius:8px; font-size:1.1rem; cursor:pointer; }
+        .trivia-opcion { display:block; width:100%; text-align:left; padding:12px 16px; margin:8px 0; border-radius:10px; border:1.5px solid #d8dee6; background:white; cursor:pointer; font-size:0.95rem; }
+        .trivia-opcion:hover { border-color:var(--carrier-blue); }
+        .trivia-opcion.correcta { background:#dcfce7; border-color:#16a34a; }
+        .trivia-opcion.incorrecta { background:#fee2e2; border-color:#dc2626; }
+        .leaderboard-fila { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #f1f5f9; font-size:0.85rem; }
+        .leaderboard-fila:first-child { font-weight:800; color:#b45309; }
+    </style>
+
+    <div class="juegos-tabs">
+        <button class="juegos-tab active" id="tab-memoria" onclick="cambiarJuego('memoria')">🧠 Memoria</button>
+        <button class="juegos-tab" id="tab-2048" onclick="cambiarJuego('2048')">🔢 2048</button>
+        <button class="juegos-tab" id="tab-trivia" onclick="cambiarJuego('trivia')">❄️ Trivia Refrigeración</button>
+    </div>
+
+    <div class="juegos-layout">
+        <div class="juegos-card" id="juego-contenedor"></div>
+        <div class="juegos-card">
+            <h4 style="margin:0 0 10px;color:var(--carrier-blue);">🏆 Top 10</h4>
+            <div id="leaderboard-body"><p style="color:#94a3b8;font-size:.85rem;">Cargando...</p></div>
+            <p style="margin-top:14px;font-size:.8rem;color:#94a3b8;">Tu mejor puntaje: <b id="mi-mejor">–</b></p>
+        </div>
+    </div>
+
+    <script>
+        const fetchAuth = window.fetchAuth;
+        let juegoActual = 'memoria';
+
+        async function cambiarJuego(juego) {
+            juegoActual = juego;
+            ['memoria','2048','trivia'].forEach(j => document.getElementById('tab-'+j).classList.toggle('active', j===juego));
+            if (juego === 'memoria') iniciarMemoria();
+            else if (juego === '2048') iniciar2048();
+            else iniciarTrivia();
+            cargarLeaderboard();
+        }
+
+        async function guardarPuntaje(juego, puntaje) {
+            try {
+                await fetchAuth('/api/juegos/puntajes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ juego, puntaje })
+                });
+            } catch(e) { console.error('guardarPuntaje', e); }
+            cargarLeaderboard();
+        }
+
+        async function cargarLeaderboard() {
+            const body = document.getElementById('leaderboard-body');
+            const mejorEl = document.getElementById('mi-mejor');
+            try {
+                const [resTop, resMio] = await Promise.all([
+                    fetchAuth('/api/juegos/puntajes/' + juegoActual),
+                    fetchAuth('/api/juegos/mi-mejor/' + juegoActual)
+                ]);
+                const top = resTop.ok ? await resTop.json() : [];
+                const mio = resMio.ok ? await resMio.json() : { mejor: 0 };
+                body.innerHTML = top.length
+                    ? top.map((r,i) => `<div class="leaderboard-fila"><span>${i+1}. ${r.nombre}</span><span>${r.puntaje}</span></div>`).join('')
+                    : '<p style="color:#94a3b8;font-size:.85rem;">Aún no hay puntajes. ¡Sé el primero!</p>';
+                mejorEl.textContent = mio.mejor || 0;
+            } catch(e) { console.error('cargarLeaderboard', e); }
+        }
+
+        // ══════════════ MEMORIA ══════════════
+        let memEstado = null;
+        function iniciarMemoria() {
+            const emojis = ['❄️','🔧','🚛','⚙️','🔋','🌡️','📦','🛠️'];
+            const cartas = [...emojis, ...emojis].sort(() => Math.random() - 0.5);
+            memEstado = { cartas, volteadas: [], encontradas: new Set(), movimientos: 0, segundos: 0, activo: true };
+            if (memEstado.timer) clearInterval(memEstado.timer);
+            memEstado.timer = setInterval(() => { if (memEstado.activo) { memEstado.segundos++; renderMemoriaStats(); } }, 1000);
+            renderMemoria();
+        }
+        function renderMemoriaStats() {
+            const el = document.getElementById('mem-stats');
+            if (el) el.innerHTML = `<span>🔁 Movimientos: ${memEstado.movimientos}</span><span>⏱ ${memEstado.segundos}s</span>`;
+        }
+        function renderMemoria() {
+            const cont = document.getElementById('juego-contenedor');
+            cont.innerHTML = `
+                <h3 style="margin-top:0;color:var(--carrier-blue);">🧠 Memoria</h3>
+                <div class="juegos-stats" id="mem-stats"></div>
+                <div class="memoria-grid" id="mem-grid"></div>
+                <p style="text-align:center;margin-top:14px;"><button class="btn-primary" style="width:auto;padding:8px 18px;" onclick="iniciarMemoria()">🔄 Reiniciar</button></p>
+            `;
+            renderMemoriaStats();
+            const grid = document.getElementById('mem-grid');
+            grid.innerHTML = memEstado.cartas.map((_, i) => `<div class="memoria-celda" id="mem-c${i}" onclick="voltearCarta(${i})">❓</div>`).join('');
+        }
+        function voltearCarta(i) {
+            const st = memEstado;
+            if (!st.activo || st.volteadas.includes(i) || st.encontradas.has(i) || st.volteadas.length === 2) return;
+            st.volteadas.push(i);
+            const celda = document.getElementById('mem-c'+i);
+            celda.textContent = st.cartas[i];
+            celda.classList.add('volteada');
+            if (st.volteadas.length === 2) {
+                st.movimientos++;
+                renderMemoriaStats();
+                const [a, b] = st.volteadas;
+                if (st.cartas[a] === st.cartas[b]) {
+                    st.encontradas.add(a); st.encontradas.add(b);
+                    document.getElementById('mem-c'+a).classList.add('encontrada');
+                    document.getElementById('mem-c'+b).classList.add('encontrada');
+                    st.volteadas = [];
+                    if (st.encontradas.size === st.cartas.length) {
+                        st.activo = false;
+                        clearInterval(st.timer);
+                        const puntaje = Math.max(0, 1000 - st.movimientos*15 - st.segundos*3);
+                        setTimeout(() => {
+                            alert(`🎉 ¡Completado! Movimientos: ${st.movimientos}, Tiempo: ${st.segundos}s, Puntaje: ${puntaje}`);
+                            guardarPuntaje('memoria', puntaje);
+                        }, 200);
+                    }
+                } else {
+                    setTimeout(() => {
+                        document.getElementById('mem-c'+a).textContent = '❓';
+                        document.getElementById('mem-c'+b).textContent = '❓';
+                        document.getElementById('mem-c'+a).classList.remove('volteada');
+                        document.getElementById('mem-c'+b).classList.remove('volteada');
+                        st.volteadas = [];
+                    }, 700);
+                }
+            }
+        }
+
+        // ══════════════ 2048 ══════════════
+        let g2048 = null;
+        function iniciar2048() {
+            g2048 = { grid: Array.from({length:4}, () => Array(4).fill(0)), puntaje: 0, terminado: false };
+            agregarFicha2048(); agregarFicha2048();
+            render2048();
+            document.removeEventListener('keydown', manejarTecla2048);
+            document.addEventListener('keydown', manejarTecla2048);
+        }
+        function agregarFicha2048() {
+            const vacias = [];
+            g2048.grid.forEach((fila, r) => fila.forEach((v, c) => { if (v === 0) vacias.push([r,c]); }));
+            if (!vacias.length) return;
+            const [r, c] = vacias[Math.floor(Math.random()*vacias.length)];
+            g2048.grid[r][c] = Math.random() < 0.9 ? 2 : 4;
+        }
+        function render2048() {
+            const cont = document.getElementById('juego-contenedor');
+            cont.innerHTML = `
+                <h3 style="margin-top:0;color:var(--carrier-blue);">🔢 2048</h3>
+                <div class="juegos-stats"><span>⭐ Puntaje: <span id="g2048-puntaje">${g2048.puntaje}</span></span></div>
+                <div class="g2048-grid" id="g2048-grid"></div>
+                <div class="g2048-controles">
+                    <span></span><button class="g2048-btn" onclick="mover2048('arriba')">↑</button><span></span>
+                    <button class="g2048-btn" onclick="mover2048('izquierda')">←</button>
+                    <button class="g2048-btn" onclick="mover2048('abajo')">↓</button>
+                    <button class="g2048-btn" onclick="mover2048('derecha')">→</button>
+                </div>
+                <p style="text-align:center;margin-top:14px;"><button class="btn-primary" style="width:auto;padding:8px 18px;" onclick="iniciar2048()">🔄 Reiniciar</button></p>
+            `;
+            const colores = {0:'#e2e8f0',2:'#eef2f7',4:'#e0e7ff',8:'#c7d2fe',16:'#a5b4fc',32:'#818cf8',64:'#6366f1',128:'#fbbf24',256:'#f59e0b',512:'#ef4444',1024:'#dc2626',2048:'#16a34a'};
+            document.getElementById('g2048-grid').innerHTML = g2048.grid.flat().map(v =>
+                `<div class="g2048-celda" style="background:${colores[v]||'#16a34a'};color:${v<=4?'#334155':'white'};">${v||''}</div>`
+            ).join('');
+        }
+        function manejarTecla2048(e) {
+            const mapa = { ArrowUp:'arriba', ArrowDown:'abajo', ArrowLeft:'izquierda', ArrowRight:'derecha' };
+            if (mapa[e.key]) { e.preventDefault(); mover2048(mapa[e.key]); }
+        }
+        function _comprimirFila(fila) {
+            let vals = fila.filter(v => v !== 0);
+            let sumaExtra = 0;
+            for (let i = 0; i < vals.length - 1; i++) {
+                if (vals[i] === vals[i+1]) { vals[i] *= 2; sumaExtra += vals[i]; vals[i+1] = 0; }
+            }
+            vals = vals.filter(v => v !== 0);
+            while (vals.length < 4) vals.push(0);
+            return { vals, sumaExtra };
+        }
+        function mover2048(dir) {
+            if (!g2048 || g2048.terminado) return;
+            let cambiado = false;
+            let grid = g2048.grid.map(f => [...f]);
+            for (let i = 0; i < 4; i++) {
+                let linea;
+                if (dir === 'izquierda') linea = grid[i];
+                else if (dir === 'derecha') linea = [...grid[i]].reverse();
+                else if (dir === 'arriba') linea = grid.map(f => f[i]);
+                else linea = grid.map(f => f[i]).reverse();
+
+                const { vals, sumaExtra } = _comprimirFila(linea);
+                g2048.puntaje += sumaExtra;
+
+                let finalLinea = (dir === 'derecha' || dir === 'abajo') ? [...vals].reverse() : vals;
+
+                if (dir === 'izquierda' || dir === 'derecha') {
+                    if (finalLinea.some((v,idx) => v !== grid[i][idx])) cambiado = true;
+                    grid[i] = finalLinea;
+                } else {
+                    for (let r = 0; r < 4; r++) {
+                        if (grid[r][i] !== finalLinea[r]) cambiado = true;
+                        grid[r][i] = finalLinea[r];
+                    }
+                }
+            }
+            if (cambiado) {
+                g2048.grid = grid;
+                agregarFicha2048();
+                render2048();
+                if (_sinMovimientos2048()) {
+                    g2048.terminado = true;
+                    setTimeout(() => {
+                        alert(`🎮 Juego terminado. Puntaje final: ${g2048.puntaje}`);
+                        guardarPuntaje('2048', g2048.puntaje);
+                    }, 200);
+                }
+            }
+        }
+        function _sinMovimientos2048() {
+            const g = g2048.grid;
+            for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
+                if (g[r][c] === 0) return false;
+                if (c < 3 && g[r][c] === g[r][c+1]) return false;
+                if (r < 3 && g[r][c] === g[r+1][c]) return false;
+            }
+            return true;
+        }
+
+        // ══════════════ TRIVIA ══════════════
+        const BANCO_TRIVIA = [
+            { p:'¿Qué gas es comúnmente usado como refrigerante en unidades reefer modernas?', o:['R-404A / R-452A','Oxígeno puro','Nitrógeno líquido puro','Dióxido de carbono sólido'], c:0 },
+            { p:'¿Qué componente comprime el gas refrigerante para elevar su presión y temperatura?', o:['El evaporador','El compresor','El filtro secador','El termostato'], c:1 },
+            { p:'¿Cuál es la función principal del evaporador en un sistema de refrigeración?', o:['Comprimir el gas','Absorber calor del espacio a enfriar','Generar electricidad','Medir la humedad'], c:1 },
+            { p:'¿Qué mide un manómetro en un sistema de refrigeración?', o:['Temperatura ambiente','Presión del sistema','Voltaje del motor','Velocidad del ventilador'], c:1 },
+            { p:'¿Qué le pasa a un refrigerante cuando pasa por la válvula de expansión?', o:['Se calienta y comprime','Baja su presión y temperatura','Se vuelve sólido','Aumenta su volumen sin cambio de presión'], c:1 },
+            { p:'¿Qué es el "subenfriamiento" (subcooling) en un sistema reefer?', o:['Enfriar el refrigerante por debajo de su punto de condensación','Apagar el compresor','Aumentar la presión de succión','Cambiar el filtro de aire'], c:0 },
+            { p:'¿Qué componente elimina la humedad y partículas del refrigerante?', o:['El condensador','El filtro secador','El ventilador','El termostato'], c:1 },
+            { p:'¿Qué unidad se usa comúnmente para medir la temperatura en unidades reefer en EE.UU./México?', o:['Pascales','Grados Fahrenheit o Celsius','Amperios','Newtons'], c:1 },
+            { p:'¿Qué indica una baja presión de succión anormal en el sistema?', o:['Exceso de refrigerante','Posible falta de refrigerante o restricción','Sobrecarga eléctrica','Buen funcionamiento'], c:1 },
+            { p:'¿Qué hace el condensador en el ciclo de refrigeración?', o:['Absorbe calor del producto','Libera el calor del refrigerante al ambiente','Genera frío directamente','Almacena el refrigerante'], c:1 },
+            { p:'¿Por qué es importante el mantenimiento preventivo en unidades reefer?', o:['Es opcional y no afecta el desempeño','Evita fallas y prolonga la vida útil del equipo','Solo sirve para la garantía','No tiene relación con el consumo de combustible'], c:1 },
+            { p:'¿Qué se revisa típicamente en un "pre-trip inspection" de una unidad reefer?', o:['Solo el color de la unidad','Niveles de combustible, alarmas, temperatura y funcionamiento general','El precio de la carga','El historial del conductor'], c:1 },
+            { p:'¿Qué significa que una unidad esté en modo "Standby" (Ciclo/Start-Stop)?', o:['El motor está apagado permanentemente','El motor arranca y para automáticamente para mantener temperatura','La unidad está en falla total','El refrigerante se ha agotado'], c:1 },
+            { p:'¿Qué herramienta se usa para medir corriente eléctrica en componentes de la unidad?', o:['Termómetro infrarrojo','Multímetro / pinza amperimétrica','Manómetro','Nivel de burbuja'], c:1 },
+            { p:'¿Qué tipo de mantenimiento reduce el riesgo de fugas de refrigerante?', o:['Ignorar las conexiones y válvulas','Inspección periódica de conexiones, válvulas y mangueras','Aumentar la presión sin revisar el sistema','Ninguno, las fugas son inevitables'], c:1 },
+        ];
+        let triviaEstado = null;
+        function iniciarTrivia() {
+            const preguntas = [...BANCO_TRIVIA].sort(() => Math.random()-0.5).slice(0, 10);
+            triviaEstado = { preguntas, indice: 0, correctas: 0 };
+            renderTrivia();
+        }
+        function renderTrivia() {
+            const cont = document.getElementById('juego-contenedor');
+            const st = triviaEstado;
+            if (st.indice >= st.preguntas.length) {
+                const puntaje = st.correctas * 10;
+                cont.innerHTML = `
+                    <h3 style="margin-top:0;color:var(--carrier-blue);">❄️ Trivia Refrigeración</h3>
+                    <p style="text-align:center;font-size:1.1rem;">🎉 Terminaste: <b>${st.correctas}/${st.preguntas.length}</b> correctas — Puntaje: <b>${puntaje}</b></p>
+                    <p style="text-align:center;"><button class="btn-primary" style="width:auto;padding:8px 18px;" onclick="iniciarTrivia()">🔄 Jugar de nuevo</button></p>
+                `;
+                guardarPuntaje('trivia', puntaje);
+                return;
+            }
+            const q = st.preguntas[st.indice];
+            const opcionesConIndice = q.o.map((texto, i) => ({ texto, esCorrecta: i === q.c }));
+            opcionesConIndice.sort(() => Math.random() - 0.5);
+            cont.innerHTML = `
+                <h3 style="margin-top:0;color:var(--carrier-blue);">❄️ Trivia Refrigeración</h3>
+                <div class="juegos-stats"><span>Pregunta ${st.indice+1}/${st.preguntas.length}</span><span>✅ ${st.correctas} correctas</span></div>
+                <p style="font-weight:700;font-size:1.05rem;margin-bottom:12px;">${q.p}</p>
+                <div id="trivia-opciones"></div>
+            `;
+            const opcionesDiv = document.getElementById('trivia-opciones');
+            opcionesConIndice.forEach(op => {
+                const btn = document.createElement('button');
+                btn.className = 'trivia-opcion';
+                btn.textContent = op.texto;
+                btn.dataset.correcta = op.esCorrecta ? '1' : '0';
+                btn.onclick = () => responderTrivia(btn, op.esCorrecta, opcionesDiv);
+                opcionesDiv.appendChild(btn);
+            });
+        }
+        function responderTrivia(btnClicado, esCorrecta, contenedor) {
+            [...contenedor.children].forEach(b => b.onclick = null);
+            if (esCorrecta) {
+                btnClicado.classList.add('correcta');
+                triviaEstado.correctas++;
+            } else {
+                btnClicado.classList.add('incorrecta');
+                const correctaBtn = [...contenedor.children].find(b => b.dataset.correcta === '1');
+                if (correctaBtn) correctaBtn.classList.add('correcta');
+            }
+            setTimeout(() => { triviaEstado.indice++; renderTrivia(); }, 900);
+        }
+
+        cambiarJuego('memoria');
+    </script>
+    """
+    return HTMLResponse(content=pagina_con_menu("🎮 Juegos", contenido, "juegos"))
 
 # ------------------------------------------------------------
 # PANEL DE ASIGNACIÓN POR CLUSTER (CORREGIDO, SIN DEPENDENCIAS)

@@ -434,6 +434,19 @@ def _run_migrations():
                 """)
                 conn.commit()
 
+                # ── juegos_puntajes (marcadores de la sección de Juegos) ──────────
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS juegos_puntajes (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        username VARCHAR(80) NOT NULL,
+                        juego VARCHAR(30) NOT NULL,
+                        puntaje INT NOT NULL,
+                        fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        INDEX idx_juego_puntaje (juego, puntaje)
+                    )
+                """)
+                conn.commit()
+
     except Exception as e:
         print(f"⚠️  Migración omitida: {e}")
     finally:
