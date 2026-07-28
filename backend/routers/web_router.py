@@ -4324,6 +4324,7 @@ async def pagina_juegos():
         <button class="juegos-tab" id="tab-culebra" onclick="cambiarJuego('culebra')">🐍 Culebra</button>
         <button class="juegos-tab" id="tab-billar" onclick="cambiarJuego('billar')">🎱 Billar</button>
         <button class="juegos-tab" id="tab-cartas" onclick="cambiarJuego('cartas')">🃏 21 (Cartas)</button>
+        <button class="juegos-tab" id="tab-simulador" onclick="cambiarJuego('simulador')">🌡️ Simulador de Refrigeración</button>
     </div>
 
     <div class="juegos-layout">
@@ -4337,7 +4338,7 @@ async def pagina_juegos():
 
     <script>
         const fetchAuth = window.fetchAuth;
-        const LISTA_JUEGOS = ['memoria','2048','trivia','gatito','culebra','billar','cartas'];
+        const LISTA_JUEGOS = ['memoria','2048','trivia','gatito','culebra','billar','cartas','simulador'];
         let juegoActual = 'memoria';
 
         async function cambiarJuego(juego) {
@@ -4349,8 +4350,21 @@ async def pagina_juegos():
             else if (juego === 'gatito') iniciarGatito();
             else if (juego === 'culebra') iniciarCulebra();
             else if (juego === 'billar') iniciarBillar();
-            else iniciarCartas();
+            else if (juego === 'cartas') iniciarCartas();
+            else mostrarSimuladorExterno();
             cargarLeaderboard();
+        }
+
+        function mostrarSimuladorExterno() {
+            const cont = document.getElementById('juego-contenedor');
+            cont.innerHTML = `
+                <h3 style="margin-top:0;color:var(--carrier-blue);">🌡️ Simulador de Ciclo de Refrigeración</h3>
+                <p style="color:#475569;">Simulador gratuito y externo (MechSimulator) del ciclo de compresión de vapor: animación del compresor, condensador, válvula de expansión y evaporador, diagrama P-h en tiempo real, cálculo de COP, comparación de refrigerantes (R-134a, R-410A, R-22, R-290) y hasta su propio modo de trivia/quiz.</p>
+                <p style="color:#94a3b8;font-size:.85rem;">Se abre en una pestaña nueva — es un sitio externo, no forma parte de esta app.</p>
+                <p style="text-align:center;margin-top:18px;">
+                    <a href="https://mechsimulator.com/tools/refrigeration-cycle/" target="_blank" rel="noopener noreferrer" class="btn-primary" style="display:inline-block;width:auto;padding:12px 24px;text-decoration:none;">🔗 Abrir simulador de refrigeración</a>
+                </p>
+            `;
         }
 
         async function guardarPuntaje(juego, puntaje) {
@@ -4367,6 +4381,11 @@ async def pagina_juegos():
         async function cargarLeaderboard() {
             const body = document.getElementById('leaderboard-body');
             const mejorEl = document.getElementById('mi-mejor');
+            if (juegoActual === 'simulador') {
+                body.innerHTML = '<p style="color:#94a3b8;font-size:.85rem;">Este simulador es externo y no tiene puntajes.</p>';
+                mejorEl.textContent = '–';
+                return;
+            }
             try {
                 const [resTop, resMio] = await Promise.all([
                     fetchAuth('/api/juegos/puntajes/' + juegoActual),
