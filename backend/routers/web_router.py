@@ -4785,7 +4785,11 @@ async def pagina_juegos():
             let idx = 0;
             for (let fila = 0; fila < 3; fila++) {
                 for (let c = 0; c <= fila; c++) {
-                    bolas.push({ x: 280 + fila*18, y: 110 - fila*9 + c*18, color: colores[idx % colores.length], esBlanca:false, activa:true });
+                    bolas.push({
+                        x: 280 + fila*18 + (Math.random()-0.5)*0.6,
+                        y: 110 - fila*9 + c*18 + (Math.random()-0.5)*0.6,
+                        color: colores[idx % colores.length], esBlanca:false, activa:true
+                    });
                     idx++;
                 }
             }
@@ -4831,18 +4835,37 @@ async def pagina_juegos():
             const canvas = document.getElementById('bil-canvas');
             const radio = 9;
             const pockets = [[10,10],[190,8],[370,10],[10,210],[190,212],[370,210]];
-            function paso() {
-                let algoMoviendose = false;
+            const SUBPASOS = 8; // varias mini-actualizaciones por frame: evita que las bolas se "brinquen" entre sí a alta velocidad
+
+            function resolverColisionesBolas() {
+                for (let i = 0; i < st.bolas.length; i++) {
+                    for (let j = i+1; j < st.bolas.length; j++) {
+                        const a = st.bolas[i], b = st.bolas[j];
+                        if (!a.activa || !b.activa) continue;
+                        const dx = b.x-a.x, dy = b.y-a.y;
+                        const dist = Math.hypot(dx, dy);
+                        if (dist < radio*2 && dist > 0.0001) {
+                            const nx = dx/dist, ny = dy/dist;
+                            const overlap = radio*2 - dist;
+                            a.x -= nx*overlap/2; a.y -= ny*overlap/2;
+                            b.x += nx*overlap/2; b.y += ny*overlap/2;
+                            const va = a.vx*nx + a.vy*ny, vb = b.vx*nx + b.vy*ny;
+                            const dif = va - vb;
+                            if (dif > 0) { // solo transferir impulso si realmente se están acercando
+                                a.vx -= dif*nx; a.vy -= dif*ny;
+                                b.vx += dif*nx; b.vy += dif*ny;
+                            }
+                        }
+                    }
+                }
+            }
+            function revisarBordesYBolsillos() {
                 st.bolas.forEach(b => {
-                    if (!b.activa || !b.vx) return;
-                    b.x += b.vx; b.y += b.vy;
-                    b.vx *= 0.985; b.vy *= 0.985;
-                    if (Math.hypot(b.vx, b.vy) < 0.08) { b.vx = 0; b.vy = 0; }
-                    else algoMoviendose = true;
-                    if (b.x < radio || b.x > canvas.width-radio) b.vx *= -1;
-                    if (b.y < radio || b.y > canvas.height-radio) b.vy *= -1;
-                    b.x = Math.max(radio, Math.min(canvas.width-radio, b.x));
-                    b.y = Math.max(radio, Math.min(canvas.height-radio, b.y));
+                    if (!b.activa) return;
+                    if (b.x < radio) { b.x = radio; b.vx = Math.abs(b.vx); }
+                    if (b.x > canvas.width-radio) { b.x = canvas.width-radio; b.vx = -Math.abs(b.vx); }
+                    if (b.y < radio) { b.y = radio; b.vy = Math.abs(b.vy); }
+                    if (b.y > canvas.height-radio) { b.y = canvas.height-radio; b.vy = -Math.abs(b.vy); }
                     pockets.forEach(([px,py]) => {
                         if (b.activa && Math.hypot(b.x-px, b.y-py) < 14) {
                             b.activa = false; b.vx = 0; b.vy = 0;
@@ -4856,27 +4879,25 @@ async def pagina_juegos():
                         }
                     });
                 });
-                // Colisiones simples bola-bola
-                for (let i = 0; i < st.bolas.length; i++) {
-                    for (let j = i+1; j < st.bolas.length; j++) {
-                        const a = st.bolas[i], b = st.bolas[j];
-                        if (!a.activa || !b.activa) continue;
-                        const dx = b.x-a.x, dy = b.y-a.y;
-                        const dist = Math.hypot(dx, dy);
-                        if (dist < radio*2 && dist > 0) {
-                            const ang = Math.atan2(dy, dx);
-                            const overlap = radio*2 - dist;
-                            a.x -= Math.cos(ang)*overlap/2; a.y -= Math.sin(ang)*overlap/2;
-                            b.x += Math.cos(ang)*overlap/2; b.y += Math.sin(ang)*overlap/2;
-                            const nx = dx/dist, ny = dy/dist;
-                            const va = a.vx*nx + a.vy*ny, vb = b.vx*nx + b.vy*ny;
-                            const dif = va - vb;
-                            a.vx -= dif*nx; a.vy -= dif*ny;
-                            b.vx += dif*nx; b.vy += dif*ny;
-                            algoMoviendose = true;
-                        }
-                    }
+            }
+
+            function paso() {
+                for (let s = 0; s < SUBPASOS; s++) {
+                    st.bolas.forEach(b => {
+                        if (!b.activa || (!b.vx && !b.vy)) return;
+                        b.x += b.vx / SUBPASOS;
+                        b.y += b.vy / SUBPASOS;
+                    });
+                    revisarBordesYBolsillos();
+                    resolverColisionesBolas();
                 }
+                let algoMoviendose = false;
+                st.bolas.forEach(b => {
+                    if (!b.activa) return;
+                    b.vx *= 0.985; b.vy *= 0.985;
+                    if (Math.hypot(b.vx, b.vy) < 0.08) { b.vx = 0; b.vy = 0; }
+                    else algoMoviendose = true;
+                });
                 _bilRender();
                 if (algoMoviendose) requestAnimationFrame(paso);
                 else {
