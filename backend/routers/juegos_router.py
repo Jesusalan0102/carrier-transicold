@@ -5,7 +5,7 @@ from db import execute_read, execute_write
 
 router = APIRouter(prefix="/api/juegos", tags=["juegos"])
 
-JUEGOS_VALIDOS = {"memoria", "2048", "trivia", "gatito", "culebra", "billar", "cartas"}
+JUEGOS_VALIDOS = {"memoria", "2048", "trivia", "gatito", "culebra", "billar", "cartas", "mario", "carreras", "pelea", "tetris"}
 
 
 class PuntajeIn(BaseModel):

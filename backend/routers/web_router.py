@@ -4314,6 +4314,24 @@ async def pagina_juegos():
         .carta-vista { display:inline-flex; align-items:center; justify-content:center; width:52px; height:74px; background:white; border:2px solid #334155; border-radius:8px; font-weight:800; font-size:1.1rem; margin:4px; }
         .carta-roja { color:#dc2626; }
         .carta-negra { color:#0f172a; }
+        .juegos-controles-touch { display:flex; gap:10px; justify-content:center; margin-top:12px; }
+        .juegos-controles-touch button { flex:1; max-width:110px; padding:14px 0; border-radius:12px; border:none; background:var(--carrier-blue); color:white; font-size:1.3rem; cursor:pointer; user-select:none; }
+        .pelea-arena { display:flex; justify-content:space-between; align-items:flex-end; max-width:420px; margin:0 auto 16px; }
+        .pelea-personaje { font-size:4.5rem; transition:transform .15s; }
+        .pelea-personaje.golpea { transform:translateX(14px) scale(1.08); }
+        .pelea-personaje.cpu.golpea { transform:translateX(-14px) scale(1.08); }
+        .pelea-personaje.bloquea { filter: drop-shadow(0 0 8px #3b82f6); }
+        .pelea-personaje.dañado { filter: drop-shadow(0 0 8px #dc2626); }
+        .pelea-barras { max-width:420px; margin:0 auto 14px; }
+        .pelea-barra-fila { display:flex; align-items:center; gap:8px; margin:6px 0; font-size:.8rem; font-weight:700; color:var(--carrier-blue); }
+        .pelea-barra-fondo { flex:1; height:16px; background:#e2e8f0; border-radius:8px; overflow:hidden; }
+        .pelea-barra-relleno { height:100%; background:linear-gradient(90deg,#16a34a,#4ade80); transition:width .2s; }
+        .pelea-barra-relleno.cpu { background:linear-gradient(90deg,#dc2626,#f87171); }
+        .pelea-botones { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; max-width:420px; margin:0 auto; }
+        .pelea-botones button { flex:1; min-width:100px; padding:12px 8px; border-radius:10px; border:none; background:var(--carrier-blue); color:white; font-weight:700; cursor:pointer; font-size:.9rem; }
+        .pelea-botones button:disabled { opacity:.4; cursor:not-allowed; }
+        .pelea-botones button.btn-bloquear { background:#3b82f6; }
+        .pelea-rondas { text-align:center; font-size:.85rem; color:#64748b; margin-bottom:8px; }
     </style>
 
     <div class="juegos-tabs">
@@ -4324,6 +4342,10 @@ async def pagina_juegos():
         <button class="juegos-tab" id="tab-culebra" onclick="cambiarJuego('culebra')">🐍 Culebra</button>
         <button class="juegos-tab" id="tab-billar" onclick="cambiarJuego('billar')">🎱 Billar</button>
         <button class="juegos-tab" id="tab-cartas" onclick="cambiarJuego('cartas')">🃏 21 (Cartas)</button>
+        <button class="juegos-tab" id="tab-mario" onclick="cambiarJuego('mario')">🏃 Súper Técnico</button>
+        <button class="juegos-tab" id="tab-carreras" onclick="cambiarJuego('carreras')">🏎️ Carreras</button>
+        <button class="juegos-tab" id="tab-pelea" onclick="cambiarJuego('pelea')">🥊 Pelea</button>
+        <button class="juegos-tab" id="tab-tetris" onclick="cambiarJuego('tetris')">🧩 Tetris</button>
         <button class="juegos-tab" id="tab-simulador" onclick="cambiarJuego('simulador')">🌡️ Simulador de Refrigeración</button>
     </div>
 
@@ -4338,12 +4360,13 @@ async def pagina_juegos():
 
     <script>
         const fetchAuth = window.fetchAuth;
-        const LISTA_JUEGOS = ['memoria','2048','trivia','gatito','culebra','billar','cartas','simulador'];
+        const LISTA_JUEGOS = ['memoria','2048','trivia','gatito','culebra','billar','cartas','mario','carreras','pelea','tetris','simulador'];
         let juegoActual = 'memoria';
 
         async function cambiarJuego(juego) {
             juegoActual = juego;
             LISTA_JUEGOS.forEach(j => document.getElementById('tab-'+j).classList.toggle('active', j===juego));
+            pararBucleActivo();
             if (juego === 'memoria') iniciarMemoria();
             else if (juego === '2048') iniciar2048();
             else if (juego === 'trivia') iniciarTrivia();
@@ -4351,8 +4374,26 @@ async def pagina_juegos():
             else if (juego === 'culebra') iniciarCulebra();
             else if (juego === 'billar') iniciarBillar();
             else if (juego === 'cartas') iniciarCartas();
+            else if (juego === 'mario') iniciarMario();
+            else if (juego === 'carreras') iniciarCarreras();
+            else if (juego === 'pelea') iniciarPelea();
+            else if (juego === 'tetris') iniciarTetris();
             else mostrarSimuladorExterno();
             cargarLeaderboard();
+        }
+
+        // Controla que solo un requestAnimationFrame/interval esté activo a la vez
+        let _rafActivo = null;
+        let _intervalosActivos = [];
+        function pararBucleActivo() {
+            if (_rafActivo) { cancelAnimationFrame(_rafActivo); _rafActivo = null; }
+            _intervalosActivos.forEach(id => clearInterval(id));
+            _intervalosActivos = [];
+            document.removeEventListener('keydown', manejarTecla2048);
+            document.removeEventListener('keydown', _marioTeclaDown);
+            document.removeEventListener('keyup', _marioTeclaUp);
+            document.removeEventListener('keydown', _carrerasTecla);
+            document.removeEventListener('keydown', _tetrisTeclaDown);
         }
 
         function mostrarSimuladorExterno() {
@@ -5052,6 +5093,494 @@ async def pagina_juegos():
                 return;
             }
             _cartNuevaMano();
+        }
+
+        // ══════════════ SÚPER TÉCNICO (plataformas estilo Mario) ══════════════
+        let marioEstado = null;
+        function _marioTeclaDown(e) {
+            if (['ArrowUp',' ','Spacebar','Space'].includes(e.key) || e.code === 'Space') {
+                e.preventDefault();
+                _marioSaltar();
+            }
+        }
+        function _marioTeclaUp(e) {}
+        function _marioSaltar() {
+            const st = marioEstado;
+            if (!st || !st.activo) return;
+            if (st.jugador.enSuelo) {
+                st.jugador.vy = -10.5;
+                st.jugador.enSuelo = false;
+            }
+        }
+        function iniciarMario() {
+            const cont = document.getElementById('juego-contenedor');
+            cont.innerHTML = `
+                <h3 style="margin-top:0;color:var(--carrier-blue);">🏃 Súper Técnico</h3>
+                <div class="juegos-stats"><span>⭐ Puntaje: <span id="mario-puntaje">0</span></span><span>🪙 Monedas: <span id="mario-monedas">0</span></span></div>
+                <canvas id="mario-canvas" class="juegos-canvas" width="340" height="220"></canvas>
+                <div class="juegos-controles-touch"><button id="mario-salto-btn">⬆️ Saltar</button></div>
+                <p style="text-align:center;font-size:.8rem;color:#94a3b8;margin-top:8px;">Flecha arriba / Espacio / botón para saltar. Esquiva hongos, salta sobre ellos para eliminarlos y junta monedas.</p>
+                <p style="text-align:center;margin-top:10px;"><button class="btn-primary" style="width:auto;padding:8px 18px;" onclick="iniciarMario()">🔄 Reiniciar</button></p>
+            `;
+            const canvas = document.getElementById('mario-canvas');
+            const ctx = canvas.getContext('2d');
+            const suelo = 180;
+            marioEstado = {
+                jugador: { x: 50, y: suelo - 32, vy: 0, w: 26, h: 32, enSuelo: true },
+                obstaculos: [], monedas: [], distancia: 0, velocidad: 3.2, monedasN: 0,
+                puntaje: 0, activo: true, proximoSpawn: 60
+            };
+            document.getElementById('mario-salto-btn').onclick = _marioSaltar;
+            canvas.onpointerdown = _marioSaltar;
+            document.removeEventListener('keydown', _marioTeclaDown);
+            document.addEventListener('keydown', _marioTeclaDown);
+            _rafActivo = requestAnimationFrame(_marioLoop);
+        }
+        function _marioLoop() {
+            const st = marioEstado;
+            if (!st || !st.activo || juegoActual !== 'mario') return;
+            const canvas = document.getElementById('mario-canvas');
+            const ctx = canvas.getContext('2d');
+            const suelo = 180;
+            st.distancia += st.velocidad;
+            st.velocidad = Math.min(7, 3.2 + st.distancia / 2200);
+            // física del jugador
+            st.jugador.vy += 0.62;
+            st.jugador.y += st.jugador.vy;
+            if (st.jugador.y >= suelo - st.jugador.h) {
+                st.jugador.y = suelo - st.jugador.h;
+                st.jugador.vy = 0;
+                st.jugador.enSuelo = true;
+            }
+            // generar obstáculos y monedas
+            st.proximoSpawn -= st.velocidad;
+            if (st.proximoSpawn <= 0) {
+                st.proximoSpawn = 90 + Math.random() * 90;
+                const esGoomba = Math.random() < 0.65;
+                st.obstaculos.push({ x: canvas.width + 20, y: suelo - (esGoomba ? 24 : 34), w: esGoomba ? 26 : 22, h: esGoomba ? 24 : 34, tipo: esGoomba ? 'goomba' : 'tuberia', vivo: true });
+                if (Math.random() < 0.55) {
+                    st.monedas.push({ x: canvas.width + 60 + Math.random() * 40, y: suelo - 70 - Math.random() * 40, tomada: false });
+                }
+            }
+            // mover mundo
+            st.obstaculos.forEach(o => o.x -= st.velocidad);
+            st.monedas.forEach(m => m.x -= st.velocidad);
+            st.obstaculos = st.obstaculos.filter(o => o.x > -40 && o.vivo);
+            st.monedas = st.monedas.filter(m => m.x > -30 && !m.tomada);
+            // colisiones
+            const j = st.jugador;
+            for (const o of st.obstaculos) {
+                if (j.x < o.x + o.w && j.x + j.w > o.x && j.y < o.y + o.h && j.y + j.h > o.y) {
+                    const cayendoEncima = j.vy > 0 && (j.y + j.h - o.h/2) < o.y + 10 && o.tipo === 'goomba';
+                    if (cayendoEncima) {
+                        o.vivo = false;
+                        j.vy = -7.5;
+                        st.puntaje += 50;
+                    } else {
+                        st.activo = false;
+                        _marioFin();
+                        return;
+                    }
+                }
+            }
+            for (const m of st.monedas) {
+                if (!m.tomada && j.x < m.x + 14 && j.x + j.w > m.x && j.y < m.y + 14 && j.y + j.h > m.y) {
+                    m.tomada = true; st.monedasN++; st.puntaje += 10;
+                }
+            }
+            st.puntaje = Math.floor(st.distancia / 5) + st.monedasN * 10;
+            document.getElementById('mario-puntaje').textContent = st.puntaje;
+            document.getElementById('mario-monedas').textContent = st.monedasN;
+            // render
+            ctx.fillStyle = '#5dade2';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#8b5e3c';
+            ctx.fillRect(0, suelo, canvas.width, canvas.height - suelo);
+            ctx.fillStyle = '#5a9c3f';
+            ctx.fillRect(0, suelo, canvas.width, 6);
+            ctx.font = '26px sans-serif';
+            ctx.fillText('🧑‍🔧', j.x, j.y + j.h);
+            st.obstaculos.forEach(o => ctx.fillText(o.tipo === 'goomba' ? '🍄' : '🧊', o.x, o.y + o.h));
+            ctx.font = '18px sans-serif';
+            st.monedas.forEach(m => ctx.fillText('🪙', m.x, m.y + 14));
+            _rafActivo = requestAnimationFrame(_marioLoop);
+        }
+        function _marioFin() {
+            const st = marioEstado;
+            setTimeout(() => {
+                alert(`🏃 ¡Chocaste! Puntaje final: ${st.puntaje} (🪙 ${st.monedasN} monedas)`);
+                guardarPuntaje('mario', st.puntaje);
+            }, 80);
+        }
+
+        // ══════════════ CARRERAS ══════════════
+        let carEstado = null;
+        function _carrerasTecla(e) {
+            if (!carEstado || !carEstado.activo) return;
+            if (e.key === 'ArrowLeft') _carrerasCambiarCarril(-1);
+            else if (e.key === 'ArrowRight') _carrerasCambiarCarril(1);
+        }
+        function _carrerasCambiarCarril(delta) {
+            const st = carEstado;
+            if (!st) return;
+            st.carril = Math.max(0, Math.min(2, st.carril + delta));
+        }
+        function iniciarCarreras() {
+            const cont = document.getElementById('juego-contenedor');
+            cont.innerHTML = `
+                <h3 style="margin-top:0;color:var(--carrier-blue);">🏎️ Carreras</h3>
+                <div class="juegos-stats"><span>⭐ Puntaje: <span id="car-puntaje">0</span></span><span>🏁 Velocidad: <span id="car-velocidad">1x</span></span></div>
+                <canvas id="car-canvas" class="juegos-canvas" width="240" height="380"></canvas>
+                <div class="juegos-controles-touch"><button id="car-izq-btn">⬅️</button><button id="car-der-btn">➡️</button></div>
+                <p style="text-align:center;font-size:.8rem;color:#94a3b8;margin-top:8px;">Flechas ← → o botones para cambiar de carril y esquivar el tráfico.</p>
+                <p style="text-align:center;margin-top:10px;"><button class="btn-primary" style="width:auto;padding:8px 18px;" onclick="iniciarCarreras()">🔄 Reiniciar</button></p>
+            `;
+            const canvas = document.getElementById('car-canvas');
+            const laneW = canvas.width / 3;
+            carEstado = {
+                carril: 1, xVisual: laneW * 1.5, enemigos: [], puntaje: 0, activo: true,
+                velocidad: 2.8, proximoSpawn: 40, rayas: 0
+            };
+            document.getElementById('car-izq-btn').onclick = () => _carrerasCambiarCarril(-1);
+            document.getElementById('car-der-btn').onclick = () => _carrerasCambiarCarril(1);
+            document.removeEventListener('keydown', _carrerasTecla);
+            document.addEventListener('keydown', _carrerasTecla);
+            _rafActivo = requestAnimationFrame(_carrerasLoop);
+        }
+        function _carrerasLoop() {
+            const st = carEstado;
+            if (!st || !st.activo || juegoActual !== 'carreras') return;
+            const canvas = document.getElementById('car-canvas');
+            const ctx = canvas.getContext('2d');
+            const laneW = canvas.width / 3;
+            st.puntaje += 1;
+            st.velocidad = Math.min(9, 2.8 + st.puntaje / 900);
+            const xObjetivo = laneW * st.carril + laneW / 2;
+            st.xVisual += (xObjetivo - st.xVisual) * 0.25;
+            st.rayas = (st.rayas + st.velocidad) % 40;
+            st.proximoSpawn -= st.velocidad;
+            if (st.proximoSpawn <= 0) {
+                st.proximoSpawn = Math.max(28, 55 - st.puntaje / 200);
+                const carrilEnemigo = Math.floor(Math.random() * 3);
+                st.enemigos.push({ carril: carrilEnemigo, y: -50, w: 34, h: 54 });
+            }
+            st.enemigos.forEach(en => en.y += st.velocidad * 3.2);
+            st.enemigos = st.enemigos.filter(en => en.y < canvas.height + 60);
+            // colisión
+            const jx = st.xVisual - 15, jy = canvas.height - 90, jw = 30, jh = 54;
+            for (const en of st.enemigos) {
+                const ex = laneW * en.carril + laneW / 2 - en.w / 2;
+                if (jx < ex + en.w && jx + jw > ex && jy < en.y + en.h && jy + jh > en.y) {
+                    st.activo = false;
+                    _carrerasFin();
+                    return;
+                }
+            }
+            document.getElementById('car-puntaje').textContent = st.puntaje;
+            document.getElementById('car-velocidad').textContent = (st.velocidad / 2.8).toFixed(1) + 'x';
+            // render
+            ctx.fillStyle = '#374151';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([18, 18]);
+            for (let i = 1; i < 3; i++) {
+                ctx.beginPath();
+                ctx.moveTo(laneW * i, -40 + st.rayas);
+                ctx.lineTo(laneW * i, canvas.height);
+                ctx.stroke();
+            }
+            ctx.setLineDash([]);
+            ctx.font = '38px sans-serif';
+            ctx.textAlign = 'center';
+            st.enemigos.forEach(en => {
+                const ex = laneW * en.carril + laneW / 2;
+                ctx.fillText('🚚', ex, en.y + 40);
+            });
+            ctx.fillText('🏎️', st.xVisual, canvas.height - 40);
+            ctx.textAlign = 'left';
+            _rafActivo = requestAnimationFrame(_carrerasLoop);
+        }
+        function _carrerasFin() {
+            const st = carEstado;
+            setTimeout(() => {
+                alert(`🏎️ ¡Choque! Puntaje final: ${st.puntaje}`);
+                guardarPuntaje('carreras', st.puntaje);
+            }, 80);
+        }
+
+        // ══════════════ PELEA (1 vs CPU) ══════════════
+        let peleaEstado = null;
+        function iniciarPelea() {
+            const cont = document.getElementById('juego-contenedor');
+            cont.innerHTML = `
+                <h3 style="margin-top:0;color:var(--carrier-blue);">🥊 Pelea — Técnico vs Robot Averiado</h3>
+                <div class="pelea-rondas" id="pelea-rondas">Ronda 1 — Rondas ganadas: Tú 0 · CPU 0</div>
+                <div class="pelea-barras">
+                    <div class="pelea-barra-fila">🧑‍🔧 <div class="pelea-barra-fondo"><div class="pelea-barra-relleno" id="pelea-vida-jugador" style="width:100%"></div></div></div>
+                    <div class="pelea-barra-fila">🤖 <div class="pelea-barra-fondo"><div class="pelea-barra-relleno cpu" id="pelea-vida-cpu" style="width:100%"></div></div></div>
+                </div>
+                <div class="pelea-arena">
+                    <div class="pelea-personaje" id="pelea-jugador-el">🧑‍🔧</div>
+                    <div class="pelea-personaje cpu" id="pelea-cpu-el">🤖</div>
+                </div>
+                <div class="pelea-botones">
+                    <button id="pelea-golpe-btn">👊 Golpe</button>
+                    <button id="pelea-patada-btn">🦵 Patada</button>
+                    <button class="btn-bloquear" id="pelea-bloquear-btn">🛡️ Bloquear</button>
+                </div>
+                <p style="text-align:center;font-size:.8rem;color:#94a3b8;margin-top:10px;">Gana 2 de 3 rondas. Bloquear reduce mucho el daño del siguiente golpe del robot.</p>
+                <p style="text-align:center;margin-top:10px;"><button class="btn-primary" style="width:auto;padding:8px 18px;" onclick="iniciarPelea()">🔄 Reiniciar pelea</button></p>
+            `;
+            peleaEstado = {
+                vidaJ: 100, vidaC: 100, rondasJ: 0, rondasC: 0, ronda: 1,
+                bloqueandoJ: false, cooldownJ: false, activo: true, terminado: false
+            };
+            document.getElementById('pelea-golpe-btn').onclick = () => _peleaAccionJugador('golpe');
+            document.getElementById('pelea-patada-btn').onclick = () => _peleaAccionJugador('patada');
+            document.getElementById('pelea-bloquear-btn').onclick = () => _peleaAccionJugador('bloquear');
+            const cpuInterval = setInterval(_peleaTurnoCPU, 1400);
+            _intervalosActivos.push(cpuInterval);
+        }
+        function _peleaAccionJugador(accion) {
+            const st = peleaEstado;
+            if (!st || !st.activo || st.cooldownJ || juegoActual !== 'pelea') return;
+            const jugadorEl = document.getElementById('pelea-jugador-el');
+            if (accion === 'golpe') {
+                st.vidaC = Math.max(0, st.vidaC - 8);
+                jugadorEl.classList.add('golpea');
+                setTimeout(() => jugadorEl.classList.remove('golpea'), 150);
+            } else if (accion === 'patada') {
+                st.vidaC = Math.max(0, st.vidaC - 14);
+                jugadorEl.classList.add('golpea');
+                setTimeout(() => jugadorEl.classList.remove('golpea'), 150);
+            } else if (accion === 'bloquear') {
+                st.bloqueandoJ = true;
+                jugadorEl.classList.add('bloquea');
+                setTimeout(() => { st.bloqueandoJ = false; jugadorEl.classList.remove('bloquea'); }, 1300);
+            }
+            st.cooldownJ = true;
+            setTimeout(() => { st.cooldownJ = false; }, accion === 'patada' ? 850 : 400);
+            _peleaActualizarUI();
+            _peleaCheckFinRonda();
+        }
+        function _peleaTurnoCPU() {
+            const st = peleaEstado;
+            if (!st || !st.activo || st.terminado || juegoActual !== 'pelea') return;
+            const cpuEl = document.getElementById('pelea-cpu-el');
+            const dado = Math.random();
+            const accion = dado < 0.55 ? 'golpe' : (dado < 0.85 ? 'patada' : 'nada');
+            if (accion === 'nada') return;
+            let daño = accion === 'golpe' ? (7 + Math.random() * 4) : (12 + Math.random() * 6);
+            if (st.bloqueandoJ) daño *= 0.25;
+            st.vidaJ = Math.max(0, st.vidaJ - daño);
+            cpuEl.classList.add('golpea');
+            setTimeout(() => cpuEl.classList.remove('golpea'), 150);
+            if (st.vidaJ < 100 && !st.bloqueandoJ) {
+                const jugadorEl = document.getElementById('pelea-jugador-el');
+                jugadorEl.classList.add('dañado');
+                setTimeout(() => jugadorEl.classList.remove('dañado'), 200);
+            }
+            _peleaActualizarUI();
+            _peleaCheckFinRonda();
+        }
+        function _peleaActualizarUI() {
+            const st = peleaEstado;
+            document.getElementById('pelea-vida-jugador').style.width = st.vidaJ + '%';
+            document.getElementById('pelea-vida-cpu').style.width = st.vidaC + '%';
+            document.getElementById('pelea-rondas').textContent = `Ronda ${st.ronda} — Rondas ganadas: Tú ${st.rondasJ} · CPU ${st.rondasC}`;
+        }
+        function _peleaCheckFinRonda() {
+            const st = peleaEstado;
+            if (st.terminado) return;
+            if (st.vidaJ <= 0 || st.vidaC <= 0) {
+                st.terminado = true;
+                if (st.vidaC <= 0) st.rondasJ++; else st.rondasC++;
+                const ganoMatch = st.rondasJ >= 2 || st.rondasC >= 2;
+                setTimeout(() => {
+                    if (ganoMatch) {
+                        st.activo = false;
+                        const puntaje = st.rondasJ * 100 + Math.round(st.vidaJ);
+                        alert(st.rondasJ > st.rondasC ? `🏆 ¡Ganaste la pelea! Puntaje: ${puntaje}` : `😵 Perdiste la pelea. Puntaje: ${puntaje}`);
+                        guardarPuntaje('pelea', puntaje);
+                    } else {
+                        st.ronda++;
+                        st.vidaJ = 100; st.vidaC = 100; st.terminado = false;
+                        _peleaActualizarUI();
+                    }
+                }, 400);
+            }
+        }
+
+        // ══════════════ TETRIS ══════════════
+        const TET_PIEZAS = {
+            I: { bloques: [[0,1],[1,1],[2,1],[3,1]], color: '#22d3ee' },
+            O: { bloques: [[1,0],[2,0],[1,1],[2,1]], color: '#facc15' },
+            T: { bloques: [[1,0],[0,1],[1,1],[2,1]], color: '#a78bfa' },
+            S: { bloques: [[1,0],[2,0],[0,1],[1,1]], color: '#4ade80' },
+            Z: { bloques: [[0,0],[1,0],[1,1],[2,1]], color: '#f87171' },
+            J: { bloques: [[0,0],[0,1],[1,1],[2,1]], color: '#60a5fa' },
+            L: { bloques: [[2,0],[0,1],[1,1],[2,1]], color: '#fb923c' }
+        };
+        const TET_COLS = 10, TET_FILAS = 20, TET_CELDA = 18;
+        let tetEstado = null;
+        function _tetrisTeclaDown(e) {
+            const st = tetEstado;
+            if (!st || !st.activo || juegoActual !== 'tetris') return;
+            if (e.key === 'ArrowLeft') { e.preventDefault(); _tetMover(-1); }
+            else if (e.key === 'ArrowRight') { e.preventDefault(); _tetMover(1); }
+            else if (e.key === 'ArrowDown') { e.preventDefault(); _tetCaida(); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); _tetRotar(); }
+            else if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); _tetHardDrop(); }
+        }
+        function iniciarTetris() {
+            const cont = document.getElementById('juego-contenedor');
+            cont.innerHTML = `
+                <h3 style="margin-top:0;color:var(--carrier-blue);">🧩 Tetris</h3>
+                <div class="juegos-stats"><span>⭐ Puntaje: <span id="tet-puntaje">0</span></span><span>📶 Nivel: <span id="tet-nivel">1</span></span><span>📏 Líneas: <span id="tet-lineas">0</span></span></div>
+                <canvas id="tet-canvas" class="juegos-canvas" width="${TET_COLS*TET_CELDA}" height="${TET_FILAS*TET_CELDA}"></canvas>
+                <div class="juegos-controles-touch">
+                    <button id="tet-izq-btn">⬅️</button><button id="tet-rot-btn">🔄</button><button id="tet-der-btn">➡️</button><button id="tet-baja-btn">⬇️</button>
+                </div>
+                <p style="text-align:center;font-size:.8rem;color:#94a3b8;margin-top:8px;">Flechas para mover/rotar, Espacio para caída rápida.</p>
+                <p style="text-align:center;margin-top:10px;"><button class="btn-primary" style="width:auto;padding:8px 18px;" onclick="iniciarTetris()">🔄 Reiniciar</button></p>
+            `;
+            tetEstado = {
+                tablero: Array.from({length: TET_FILAS}, () => Array(TET_COLS).fill(null)),
+                puntaje: 0, lineas: 0, nivel: 1, activo: true, velocidad: 750
+            };
+            document.getElementById('tet-izq-btn').onclick = () => _tetMover(-1);
+            document.getElementById('tet-der-btn').onclick = () => _tetMover(1);
+            document.getElementById('tet-rot-btn').onclick = () => _tetRotar();
+            document.getElementById('tet-baja-btn').onclick = () => _tetCaida();
+            document.removeEventListener('keydown', _tetrisTeclaDown);
+            document.addEventListener('keydown', _tetrisTeclaDown);
+            _tetNuevaPieza();
+            const dropInterval = setInterval(() => _tetCaida(), tetEstado.velocidad);
+            tetEstado._intervaloId = dropInterval;
+            _intervalosActivos.push(dropInterval);
+            _tetRender();
+        }
+        function _tetNuevaPieza() {
+            const st = tetEstado;
+            const tipos = Object.keys(TET_PIEZAS);
+            const tipo = tipos[Math.floor(Math.random() * tipos.length)];
+            const def = TET_PIEZAS[tipo];
+            st.pieza = { tipo, color: def.color, bloques: def.bloques.map(b => [...b]), x: 3, y: -1 };
+            if (_tetColisiona(st.pieza.bloques, st.pieza.x, st.pieza.y)) {
+                st.activo = false;
+                clearInterval(st._intervaloId);
+                setTimeout(() => {
+                    alert(`🧩 Juego terminado. Puntaje final: ${st.puntaje}`);
+                    guardarPuntaje('tetris', st.puntaje);
+                }, 80);
+            }
+        }
+        function _tetColisiona(bloques, px, py) {
+            const st = tetEstado;
+            for (const [bx, by] of bloques) {
+                const x = px + bx, y = py + by;
+                if (x < 0 || x >= TET_COLS || y >= TET_FILAS) return true;
+                if (y >= 0 && st.tablero[y][x]) return true;
+            }
+            return false;
+        }
+        function _tetMover(dx) {
+            const st = tetEstado;
+            if (!st || !st.activo) return;
+            if (!_tetColisiona(st.pieza.bloques, st.pieza.x + dx, st.pieza.y)) {
+                st.pieza.x += dx;
+                _tetRender();
+            }
+        }
+        function _tetRotar() {
+            const st = tetEstado;
+            if (!st || !st.activo || st.pieza.tipo === 'O') { _tetRender(); return; }
+            const rotados = st.pieza.bloques.map(([x, y]) => [3 - y, x]);
+            for (const dx of [0, -1, 1, -2, 2]) {
+                if (!_tetColisiona(rotados, st.pieza.x + dx, st.pieza.y)) {
+                    st.pieza.bloques = rotados;
+                    st.pieza.x += dx;
+                    _tetRender();
+                    return;
+                }
+            }
+        }
+        function _tetCaida() {
+            const st = tetEstado;
+            if (!st || !st.activo) return;
+            if (!_tetColisiona(st.pieza.bloques, st.pieza.x, st.pieza.y + 1)) {
+                st.pieza.y += 1;
+            } else {
+                _tetFijarPieza();
+            }
+            _tetRender();
+        }
+        function _tetHardDrop() {
+            const st = tetEstado;
+            if (!st || !st.activo) return;
+            while (!_tetColisiona(st.pieza.bloques, st.pieza.x, st.pieza.y + 1)) st.pieza.y += 1;
+            _tetFijarPieza();
+            _tetRender();
+        }
+        function _tetFijarPieza() {
+            const st = tetEstado;
+            st.pieza.bloques.forEach(([bx, by]) => {
+                const x = st.pieza.x + bx, y = st.pieza.y + by;
+                if (y >= 0) st.tablero[y][x] = st.pieza.color;
+            });
+            let lineasLimpiadas = 0;
+            for (let y = TET_FILAS - 1; y >= 0; y--) {
+                if (st.tablero[y].every(c => c)) {
+                    st.tablero.splice(y, 1);
+                    st.tablero.unshift(Array(TET_COLS).fill(null));
+                    lineasLimpiadas++;
+                    y++;
+                }
+            }
+            if (lineasLimpiadas > 0) {
+                const puntosBase = [0, 100, 300, 500, 800][lineasLimpiadas] || 800;
+                st.puntaje += puntosBase * st.nivel;
+                st.lineas += lineasLimpiadas;
+                const nuevoNivel = 1 + Math.floor(st.lineas / 10);
+                if (nuevoNivel !== st.nivel) {
+                    st.nivel = nuevoNivel;
+                    clearInterval(st._intervaloId);
+                    st.velocidad = Math.max(120, 750 - (st.nivel - 1) * 60);
+                    const idx = _intervalosActivos.indexOf(st._intervaloId);
+                    if (idx >= 0) _intervalosActivos.splice(idx, 1);
+                    st._intervaloId = setInterval(() => _tetCaida(), st.velocidad);
+                    _intervalosActivos.push(st._intervaloId);
+                }
+                document.getElementById('tet-puntaje').textContent = st.puntaje;
+                document.getElementById('tet-nivel').textContent = st.nivel;
+                document.getElementById('tet-lineas').textContent = st.lineas;
+            }
+            _tetNuevaPieza();
+        }
+        function _tetRender() {
+            const st = tetEstado;
+            if (!st) return;
+            const canvas = document.getElementById('tet-canvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            for (let y = 0; y < TET_FILAS; y++) {
+                for (let x = 0; x < TET_COLS; x++) {
+                    if (st.tablero[y][x]) {
+                        ctx.fillStyle = st.tablero[y][x];
+                        ctx.fillRect(x * TET_CELDA + 1, y * TET_CELDA + 1, TET_CELDA - 2, TET_CELDA - 2);
+                    }
+                }
+            }
+            if (st.activo && st.pieza) {
+                ctx.fillStyle = st.pieza.color;
+                st.pieza.bloques.forEach(([bx, by]) => {
+                    const x = st.pieza.x + bx, y = st.pieza.y + by;
+                    if (y >= 0) ctx.fillRect(x * TET_CELDA + 1, y * TET_CELDA + 1, TET_CELDA - 2, TET_CELDA - 2);
+                });
+            }
         }
 
         cambiarJuego('memoria');
