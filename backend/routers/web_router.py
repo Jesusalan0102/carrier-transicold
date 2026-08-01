@@ -5462,67 +5462,191 @@ async def pagina_juegos():
             }, 450);
         }
 
-        // ══════════════ PELEA (1 vs CPU) ══════════════
+        // ══════════════ PELEA (1 vs CPU) — 3D con Three.js ══════════════
         let peleaEstado = null;
-        function dibujarRobotAveriado(ctx, x, yBase, escala, opts) {
-            opts = opts || {};
-            const dir = opts.dir || -1;
-            const pose = opts.pose || 'parado';
-            ctx.save();
-            ctx.translate(x, yBase);
-            ctx.scale(dir * escala, escala);
-            if (opts.dañado) ctx.filter = 'drop-shadow(0 0 6px #ef4444)';
-            ctx.fillStyle = 'rgba(15,23,42,0.2)';
-            ctx.beginPath(); ctx.ellipse(0, 3, 15, 4, 0, 0, Math.PI * 2); ctx.fill();
-            ctx.fillStyle = '#475569';
-            ctx.fillRect(-9, -26, 7, 20); ctx.fillRect(2, -26, 7, 20);
-            if (pose === 'patada') { ctx.fillStyle = '#334155'; ctx.fillRect(2, -30, 24, 8); }
-            ctx.fillStyle = opts.dañado ? '#7f1d1d' : '#64748b';
-            _tecRoundRect(ctx, -13, -56, 26, 30, 5); ctx.fill();
-            ctx.fillStyle = opts.dañado ? '#fca5a5' : '#38bdf8';
-            ctx.fillRect(-9, -50, 18, 5);
-            ctx.fillStyle = '#1e293b';
-            ctx.beginPath(); ctx.arc(-9, -52, 1.6, 0, Math.PI * 2); ctx.arc(9, -52, 1.6, 0, Math.PI * 2); ctx.fill();
-            let brazoAtras = { x: -8, y: -30 }, brazoAdelante = { x: 12, y: -40 };
-            if (pose === 'golpe') brazoAdelante = { x: 25, y: -46 };
-            else if (pose === 'bloqueo') brazoAdelante = { x: 8, y: -52 };
-            ctx.strokeStyle = '#334155'; ctx.lineWidth = 7; ctx.lineCap = 'round';
-            ctx.beginPath(); ctx.moveTo(-9, -50); ctx.lineTo(brazoAtras.x, brazoAtras.y); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(9, -50); ctx.lineTo(brazoAdelante.x, brazoAdelante.y); ctx.stroke();
-            ctx.fillStyle = '#94a3b8';
-            ctx.beginPath(); ctx.arc(brazoAdelante.x, brazoAdelante.y, 5, 0, Math.PI * 2); ctx.fill();
-            ctx.fillStyle = '#94a3b8';
-            _tecRoundRect(ctx, -9, -70, 18, 16, 4); ctx.fill();
-            ctx.strokeStyle = '#475569'; ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.moveTo(0, -70); ctx.lineTo(0, -76); ctx.stroke();
-            ctx.fillStyle = opts.dañado ? '#ef4444' : '#22d3ee';
-            ctx.beginPath(); ctx.arc(0, -77, 2.4, 0, Math.PI * 2); ctx.fill();
-            ctx.fillStyle = opts.dañado ? '#ef4444' : '#0ea5e9';
-            ctx.beginPath(); ctx.arc(2, -63, 3, 0, Math.PI * 2); ctx.fill();
-            ctx.restore();
+        let _pelea3D = null;
+        function crearTecnico3D(colorTraje) {
+            const grupo = new THREE.Group();
+            const DS = THREE.DoubleSide;
+            const matPiel = new THREE.MeshStandardMaterial({ color: 0xf1c27d, roughness: 0.75, side: DS });
+            const matTraje = new THREE.MeshStandardMaterial({ color: colorTraje || 0x1d4ed8, roughness: 0.6, side: DS });
+            const matFranja = new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.4, side: DS });
+            const matCasco = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.35, metalness: 0.15, side: DS });
+            const matGuante = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5, side: DS });
+            const matBota = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.6, side: DS });
+            const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.6, 0.28), matTraje);
+            torso.position.y = 1.15; torso.castShadow = true; grupo.add(torso);
+            const franja = new THREE.Mesh(new THREE.BoxGeometry(0.47, 0.08, 0.29), matFranja);
+            franja.position.y = 1.27; grupo.add(franja);
+            const cabeza = new THREE.Mesh(new THREE.SphereGeometry(0.17, 14, 12), matPiel);
+            cabeza.position.y = 1.62; cabeza.castShadow = true; grupo.add(cabeza);
+            const casco = new THREE.Mesh(new THREE.SphereGeometry(0.19, 14, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), matCasco);
+            casco.position.y = 1.68; grupo.add(casco);
+            function crearBrazo(signo) {
+                const hombro = new THREE.Group(); hombro.position.set(0.27 * signo, 1.4, 0);
+                const sup = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.06, 0.32, 8), matTraje);
+                sup.position.y = -0.16; sup.castShadow = true; hombro.add(sup);
+                const codo = new THREE.Group(); codo.position.y = -0.32; hombro.add(codo);
+                const ante = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.05, 0.28, 8), matTraje);
+                ante.position.y = -0.14; ante.castShadow = true; codo.add(ante);
+                const mano = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), matGuante);
+                mano.position.y = -0.30; codo.add(mano);
+                return { hombro, codo };
+            }
+            const brazoIzq = crearBrazo(-1), brazoDer = crearBrazo(1);
+            grupo.add(brazoIzq.hombro, brazoDer.hombro);
+            function crearPierna(signo) {
+                const cadera = new THREE.Group(); cadera.position.set(0.13 * signo, 0.84, 0);
+                const muslo = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.075, 0.38, 8), matTraje);
+                muslo.position.y = -0.19; muslo.castShadow = true; cadera.add(muslo);
+                const rodilla = new THREE.Group(); rodilla.position.y = -0.38; cadera.add(rodilla);
+                const pantorrilla = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.06, 0.36, 8), matTraje);
+                pantorrilla.position.y = -0.18; pantorrilla.castShadow = true; rodilla.add(pantorrilla);
+                const bota = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.09, 0.24), matBota);
+                bota.position.set(0, -0.37, 0.04); bota.castShadow = true; rodilla.add(bota);
+                return { cadera, rodilla };
+            }
+            const piernaIzq = crearPierna(-1), piernaDer = crearPierna(1);
+            grupo.add(piernaIzq.cadera, piernaDer.cadera);
+            grupo.userData.partes = { torso, cabeza, brazoIzq, brazoDer, piernaIzq, piernaDer };
+            return grupo;
+        }
+        function crearRobot3D() {
+            const grupo = new THREE.Group();
+            const DS = THREE.DoubleSide;
+            const matCuerpo = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.4, metalness: 0.5, side: DS });
+            const matOscuro = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5, metalness: 0.4, side: DS });
+            const matPanel = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0369a1, emissiveIntensity: 0.55, roughness: 0.3, side: DS });
+            const matOjo = new THREE.MeshStandardMaterial({ color: 0x0ea5e9, emissive: 0x0ea5e9, emissiveIntensity: 1, side: DS });
+            const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.62, 0.32), matCuerpo);
+            torso.position.y = 1.15; torso.castShadow = true; grupo.add(torso);
+            const panel = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.12, 0.02), matPanel);
+            panel.position.set(0, 1.25, 0.17); grupo.add(panel);
+            const cabeza = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.24, 0.26), matCuerpo);
+            cabeza.position.y = 1.62; cabeza.castShadow = true; grupo.add(cabeza);
+            const ojo = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), matOjo);
+            ojo.position.set(0.05, 1.62, 0.14); grupo.add(ojo);
+            const antena = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.16, 6), matOscuro);
+            antena.position.set(0, 1.82, 0); grupo.add(antena);
+            const antenaPunta = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 8), matOjo);
+            antenaPunta.position.set(0, 1.9, 0); grupo.add(antenaPunta);
+            function crearBrazo(signo) {
+                const hombro = new THREE.Group(); hombro.position.set(0.3 * signo, 1.4, 0);
+                const sup = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.32, 0.12), matOscuro);
+                sup.position.y = -0.16; sup.castShadow = true; hombro.add(sup);
+                const codo = new THREE.Group(); codo.position.y = -0.32; hombro.add(codo);
+                const ante = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.28, 0.1), matCuerpo);
+                ante.position.y = -0.14; ante.castShadow = true; codo.add(ante);
+                const puno = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.14), matOscuro);
+                puno.position.y = -0.3; codo.add(puno);
+                return { hombro, codo };
+            }
+            const brazoIzq = crearBrazo(-1), brazoDer = crearBrazo(1);
+            grupo.add(brazoIzq.hombro, brazoDer.hombro);
+            function crearPierna(signo) {
+                const cadera = new THREE.Group(); cadera.position.set(0.15 * signo, 0.84, 0);
+                const muslo = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.38, 0.16), matOscuro);
+                muslo.position.y = -0.19; muslo.castShadow = true; cadera.add(muslo);
+                const rodilla = new THREE.Group(); rodilla.position.y = -0.38; cadera.add(rodilla);
+                const pantorrilla = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.36, 0.14), matCuerpo);
+                pantorrilla.position.y = -0.18; pantorrilla.castShadow = true; rodilla.add(pantorrilla);
+                const pie = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.08, 0.26), matOscuro);
+                pie.position.set(0, -0.37, 0.05); pie.castShadow = true; rodilla.add(pie);
+                return { cadera, rodilla };
+            }
+            const piernaIzq = crearPierna(-1), piernaDer = crearPierna(1);
+            grupo.add(piernaIzq.cadera, piernaDer.cadera);
+            grupo.userData.partes = { torso, cabeza, brazoIzq, brazoDer, piernaIzq, piernaDer, panel, ojo };
+            return grupo;
+        }
+        function _animarPersonaje3D(grupo, est, dt, frente, sentido) {
+            const p = grupo.userData.partes;
+            est.t += dt;
+            const trasero = frente === 'Der' ? 'Izq' : 'Der';
+            const brazoFrente = p['brazo' + frente], brazoTrasero = p['brazo' + trasero];
+            const piernaFrente = p['pierna' + frente];
+            let zFrente = 0.1 * sentido, zTrasero = -0.08 * sentido, cFrenteZ = 0, rodFrenteZ = 0.12 * sentido, torsoY = 0, torsoX = 0;
+            if (est.pose === 'golpe') { zFrente = 1.3 * sentido; zTrasero = -0.3 * sentido; torsoY = 0.15 * sentido; }
+            else if (est.pose === 'patada') { cFrenteZ = 1.05 * sentido; rodFrenteZ = -0.55 * sentido; zTrasero = -0.35 * sentido; zFrente = 0.2 * sentido; torsoX = -0.08; }
+            else if (est.pose === 'bloqueo') { zFrente = 0.9 * sentido; zTrasero = 0.9 * sentido; torsoX = 0.05; }
+            let impactoOffset = 0;
+            if (est.impacto > 0) { impactoOffset = est.impacto * 0.1; est.impacto = Math.max(0, est.impacto - dt * 3); }
+            const bob = est.pose === 'parado' ? Math.sin(est.t * 2.2) * 0.02 : 0;
+            const suav = 1 - Math.pow(0.0008, dt);
+            brazoFrente.hombro.rotation.z += (zFrente - brazoFrente.hombro.rotation.z) * suav;
+            brazoTrasero.hombro.rotation.z += (zTrasero - brazoTrasero.hombro.rotation.z) * suav;
+            piernaFrente.cadera.rotation.z += (cFrenteZ - piernaFrente.cadera.rotation.z) * suav;
+            piernaFrente.rodilla.rotation.z += (rodFrenteZ - piernaFrente.rodilla.rotation.z) * suav;
+            p.torso.rotation.y += (torsoY - p.torso.rotation.y) * suav;
+            p.torso.rotation.x += (torsoX - p.torso.rotation.x) * suav;
+            grupo.position.y = bob;
+            grupo.position.x = grupo.userData.xBase - sentido * impactoOffset;
+            if (p.panel) p.panel.material.emissiveIntensity = est.dañado ? 0.95 : 0.55;
+            if (p.ojo) { const col = est.dañado ? 0xef4444 : 0x0ea5e9; p.ojo.material.color.setHex(col); p.ojo.material.emissive.setHex(col); }
         }
         function iniciarPelea() {
             const cont = document.getElementById('juego-contenedor');
             cont.innerHTML = `
-                <h3 style="margin-top:0;color:var(--carrier-blue);">🥊 Pelea — Técnico vs Robot Averiado</h3>
+                <h3 style="margin-top:0;color:var(--carrier-blue);">🥊 Pelea 3D — Técnico vs Robot Averiado</h3>
                 <div class="pelea-rondas" id="pelea-rondas">Ronda 1 — Rondas ganadas: Tú 0 · CPU 0</div>
                 <div class="pelea-barras">
                     <div class="pelea-barra-fila">🧑‍🔧 <div class="pelea-barra-fondo"><div class="pelea-barra-relleno" id="pelea-vida-jugador" style="width:100%"></div></div></div>
                     <div class="pelea-barra-fila">🤖 <div class="pelea-barra-fondo"><div class="pelea-barra-relleno cpu" id="pelea-vida-cpu" style="width:100%"></div></div></div>
                 </div>
-                <canvas id="pelea-canvas" class="juegos-canvas" width="360" height="180"></canvas>
+                <div id="pelea-3d-contenedor" style="width:100%;max-width:420px;height:230px;margin:0 auto;border-radius:12px;overflow:hidden;background:#0f172a;"></div>
                 <div class="pelea-botones" style="margin-top:14px;">
                     <button id="pelea-golpe-btn">👊 Golpe</button>
                     <button id="pelea-patada-btn">🦵 Patada</button>
                     <button class="btn-bloquear" id="pelea-bloquear-btn">🛡️ Bloquear</button>
                 </div>
-                <p style="text-align:center;font-size:.8rem;color:#94a3b8;margin-top:10px;">Gana 2 de 3 rondas. Bloquear reduce mucho el daño del siguiente golpe del robot.</p>
+                <p style="text-align:center;font-size:.8rem;color:#94a3b8;margin-top:10px;">Gana 2 de 3 rondas. Bloquear reduce mucho el daño del siguiente golpe del robot. Personajes 3D low-poly renderizados en tiempo real.</p>
                 <p style="text-align:center;margin-top:10px;"><button class="btn-primary" style="width:auto;padding:8px 18px;" onclick="iniciarPelea()">🔄 Reiniciar pelea</button></p>
             `;
             peleaEstado = {
                 vidaJ: 100, vidaC: 100, rondasJ: 0, rondasC: 0, ronda: 1,
-                bloqueandoJ: false, cooldownJ: false, activo: true, terminado: false,
-                poseJ: 'parado', poseC: 'parado', dañadoJ: false, dañadoC: false, temblor: 0, chispas: []
+                bloqueandoJ: false, cooldownJ: false, activo: true, terminado: false
+            };
+            const contenedor3D = document.getElementById('pelea-3d-contenedor');
+            if (typeof THREE === 'undefined') {
+                contenedor3D.innerHTML = '<p style="color:#f8fafc;text-align:center;padding-top:95px;">No se pudo cargar el motor 3D (revisa tu conexión a internet).</p>';
+                return;
+            }
+            if (_pelea3D && _pelea3D.renderer) { try { _pelea3D.renderer.dispose(); } catch (e) {} }
+            const ancho = contenedor3D.clientWidth || 380, alto = 230;
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0f172a);
+            scene.fog = new THREE.Fog(0x0f172a, 4, 9);
+            const camera = new THREE.PerspectiveCamera(38, ancho / alto, 0.1, 20);
+            camera.position.set(0, 1.55, 3.4);
+            camera.lookAt(0, 1.15, 0);
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(ancho, alto);
+            renderer.shadowMap.enabled = true;
+            contenedor3D.innerHTML = '';
+            contenedor3D.appendChild(renderer.domElement);
+            scene.add(new THREE.HemisphereLight(0x8fb8ff, 0x1a2130, 0.7));
+            const luzDireccional = new THREE.DirectionalLight(0xfff2d9, 1.05);
+            luzDireccional.position.set(2.5, 4, 2);
+            luzDireccional.castShadow = true;
+            luzDireccional.shadow.mapSize.set(512, 512);
+            scene.add(luzDireccional);
+            const piso = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 }));
+            piso.rotation.x = -Math.PI / 2;
+            piso.receiveShadow = true;
+            scene.add(piso);
+            const tecnico = crearTecnico3D(0x1d4ed8);
+            tecnico.position.set(-1, 0, 0);
+            tecnico.userData.xBase = -1;
+            scene.add(tecnico);
+            const robot = crearRobot3D();
+            robot.position.set(1, 0, 0);
+            robot.userData.xBase = 1;
+            scene.add(robot);
+            _pelea3D = {
+                scene, camera, renderer, tecnico, robot,
+                estJ: { pose: 'parado', t: 0, impacto: 0, dañado: false },
+                estC: { pose: 'parado', t: Math.random() * 10, impacto: 0, dañado: false },
+                temblorCamara: 0, ultimoTiempo: performance.now()
             };
             document.getElementById('pelea-golpe-btn').onclick = () => _peleaAccionJugador('golpe');
             document.getElementById('pelea-patada-btn').onclick = () => _peleaAccionJugador('patada');
@@ -5531,29 +5655,25 @@ async def pagina_juegos():
             _intervalosActivos.push(cpuInterval);
             _rafActivo = requestAnimationFrame(_peleaLoop);
         }
-        function _peleaChispas(canvas, xFrac) {
-            const st = peleaEstado, arr = [];
-            for (let i = 0; i < 10; i++) arr.push({ x: canvas.width * xFrac, y: canvas.height - 70 + (Math.random()-0.5)*30, vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4, vida: 16, color: Math.random() < 0.5 ? '#fbbf24' : '#f8fafc' });
-            st.chispas.push(...arr);
-        }
         function _peleaAccionJugador(accion) {
             const st = peleaEstado;
-            if (!st || !st.activo || st.cooldownJ || juegoActual !== 'pelea') return;
-            const canvas = document.getElementById('pelea-canvas');
+            if (!st || !st.activo || st.cooldownJ || juegoActual !== 'pelea' || !_pelea3D) return;
             if (accion === 'golpe') {
                 st.vidaC = Math.max(0, st.vidaC - 8);
-                st.poseJ = 'golpe'; st.dañadoC = true; st.temblor = 5;
-                _peleaChispas(canvas, 0.68);
-                setTimeout(() => { st.poseJ = 'parado'; st.dañadoC = false; }, 200);
+                _pelea3D.estJ.pose = 'golpe';
+                _pelea3D.estC.dañado = true; _pelea3D.estC.impacto = 1;
+                _pelea3D.temblorCamara = 0.05;
+                setTimeout(() => { _pelea3D.estJ.pose = 'parado'; _pelea3D.estC.dañado = false; }, 220);
             } else if (accion === 'patada') {
                 st.vidaC = Math.max(0, st.vidaC - 14);
-                st.poseJ = 'patada'; st.dañadoC = true; st.temblor = 8;
-                _peleaChispas(canvas, 0.68);
-                setTimeout(() => { st.poseJ = 'parado'; st.dañadoC = false; }, 250);
+                _pelea3D.estJ.pose = 'patada';
+                _pelea3D.estC.dañado = true; _pelea3D.estC.impacto = 1.6;
+                _pelea3D.temblorCamara = 0.08;
+                setTimeout(() => { _pelea3D.estJ.pose = 'parado'; _pelea3D.estC.dañado = false; }, 280);
             } else if (accion === 'bloquear') {
                 st.bloqueandoJ = true;
-                st.poseJ = 'bloqueo';
-                setTimeout(() => { st.bloqueandoJ = false; st.poseJ = 'parado'; }, 1300);
+                _pelea3D.estJ.pose = 'bloqueo';
+                setTimeout(() => { st.bloqueandoJ = false; _pelea3D.estJ.pose = 'parado'; }, 1300);
             }
             st.cooldownJ = true;
             setTimeout(() => { st.cooldownJ = false; }, accion === 'patada' ? 850 : 400);
@@ -5562,21 +5682,19 @@ async def pagina_juegos():
         }
         function _peleaTurnoCPU() {
             const st = peleaEstado;
-            if (!st || !st.activo || st.terminado || juegoActual !== 'pelea') return;
-            const canvas = document.getElementById('pelea-canvas');
+            if (!st || !st.activo || st.terminado || juegoActual !== 'pelea' || !_pelea3D) return;
             const dado = Math.random();
             const accion = dado < 0.55 ? 'golpe' : (dado < 0.85 ? 'patada' : 'nada');
             if (accion === 'nada') return;
             let daño = accion === 'golpe' ? (7 + Math.random() * 4) : (12 + Math.random() * 6);
             if (st.bloqueandoJ) daño *= 0.25;
             st.vidaJ = Math.max(0, st.vidaJ - daño);
-            st.poseC = accion;
-            st.temblor = 6;
-            if (canvas) _peleaChispas(canvas, 0.32);
-            setTimeout(() => { st.poseC = 'parado'; }, 200);
+            _pelea3D.estC.pose = accion;
+            _pelea3D.temblorCamara = accion === 'patada' ? 0.08 : 0.05;
+            setTimeout(() => { _pelea3D.estC.pose = 'parado'; }, 240);
             if (!st.bloqueandoJ) {
-                st.dañadoJ = true;
-                setTimeout(() => { st.dañadoJ = false; }, 200);
+                _pelea3D.estJ.dañado = true; _pelea3D.estJ.impacto = accion === 'patada' ? 1.6 : 1;
+                setTimeout(() => { _pelea3D.estJ.dañado = false; }, 220);
             }
             _peleaActualizarUI();
             _peleaCheckFinRonda();
@@ -5610,28 +5728,21 @@ async def pagina_juegos():
         }
         function _peleaLoop() {
             const st = peleaEstado;
-            if (!st || juegoActual !== 'pelea') return;
-            const canvas = document.getElementById('pelea-canvas');
-            if (canvas) {
-                const ctx = canvas.getContext('2d');
-                const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-                grad.addColorStop(0, '#0f172a'); grad.addColorStop(1, '#1e293b');
-                ctx.fillStyle = grad; ctx.fillRect(0, 0, canvas.width, canvas.height);
-                ctx.fillStyle = '#334155'; ctx.fillRect(0, canvas.height - 14, canvas.width, 14);
-                let shakeX = 0, shakeY = 0;
-                if (st.temblor > 0) {
-                    shakeX = (Math.random() - 0.5) * st.temblor; shakeY = (Math.random() - 0.5) * st.temblor;
-                    st.temblor *= 0.82; if (st.temblor < 0.3) st.temblor = 0;
-                }
-                ctx.save();
-                ctx.translate(shakeX, shakeY);
-                dibujarTecnico(ctx, canvas.width * 0.28, canvas.height - 14, 0.95, { dir: 1, pose: st.poseJ, dañado: st.dañadoJ });
-                dibujarRobotAveriado(ctx, canvas.width * 0.72, canvas.height - 14, 0.95, { dir: -1, pose: st.poseC, dañado: st.dañadoC });
-                ctx.restore();
-                st.chispas.forEach(p => { p.x += p.vx; p.y += p.vy; p.vida--; });
-                st.chispas = st.chispas.filter(p => p.vida > 0);
-                st.chispas.forEach(p => { ctx.globalAlpha = Math.max(0, p.vida / 16); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, 2.6, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; });
+            if (!st || !_pelea3D || juegoActual !== 'pelea') return;
+            const ahora = performance.now();
+            const dt = Math.min(0.05, (ahora - _pelea3D.ultimoTiempo) / 1000);
+            _pelea3D.ultimoTiempo = ahora;
+            _animarPersonaje3D(_pelea3D.tecnico, _pelea3D.estJ, dt, 'Der', 1);
+            _animarPersonaje3D(_pelea3D.robot, _pelea3D.estC, dt, 'Izq', -1);
+            if (_pelea3D.temblorCamara > 0.001) {
+                _pelea3D.camera.position.x = (Math.random() - 0.5) * _pelea3D.temblorCamara;
+                _pelea3D.camera.position.y = 1.55 + (Math.random() - 0.5) * _pelea3D.temblorCamara;
+                _pelea3D.temblorCamara *= 0.85;
+            } else {
+                _pelea3D.camera.position.x = 0; _pelea3D.camera.position.y = 1.55;
             }
+            _pelea3D.camera.lookAt(0, 1.15, 0);
+            _pelea3D.renderer.render(_pelea3D.scene, _pelea3D.camera);
             _rafActivo = requestAnimationFrame(_peleaLoop);
         }
 
@@ -5856,7 +5967,7 @@ async def pagina_juegos():
         cambiarJuego('memoria');
     </script>
     """
-    return HTMLResponse(content=pagina_con_menu("🎮 Juegos", contenido, "juegos"))
+    return HTMLResponse(content=pagina_con_menu("🎮 Juegos", contenido, "juegos", extra_scripts='<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>'))
 
 # ------------------------------------------------------------
 # PANEL DE ASIGNACIÓN POR CLUSTER (CORREGIDO, SIN DEPENDENCIAS)
