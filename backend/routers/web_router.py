@@ -5190,148 +5190,209 @@ async def pagina_juegos():
             _cartNuevaMano();
         }
 
-        // ══════════════ SÚPER TÉCNICO (plataformas estilo Mario) ══════════════
+        // ══════════════ SÚPER TÉCNICO (plataformas estilo Mario) — 3D con Three.js ══════════════
         let marioEstado = null;
+        let _mario3D = null;
+        function crearGoomba3D() {
+            const grupo = new THREE.Group();
+            const matCuerpo = new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.75 });
+            const cuerpo = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 10), matCuerpo);
+            cuerpo.position.y = 0.22; cuerpo.scale.y = 0.85; cuerpo.castShadow = true;
+            grupo.add(cuerpo);
+            const matPie = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.85 });
+            [-0.12, 0.12].forEach(x => {
+                const pie = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.08, 0.16), matPie);
+                pie.position.set(x, 0.04, 0.02); grupo.add(pie);
+            });
+            const matOjo = new THREE.MeshStandardMaterial({ color: 0xfef3c7 });
+            const matPupila = new THREE.MeshStandardMaterial({ color: 0x1f2937 });
+            [-0.08, 0.08].forEach(x => {
+                const ojo = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), matOjo);
+                ojo.position.set(x, 0.28, 0.19); grupo.add(ojo);
+                const pupila = new THREE.Mesh(new THREE.SphereGeometry(0.022, 6, 6), matPupila);
+                pupila.position.set(x, 0.27, 0.235); grupo.add(pupila);
+            });
+            return grupo;
+        }
+        function crearTuberia3D() {
+            const grupo = new THREE.Group();
+            const mat = new THREE.MeshStandardMaterial({ color: 0x0e7490, roughness: 0.4, metalness: 0.2 });
+            const cuerpo = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.7, 14), mat);
+            cuerpo.position.y = 0.35; cuerpo.castShadow = true; grupo.add(cuerpo);
+            const borde = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.27, 0.14, 14), mat);
+            borde.position.y = 0.66; grupo.add(borde);
+            return grupo;
+        }
+        function crearMoneda3D() {
+            const mat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.25, metalness: 0.85, emissive: 0x774d00, emissiveIntensity: 0.15 });
+            const moneda = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.045, 20), mat);
+            moneda.rotation.x = Math.PI / 2;
+            moneda.castShadow = true;
+            return moneda;
+        }
         function _marioTeclaDown(e) {
-            if (['ArrowUp',' ','Spacebar','Space'].includes(e.key) || e.code === 'Space') {
+            if (['ArrowUp', ' ', 'Spacebar', 'Space'].includes(e.key) || e.code === 'Space') {
                 e.preventDefault();
                 _marioSaltar();
             }
         }
         function _marioTeclaUp(e) {
             const st = marioEstado;
-            // "salto corto": si suelta el botón mientras aún sube, corta el impulso (mejor control)
-            if (st && st.jugador.vy < -3 && (['ArrowUp',' ','Spacebar','Space'].includes(e.key) || e.code === 'Space')) {
-                st.jugador.vy = -3;
+            if (st && st.vy > 2.6 && (['ArrowUp', ' ', 'Spacebar', 'Space'].includes(e.key) || e.code === 'Space')) {
+                st.vy = 2.6;
             }
         }
         function _marioSaltar() {
             const st = marioEstado;
             if (!st || !st.activo) return;
-            const j = st.jugador;
-            if (j.enSuelo) {
-                j.vy = -10.8; j.enSuelo = false; j.saltosDisponibles = 1;
-                st.particulas.push(..._marioPolvo(j.x, j.y + j.h));
-            } else if (j.saltosDisponibles > 0) {
-                j.vy = -9.2; j.saltosDisponibles--;
-                for (let i = 0; i < 6; i++) st.particulas.push({ x: j.x + j.w/2, y: j.y + j.h/2, vx: (Math.random()-0.5)*3, vy: Math.random()*-1, vida: 18, color: '#facc15' });
-            }
-        }
-        function _marioPolvo(x, y) {
-            const arr = [];
-            for (let i = 0; i < 5; i++) arr.push({ x: x + 10, y, vx: (Math.random()-0.5)*2.2, vy: -Math.random()*1.5, vida: 16, color: 'rgba(255,255,255,0.8)' });
-            return arr;
+            if (st.enSuelo) { st.vy = 6.0; st.enSuelo = false; st.saltosDisponibles = 1; }
+            else if (st.saltosDisponibles > 0) { st.vy = 5.2; st.saltosDisponibles--; }
         }
         function iniciarMario() {
             const cont = document.getElementById('juego-contenedor');
             cont.innerHTML = `
-                <h3 style="margin-top:0;color:var(--carrier-blue);">🏃 Súper Técnico</h3>
+                <h3 style="margin-top:0;color:var(--carrier-blue);">🏃 Súper Técnico 3D</h3>
                 <div class="juegos-stats"><span>⭐ Puntaje: <span id="mario-puntaje">0</span></span><span>🪙 Monedas: <span id="mario-monedas">0</span></span></div>
-                <canvas id="mario-canvas" class="juegos-canvas" width="340" height="220"></canvas>
+                <div id="mario-3d-contenedor" style="width:100%;max-width:420px;height:260px;margin:0 auto;border-radius:12px;overflow:hidden;background:#8ecbf0;"></div>
                 <div class="juegos-controles-touch"><button id="mario-salto-btn">⬆️ Saltar (doble salto disponible)</button></div>
-                <p style="text-align:center;font-size:.8rem;color:#94a3b8;margin-top:8px;">Flecha arriba / Espacio / botón para saltar — puedes saltar dos veces seguidas en el aire. Esquiva hongos, salta sobre ellos para eliminarlos y junta monedas.</p>
+                <p style="text-align:center;font-size:.8rem;color:#94a3b8;margin-top:8px;">Flecha arriba / Espacio / botón para saltar — puedes saltar dos veces seguidas en el aire. Esquiva hongos, salta sobre ellos para eliminarlos y junta monedas. Personaje 3D en tercera persona.</p>
                 <p style="text-align:center;margin-top:10px;"><button class="btn-primary" style="width:auto;padding:8px 18px;" onclick="iniciarMario()">🔄 Reiniciar</button></p>
             `;
-            const canvas = document.getElementById('mario-canvas');
-            const suelo = 180;
             marioEstado = {
-                jugador: { x: 50, y: suelo - 34, vy: 0, w: 22, h: 34, enSuelo: true, saltosDisponibles: 1 },
-                obstaculos: [], monedas: [], particulas: [], nubes: [0,110,220,330].map(x => ({x, y: 20 + (x%3)*10})),
-                distancia: 0, velocidad: 3.2, monedasN: 0,
-                puntaje: 0, activo: true, proximoSpawn: 60, fundido: 0
+                y: 0, vy: 0, enSuelo: true, saltosDisponibles: 1,
+                obstaculos: [], monedas: [],
+                distancia: 0, velocidad: 4.6, monedasN: 0, puntaje: 0, activo: true,
+                proximoSpawn: 2.2, fundido: 0, faseCarrera: 0
             };
+            const contenedor3D = document.getElementById('mario-3d-contenedor');
+            if (typeof THREE === 'undefined') {
+                contenedor3D.innerHTML = '<p style="color:#fff;text-align:center;padding-top:110px;">No se pudo cargar el motor 3D (revisa tu conexión a internet).</p>';
+                return;
+            }
+            if (_mario3D && _mario3D.renderer) { try { _mario3D.renderer.dispose(); } catch (e) {} }
+            const ancho = contenedor3D.clientWidth || 380, alto = 260;
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x8ecbf0);
+            scene.fog = new THREE.Fog(0x8ecbf0, 10, 34);
+            const camera = new THREE.PerspectiveCamera(48, ancho / alto, 0.1, 60);
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(ancho, alto);
+            renderer.shadowMap.enabled = true;
+            contenedor3D.innerHTML = '';
+            contenedor3D.appendChild(renderer.domElement);
+            scene.add(new THREE.HemisphereLight(0xbfe3ff, 0x3f6b34, 0.85));
+            const sol = new THREE.DirectionalLight(0xfff4d6, 1.1);
+            sol.position.set(-4, 8, 5);
+            sol.castShadow = true; sol.shadow.mapSize.set(512, 512);
+            scene.add(sol);
+            const piso = new THREE.Mesh(new THREE.PlaneGeometry(14, 80), new THREE.MeshStandardMaterial({ color: 0x6fae52, roughness: 0.95 }));
+            piso.rotation.x = -Math.PI / 2; piso.position.z = -20; piso.receiveShadow = true;
+            scene.add(piso);
+            const tablones = [];
+            for (let i = 0; i < 10; i++) {
+                const t = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.03, 0.25), new THREE.MeshStandardMaterial({ color: 0x557a3d, roughness: 0.9 }));
+                t.position.set(0, 0.016, -i * 4);
+                t.receiveShadow = true;
+                scene.add(t); tablones.push(t);
+            }
+            const tecnico = crearTecnico3D(0x1d4ed8);
+            tecnico.position.set(0, 0, 2);
+            scene.add(tecnico);
+            _mario3D = { scene, camera, renderer, tecnico, tablones, ultimoTiempo: performance.now() };
             document.getElementById('mario-salto-btn').onclick = _marioSaltar;
-            canvas.onpointerdown = _marioSaltar;
+            contenedor3D.onpointerdown = _marioSaltar;
             document.removeEventListener('keydown', _marioTeclaDown);
             document.addEventListener('keydown', _marioTeclaDown);
             document.removeEventListener('keyup', _marioTeclaUp);
             document.addEventListener('keyup', _marioTeclaUp);
             _rafActivo = requestAnimationFrame(_marioLoop);
         }
+        function _animarCorrerSalto(grupo, st, dt) {
+            const p = grupo.userData.partes;
+            if (st.enSuelo && st.activo) st.faseCarrera += dt * (7 + st.velocidad * 0.6);
+            const fase = st.faseCarrera;
+            const amp = st.enSuelo ? 0.75 : 0;
+            const suav = 1 - Math.pow(0.001, dt);
+            const objCaderaDer = st.enSuelo ? Math.sin(fase) * amp : -0.55;
+            const objCaderaIzq = st.enSuelo ? Math.sin(fase + Math.PI) * amp : 0.35;
+            const objRodillaDer = st.enSuelo ? Math.max(0, Math.sin(fase - 0.5)) * 1.0 : 0.9;
+            const objRodillaIzq = st.enSuelo ? Math.max(0, Math.sin(fase + Math.PI - 0.5)) * 1.0 : 0.5;
+            const objHombroDer = st.enSuelo ? Math.sin(fase + Math.PI) * 0.5 : -0.3;
+            const objHombroIzq = st.enSuelo ? Math.sin(fase) * 0.5 : -0.3;
+            p.piernaDer.cadera.rotation.x += (objCaderaDer - p.piernaDer.cadera.rotation.x) * suav;
+            p.piernaIzq.cadera.rotation.x += (objCaderaIzq - p.piernaIzq.cadera.rotation.x) * suav;
+            p.piernaDer.rodilla.rotation.x += (objRodillaDer - p.piernaDer.rodilla.rotation.x) * suav;
+            p.piernaIzq.rodilla.rotation.x += (objRodillaIzq - p.piernaIzq.rodilla.rotation.x) * suav;
+            p.brazoDer.hombro.rotation.x += (objHombroDer - p.brazoDer.hombro.rotation.x) * suav;
+            p.brazoIzq.hombro.rotation.x += (objHombroIzq - p.brazoIzq.hombro.rotation.x) * suav;
+            p.torso.rotation.x += ((st.enSuelo ? -0.06 : -0.14) - p.torso.rotation.x) * suav;
+            grupo.position.y = st.y;
+        }
         function _marioLoop() {
             const st = marioEstado;
-            if (!st || juegoActual !== 'mario') return;
-            const canvas = document.getElementById('mario-canvas');
-            const ctx = canvas.getContext('2d');
-            const suelo = 180;
+            if (!st || !_mario3D || juegoActual !== 'mario') return;
+            const ahora = performance.now();
+            const dt = Math.min(0.05, (ahora - _mario3D.ultimoTiempo) / 1000);
+            _mario3D.ultimoTiempo = ahora;
             if (st.activo) {
-                st.distancia += st.velocidad;
-                st.velocidad = Math.min(7, 3.2 + st.distancia / 2200);
-                st.jugador.vy += 0.6;
-                st.jugador.y += st.jugador.vy;
-                if (st.jugador.y >= suelo - st.jugador.h) {
-                    if (!st.jugador.enSuelo) st.particulas.push(..._marioPolvo(st.jugador.x, suelo));
-                    st.jugador.y = suelo - st.jugador.h;
-                    st.jugador.vy = 0;
-                    st.jugador.enSuelo = true;
-                    st.jugador.saltosDisponibles = 1;
-                } else st.jugador.enSuelo = false;
-                st.proximoSpawn -= st.velocidad;
+                st.distancia += st.velocidad * dt;
+                st.velocidad = Math.min(9.5, 4.6 + st.distancia / 60);
+                st.vy -= 15 * dt;
+                st.y += st.vy * dt;
+                if (st.y <= 0) { st.y = 0; st.vy = 0; st.enSuelo = true; st.saltosDisponibles = 1; }
+                else st.enSuelo = false;
+                st.proximoSpawn -= st.velocidad * dt;
                 if (st.proximoSpawn <= 0) {
-                    st.proximoSpawn = 90 + Math.random() * 90;
+                    st.proximoSpawn = 2.6 + Math.random() * 2.2;
                     const esGoomba = Math.random() < 0.65;
-                    st.obstaculos.push({ x: canvas.width + 20, y: suelo - (esGoomba ? 22 : 34), w: esGoomba ? 24 : 22, h: esGoomba ? 22 : 34, tipo: esGoomba ? 'goomba' : 'tuberia', vivo: true });
-                    if (Math.random() < 0.55) st.monedas.push({ x: canvas.width + 60 + Math.random() * 40, y: suelo - 70 - Math.random() * 40, tomada: false, giro: 0 });
+                    const mesh = esGoomba ? crearGoomba3D() : crearTuberia3D();
+                    mesh.position.set(0, 0, -32 - Math.random() * 6);
+                    _mario3D.scene.add(mesh);
+                    st.obstaculos.push({ mesh, tipo: esGoomba ? 'goomba' : 'tuberia', alto: esGoomba ? 0.46 : 0.7, vivo: true });
+                    if (Math.random() < 0.55) {
+                        const moneda = crearMoneda3D();
+                        moneda.position.set(0, 0.85 + Math.random() * 0.5, -30 - Math.random() * 6);
+                        _mario3D.scene.add(moneda);
+                        st.monedas.push({ mesh: moneda, tomada: false });
+                    }
                 }
-                st.obstaculos.forEach(o => o.x -= st.velocidad);
-                st.monedas.forEach(m => { m.x -= st.velocidad; m.giro += 0.15; });
-                st.nubes.forEach(n => { n.x -= st.velocidad * 0.25; if (n.x < -30) n.x = canvas.width + 30; });
-                st.obstaculos = st.obstaculos.filter(o => o.x > -40 && o.vivo);
-                st.monedas = st.monedas.filter(m => m.x > -30 && !m.tomada);
-                const j = st.jugador;
-                for (const o of st.obstaculos) {
-                    if (j.x < o.x + o.w && j.x + j.w > o.x && j.y < o.y + o.h && j.y + j.h > o.y) {
-                        const cayendoEncima = j.vy > 0 && (j.y + j.h - o.h/2) < o.y + 10 && o.tipo === 'goomba';
+                st.obstaculos.forEach(o => o.mesh.position.z += st.velocidad * dt);
+                st.monedas.forEach(m => { m.mesh.position.z += st.velocidad * dt; m.mesh.rotation.z += dt * 4; });
+                _mario3D.tablones.forEach(t => { t.position.z += st.velocidad * dt; if (t.position.z > 6) t.position.z -= 40; });
+                st.obstaculos.forEach(o => {
+                    if (!o.vivo) return;
+                    const dz = Math.abs(o.mesh.position.z - 2);
+                    if (dz < 0.42) {
+                        const cayendoEncima = o.tipo === 'goomba' && st.vy < 0 && st.y > o.alto * 0.4;
                         if (cayendoEncima) {
-                            o.vivo = false; j.vy = -7.5; j.saltosDisponibles = 1; st.puntaje += 50;
-                            for (let i = 0; i < 8; i++) st.particulas.push({ x: o.x + o.w/2, y: o.y, vx: (Math.random()-0.5)*3, vy: -Math.random()*2, vida: 22, color: '#a16207' });
-                        } else {
-                            st.activo = false; _marioFin();
-                        }
+                            o.vivo = false; st.vy = 6.2; st.saltosDisponibles = 1; st.puntaje += 50;
+                        } else if (st.y < o.alto - 0.05) { st.activo = false; _marioFin(); }
                     }
-                }
-                for (const m of st.monedas) {
-                    if (!m.tomada && j.x < m.x + 14 && j.x + j.w > m.x && j.y < m.y + 14 && j.y + j.h > m.y) {
-                        m.tomada = true; st.monedasN++; st.puntaje += 10;
-                        for (let i = 0; i < 8; i++) st.particulas.push({ x: m.x, y: m.y, vx: (Math.random()-0.5)*3, vy: -Math.random()*2.5, vida: 20, color: '#fde047' });
-                    }
-                }
-                st.particulas.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += 0.1; p.vida--; });
-                st.particulas = st.particulas.filter(p => p.vida > 0);
-                st.puntaje = Math.floor(st.distancia / 5) + st.monedasN * 10;
+                });
+                st.monedas.forEach(m => {
+                    if (m.tomada) return;
+                    const dz = Math.abs(m.mesh.position.z - 2);
+                    const dy = Math.abs(m.mesh.position.y - (st.y + 1.1));
+                    if (dz < 0.4 && dy < 0.55) { m.tomada = true; st.monedasN++; st.puntaje += 10; }
+                });
+                st.obstaculos = st.obstaculos.filter(o => {
+                    if (!o.vivo || o.mesh.position.z > 5) { _mario3D.scene.remove(o.mesh); return false; }
+                    return true;
+                });
+                st.monedas = st.monedas.filter(m => {
+                    if (m.tomada || m.mesh.position.z > 5) { _mario3D.scene.remove(m.mesh); return false; }
+                    return true;
+                });
+                st.puntaje = Math.floor(st.distancia * 3) + st.monedasN * 10;
                 document.getElementById('mario-puntaje').textContent = st.puntaje;
                 document.getElementById('mario-monedas').textContent = st.monedasN;
             } else {
-                st.fundido = Math.min(1, st.fundido + 0.05);
+                st.fundido = Math.min(1, st.fundido + dt * 2.2);
             }
-            // ── render ──
-            const grad = ctx.createLinearGradient(0, 0, 0, suelo);
-            grad.addColorStop(0, '#38bdf8'); grad.addColorStop(1, '#bae6fd');
-            ctx.fillStyle = grad; ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = 'rgba(255,255,255,0.85)';
-            st.nubes.forEach(n => { ctx.beginPath(); ctx.ellipse(n.x, n.y, 20, 9, 0, 0, Math.PI*2); ctx.ellipse(n.x+14, n.y+3, 14, 7, 0, 0, Math.PI*2); ctx.fill(); });
-            ctx.fillStyle = '#7cb96f'; ctx.fillRect(0, suelo, canvas.width, canvas.height - suelo);
-            ctx.fillStyle = '#4d7c3f'; ctx.fillRect(0, suelo, canvas.width, 5);
-            const j = st.jugador;
-            const pose = !j.enSuelo ? 'salto' : (st.activo ? 'correr' : 'parado');
-            dibujarTecnico(ctx, j.x + j.w/2, j.y + j.h, 0.62, { dir: 1, pose, frame: Math.floor(st.distancia/9)%2, dañado: !st.activo });
-            st.obstaculos.forEach(o => {
-                if (o.tipo === 'goomba') {
-                    ctx.fillStyle = '#92400e'; ctx.beginPath(); ctx.ellipse(o.x+o.w/2, o.y+o.h*0.6, o.w/2, o.h*0.45, 0, 0, Math.PI*2); ctx.fill();
-                    ctx.fillStyle = '#fef3c7'; ctx.beginPath(); ctx.arc(o.x+o.w*0.35, o.y+o.h*0.5, 2.6, 0, Math.PI*2); ctx.arc(o.x+o.w*0.65, o.y+o.h*0.5, 2.6, 0, Math.PI*2); ctx.fill();
-                    ctx.fillStyle = '#1f2937'; ctx.beginPath(); ctx.arc(o.x+o.w*0.35, o.y+o.h*0.5, 1.2, 0, Math.PI*2); ctx.arc(o.x+o.w*0.65, o.y+o.h*0.5, 1.2, 0, Math.PI*2); ctx.fill();
-                } else {
-                    ctx.fillStyle = '#0e7490'; ctx.fillRect(o.x, o.y, o.w, o.h);
-                    ctx.fillStyle = '#22d3ee'; ctx.fillRect(o.x-2, o.y, o.w+4, 8);
-                }
-            });
-            st.monedas.forEach(m => {
-                const ancho = Math.abs(Math.cos(m.giro)) * 8 + 1.5;
-                ctx.fillStyle = '#fbbf24'; ctx.beginPath(); ctx.ellipse(m.x+7, m.y+7, ancho, 8, 0, 0, Math.PI*2); ctx.fill();
-                ctx.strokeStyle = '#b45309'; ctx.lineWidth = 1.2; ctx.stroke();
-            });
-            st.particulas.forEach(p => { ctx.globalAlpha = Math.max(0, p.vida/20); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, 2.4, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1; });
-            if (st.fundido > 0) { ctx.fillStyle = `rgba(15,23,42,${st.fundido * 0.55})`; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+            _animarCorrerSalto(_mario3D.tecnico, st, dt);
+            _mario3D.camera.position.set(0, 2.2 + st.y * 0.15, 6.4);
+            _mario3D.camera.lookAt(0, 1.15 + st.y * 0.4, -1);
+            _mario3D.renderer.render(_mario3D.scene, _mario3D.camera);
             if (st.activo || st.fundido < 1) _rafActivo = requestAnimationFrame(_marioLoop);
         }
         function _marioFin() {
@@ -5342,8 +5403,36 @@ async def pagina_juegos():
             }, 450);
         }
 
-        // ══════════════ CARRERAS ══════════════
+        // ══════════════ CARRERAS — 3D con Three.js ══════════════
         let carEstado = null;
+        let _car3D = null;
+        function crearVehiculo3D(color, conductor) {
+            const grupo = new THREE.Group();
+            const DS = THREE.DoubleSide;
+            const matCuerpo = new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.3, side: DS });
+            const matVidrio = new THREE.MeshStandardMaterial({ color: 0xbfe3ff, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.75, side: DS });
+            const matLlanta = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.85, side: DS });
+            const matFranja = new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.4, side: DS });
+            const cuerpo = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.55, 1.9), matCuerpo);
+            cuerpo.position.y = 0.5; cuerpo.castShadow = true; grupo.add(cuerpo);
+            const cabina = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.4, 0.9), matVidrio);
+            cabina.position.set(0, 0.92, 0.15); grupo.add(cabina);
+            const franja = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.1, 0.3), matFranja);
+            franja.position.set(0, 0.35, 0.55); grupo.add(franja);
+            [[-0.42, -0.65], [0.42, -0.65], [-0.42, 0.65], [0.42, 0.65]].forEach(([x, z]) => {
+                const llanta = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.22, 14), matLlanta);
+                llanta.rotation.z = Math.PI / 2;
+                llanta.position.set(x, 0.22, z); llanta.castShadow = true;
+                grupo.add(llanta);
+            });
+            if (conductor) {
+                const cabeza = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), new THREE.MeshStandardMaterial({ color: 0xf1c27d }));
+                cabeza.position.set(0, 1.0, 0.05); grupo.add(cabeza);
+                const casco = new THREE.Mesh(new THREE.SphereGeometry(0.155, 10, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.3 }));
+                casco.position.set(0, 1.05, 0.05); grupo.add(casco);
+            }
+            return grupo;
+        }
         function _carrerasTecla(e) {
             if (!carEstado || !carEstado.activo) return;
             if (e.key === 'ArrowLeft') _carrerasCambiarCarril(-1);
@@ -5364,25 +5453,64 @@ async def pagina_juegos():
         function iniciarCarreras() {
             const cont = document.getElementById('juego-contenedor');
             cont.innerHTML = `
-                <h3 style="margin-top:0;color:var(--carrier-blue);">🏎️ Carreras — Unidad Móvil</h3>
+                <h3 style="margin-top:0;color:var(--carrier-blue);">🏎️ Carreras 3D — Unidad Móvil</h3>
                 <div class="juegos-stats"><span>⭐ Puntaje: <span id="car-puntaje">0</span></span><span>🏁 Velocidad: <span id="car-velocidad">1.0x</span></span></div>
-                <canvas id="car-canvas" class="juegos-canvas" width="240" height="380"></canvas>
+                <div id="car-3d-contenedor" style="width:100%;max-width:420px;height:280px;margin:0 auto;border-radius:12px;overflow:hidden;background:#1e293b;"></div>
                 <div class="juegos-controles-touch">
                     <button id="car-izq-btn">⬅️</button>
                     <button id="car-freno-btn">🐢 Frenar</button>
                     <button id="car-acel-btn">🚀 Acelerar</button>
                     <button id="car-der-btn">➡️</button>
                 </div>
-                <p style="text-align:center;font-size:.8rem;color:#94a3b8;margin-top:8px;">Flechas ← → o botones para cambiar de carril. ↑/Acelerar suma más puntos (más riesgo), ↓/Frenar te da más control.</p>
+                <p style="text-align:center;font-size:.8rem;color:#94a3b8;margin-top:8px;">Flechas ← → o botones para cambiar de carril. ↑/Acelerar suma más puntos (más riesgo), ↓/Frenar te da más control. Vehículo 3D con cámara en tercera persona.</p>
                 <p style="text-align:center;margin-top:10px;"><button class="btn-primary" style="width:auto;padding:8px 18px;" onclick="iniciarCarreras()">🔄 Reiniciar</button></p>
             `;
-            const canvas = document.getElementById('car-canvas');
-            const laneW = canvas.width / 3;
             carEstado = {
-                carril: 1, xVisual: laneW * 1.5, xAnterior: laneW * 1.5, inclinacion: 0,
-                enemigos: [], puntaje: 0, activo: true,
-                velocidad: 2.8, proximoSpawn: 40, rayas: 0, acelerando: false, frenando: false, fundido: 0
+                carril: 1, xVisual: 0, inclinacion: 0, enemigos: [], puntaje: 0, activo: true,
+                velocidad: 7, proximoSpawn: 1.4, acelerando: false, frenando: false, fundido: 0
             };
+            const contenedor3D = document.getElementById('car-3d-contenedor');
+            if (typeof THREE === 'undefined') {
+                contenedor3D.innerHTML = '<p style="color:#fff;text-align:center;padding-top:120px;">No se pudo cargar el motor 3D (revisa tu conexión a internet).</p>';
+                return;
+            }
+            if (_car3D && _car3D.renderer) { try { _car3D.renderer.dispose(); } catch (e) {} }
+            const ancho = contenedor3D.clientWidth || 380, alto = 280;
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1e293b);
+            scene.fog = new THREE.Fog(0x1e293b, 10, 34);
+            const camera = new THREE.PerspectiveCamera(50, ancho / alto, 0.1, 60);
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(ancho, alto);
+            renderer.shadowMap.enabled = true;
+            contenedor3D.innerHTML = '';
+            contenedor3D.appendChild(renderer.domElement);
+            scene.add(new THREE.HemisphereLight(0x8fa8c8, 0x0f172a, 0.75));
+            const luzDireccional = new THREE.DirectionalLight(0xfff4d6, 1.0);
+            luzDireccional.position.set(3, 8, 4);
+            luzDireccional.castShadow = true; luzDireccional.shadow.mapSize.set(512, 512);
+            scene.add(luzDireccional);
+            const pista = new THREE.Mesh(new THREE.PlaneGeometry(6.2, 80), new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.95 }));
+            pista.rotation.x = -Math.PI / 2; pista.position.z = -20; pista.receiveShadow = true;
+            scene.add(pista);
+            const matPasto = new THREE.MeshStandardMaterial({ color: 0x14532d, roughness: 0.95 });
+            [-1, 1].forEach(lado => {
+                const pasto = new THREE.Mesh(new THREE.PlaneGeometry(3, 80), matPasto);
+                pasto.rotation.x = -Math.PI / 2; pasto.position.set(lado * 4.6, -0.01, -20); pasto.receiveShadow = true;
+                scene.add(pasto);
+            });
+            const marcas = [];
+            for (let i = 0; i < 12; i++) {
+                [-1.7, 1.7].forEach(x => {
+                    const marca = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, 1.2), new THREE.MeshStandardMaterial({ color: 0xf8fafc }));
+                    marca.position.set(x, 0.011, -i * 6);
+                    scene.add(marca); marcas.push(marca);
+                });
+            }
+            const vehiculo = crearVehiculo3D(0x1d4ed8, true);
+            vehiculo.position.set(0, 0, 2);
+            scene.add(vehiculo);
+            _car3D = { scene, camera, renderer, vehiculo, marcas, ultimoTiempo: performance.now() };
             document.getElementById('car-izq-btn').onclick = () => _carrerasCambiarCarril(-1);
             document.getElementById('car-der-btn').onclick = () => _carrerasCambiarCarril(1);
             const acelBtn = document.getElementById('car-acel-btn'), frenoBtn = document.getElementById('car-freno-btn');
@@ -5398,60 +5526,50 @@ async def pagina_juegos():
         }
         function _carrerasLoop() {
             const st = carEstado;
-            if (!st || juegoActual !== 'carreras') return;
-            const canvas = document.getElementById('car-canvas');
-            const ctx = canvas.getContext('2d');
-            const laneW = canvas.width / 3;
+            if (!st || !_car3D || juegoActual !== 'carreras') return;
+            const ahora = performance.now();
+            const dt = Math.min(0.05, (ahora - _car3D.ultimoTiempo) / 1000);
+            _car3D.ultimoTiempo = ahora;
+            const laneW = 1.7;
             if (st.activo) {
                 const factor = st.acelerando ? 1.5 : (st.frenando ? 0.55 : 1);
-                st.puntaje += Math.round(1 * factor);
-                st.velocidad = Math.min(9.5, (2.8 + st.puntaje / 900) * factor);
-                st.xAnterior = st.xVisual;
-                const xObjetivo = laneW * st.carril + laneW / 2;
-                st.xVisual += (xObjetivo - st.xVisual) * 0.28;
-                const velLateral = st.xVisual - st.xAnterior;
-                st.inclinacion += (Math.max(-0.28, Math.min(0.28, velLateral * 0.045)) - st.inclinacion) * 0.3;
-                st.rayas = (st.rayas + st.velocidad) % 40;
-                st.proximoSpawn -= st.velocidad;
+                st.puntaje += Math.round(12 * factor * dt);
+                st.velocidad = Math.min(15, (7 + st.puntaje / 140) * factor);
+                const xObjetivo = (st.carril - 1) * laneW;
+                const xAnterior = st.xVisual;
+                st.xVisual += (xObjetivo - st.xVisual) * Math.min(1, 8 * dt);
+                const velLateral = (st.xVisual - xAnterior) / Math.max(dt, 0.001);
+                st.inclinacion += (Math.max(-0.32, Math.min(0.32, velLateral * -0.045)) - st.inclinacion) * Math.min(1, 6 * dt);
+                st.proximoSpawn -= dt;
                 if (st.proximoSpawn <= 0) {
-                    st.proximoSpawn = Math.max(26, 55 - st.puntaje / 200);
-                    st.enemigos.push({ carril: Math.floor(Math.random() * 3), y: -60, w: 34, h: 54 });
+                    st.proximoSpawn = Math.max(0.55, 1.5 - st.puntaje / 3500);
+                    const mesh = crearVehiculo3D(0xdc2626, false);
+                    const carril = Math.floor(Math.random() * 3);
+                    mesh.position.set((carril - 1) * laneW, 0, -34 - Math.random() * 6);
+                    _car3D.scene.add(mesh);
+                    st.enemigos.push({ mesh, carril });
                 }
-                st.enemigos.forEach(en => en.y += st.velocidad * 3.2);
-                st.enemigos = st.enemigos.filter(en => en.y < canvas.height + 60);
-                const jx = st.xVisual - 15, jy = canvas.height - 90, jw = 30, jh = 54;
+                st.enemigos.forEach(en => en.mesh.position.z += st.velocidad * dt);
+                _car3D.marcas.forEach(m => { m.position.z += st.velocidad * dt; if (m.position.z > 6) m.position.z -= 72; });
                 for (const en of st.enemigos) {
-                    const ex = laneW * en.carril + laneW / 2 - en.w / 2;
-                    if (jx < ex + en.w && jx + jw > ex && jy < en.y + en.h && jy + jh > en.y) {
-                        st.activo = false; _carrerasFin();
-                    }
+                    const dz = Math.abs(en.mesh.position.z - 2);
+                    const dx = Math.abs(en.mesh.position.x - st.xVisual);
+                    if (dz < 1.05 && dx < 0.82) { st.activo = false; _carrerasFin(); }
                 }
+                st.enemigos = st.enemigos.filter(en => {
+                    if (en.mesh.position.z > 5) { _car3D.scene.remove(en.mesh); return false; }
+                    return true;
+                });
                 document.getElementById('car-puntaje').textContent = st.puntaje;
-                document.getElementById('car-velocidad').textContent = (st.velocidad / 2.8).toFixed(1) + 'x';
+                document.getElementById('car-velocidad').textContent = (st.velocidad / 7).toFixed(1) + 'x';
             } else {
-                st.fundido = Math.min(1, st.fundido + 0.05);
+                st.fundido = Math.min(1, st.fundido + dt * 2.2);
             }
-            // ── render ──
-            const gradPista = ctx.createLinearGradient(0, 0, 0, canvas.height);
-            gradPista.addColorStop(0, '#1f2937'); gradPista.addColorStop(1, '#4b5563');
-            ctx.fillStyle = gradPista; ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = '#065f46';
-            ctx.fillRect(0, 0, 8, canvas.height); ctx.fillRect(canvas.width - 8, 0, 8, canvas.height);
-            ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 3; ctx.setLineDash([18, 18]);
-            for (let i = 1; i < 3; i++) {
-                ctx.beginPath(); ctx.moveTo(laneW * i, -40 + st.rayas); ctx.lineTo(laneW * i, canvas.height); ctx.stroke();
-            }
-            ctx.setLineDash([]);
-            st.enemigos.forEach(en => {
-                const ex = laneW * en.carril + laneW / 2;
-                dibujarVehiculo(ctx, ex, en.y + en.h, en.w, en.h, '#dc2626', { franja: '#f8fafc' });
-            });
-            dibujarVehiculo(ctx, st.xVisual, canvas.height - 36, 34, 58, '#1d4ed8', { conductor: true, franja: '#fbbf24', inclinacion: st.inclinacion });
-            if (st.acelerando && st.activo) {
-                ctx.fillStyle = 'rgba(251,191,36,0.6)';
-                ctx.beginPath(); ctx.moveTo(st.xVisual - 8, canvas.height - 6); ctx.lineTo(st.xVisual, canvas.height + 14); ctx.lineTo(st.xVisual + 8, canvas.height - 6); ctx.fill();
-            }
-            if (st.fundido > 0) { ctx.fillStyle = `rgba(15,23,42,${st.fundido * 0.6})`; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+            _car3D.vehiculo.position.x = st.xVisual;
+            _car3D.vehiculo.rotation.z = st.inclinacion;
+            _car3D.camera.position.set(st.xVisual * 0.4, 2.4, 6.6);
+            _car3D.camera.lookAt(st.xVisual * 0.4, 0.9, -3);
+            _car3D.renderer.render(_car3D.scene, _car3D.camera);
             if (st.activo || st.fundido < 1) _rafActivo = requestAnimationFrame(_carrerasLoop);
         }
         function _carrerasFin() {
