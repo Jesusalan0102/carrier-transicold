@@ -26,6 +26,7 @@ from routers.inventario_router  import router as inventario_router
 from routers.asignaciones_router import router as asignaciones_router
 from routers.evidencias_router  import router as evidencias_router
 from routers.toma_valores_router import router as toma_valores_router
+from routers.pdi_router         import router as pdi_router
 from routers.comentarios_router import router as comentarios_router
 from routers.alarmas_router     import router as alarmas_router
 from routers.juegos_router      import router as juegos_router
@@ -71,6 +72,7 @@ app.include_router(inventario_router)
 app.include_router(asignaciones_router)
 app.include_router(evidencias_router)
 app.include_router(toma_valores_router)
+app.include_router(pdi_router)
 app.include_router(comentarios_router)
 app.include_router(alarmas_router)
 app.include_router(juegos_router)

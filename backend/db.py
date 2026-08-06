@@ -447,6 +447,94 @@ def _run_migrations():
                 """)
                 conn.commit()
 
+                # ── toma_valores_campos / toma_valores_datos (red de seguridad;  ──
+                # ── ya existían en producción pero no estaban en migraciones)    ──
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS toma_valores_campos (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        campo_nombre VARCHAR(150) NOT NULL UNIQUE,
+                        campo_orden INT NOT NULL DEFAULT 0
+                    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+                """)
+                conn.commit()
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS toma_valores_datos (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        asignacion_id INT NOT NULL,
+                        campo_nombre VARCHAR(150) NOT NULL,
+                        valor TEXT,
+                        INDEX idx_asignacion (asignacion_id),
+                        INDEX idx_campo (campo_nombre)
+                    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+                """)
+                conn.commit()
+
+                # ── lotes_config (tipo de reefer asignado a cada lote: x4/vector) ─
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS lotes_config (
+                        id_lote      VARCHAR(50) NOT NULL PRIMARY KEY,
+                        tipo_reefer  VARCHAR(20) DEFAULT NULL,
+                        updated_by   VARCHAR(100) DEFAULT NULL,
+                        updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+                """)
+                conn.commit()
+
+                # ── pdi_inspecciones (encabezado de cada PDI, 1 por unidad) ───────
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS pdi_inspecciones (
+                        id                    INT AUTO_INCREMENT PRIMARY KEY,
+                        id_lote               VARCHAR(50)  DEFAULT NULL,
+                        unit_number           VARCHAR(50)  NOT NULL,
+                        tipo                  VARCHAR(20)  NOT NULL,
+                        cliente               VARCHAR(150) DEFAULT '',
+                        direccion             VARCHAR(255) DEFAULT '',
+                        ciudad_estado_cp      VARCHAR(150) DEFAULT '',
+                        fabricante_trailer    VARCHAR(100) DEFAULT '',
+                        modelo_trailer        VARCHAR(100) DEFAULT '',
+                        vin_trailer           VARCHAR(50)  DEFAULT '',
+                        numero_flota          VARCHAR(50)  DEFAULT '',
+                        distribuidor          VARCHAR(150) DEFAULT '',
+                        modelo_unidad         VARCHAR(100) DEFAULT '',
+                        numero_serie_unidad   VARCHAR(100) DEFAULT '',
+                        numero_serie_motor    VARCHAR(100) DEFAULT '',
+                        numero_serie_compresor VARCHAR(100) DEFAULT '',
+                        numero_serie_ees      VARCHAR(100) DEFAULT '',
+                        numero_serie_generador VARCHAR(100) DEFAULT '',
+                        modelo_2do_evap       VARCHAR(100) DEFAULT '',
+                        numero_serie_2do_evap VARCHAR(100) DEFAULT '',
+                        modelo_3er_evap       VARCHAR(100) DEFAULT '',
+                        numero_serie_3er_evap VARCHAR(100) DEFAULT '',
+                        tecnico_instalo       VARCHAR(150) DEFAULT '',
+                        fecha_instalacion     VARCHAR(50)  DEFAULT '',
+                        dealer_firma          VARCHAR(150) DEFAULT '',
+                        tecnico_inspecciono   VARCHAR(150) DEFAULT '',
+                        comentarios           TEXT,
+                        estado                VARCHAR(20)  NOT NULL DEFAULT 'borrador',
+                        created_by            VARCHAR(100) DEFAULT '',
+                        created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        INDEX idx_unit (unit_number),
+                        INDEX idx_lote (id_lote)
+                    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+                """)
+                conn.commit()
+
+                # ── pdi_datos (EAV: checklist + lecturas + tabla de config) ───────
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS pdi_datos (
+                        id             INT AUTO_INCREMENT PRIMARY KEY,
+                        inspeccion_id  INT NOT NULL,
+                        campo_clave    VARCHAR(150) NOT NULL,
+                        valor          TEXT,
+                        origen         VARCHAR(20) DEFAULT 'manual',
+                        UNIQUE KEY uniq_insp_campo (inspeccion_id, campo_clave),
+                        INDEX idx_inspeccion (inspeccion_id)
+                    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+                """)
+                conn.commit()
+                print("✅ Migración: tablas de PDI (lotes_config, pdi_inspecciones, pdi_datos) verificadas")
+
     except Exception as e:
         print(f"⚠️  Migración omitida: {e}")
     finally:

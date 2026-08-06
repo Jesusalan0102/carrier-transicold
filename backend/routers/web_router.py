@@ -285,6 +285,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/tickets', label: '🎫 Tickets' }},
                     {{ href: '/app/inventario', label: '📦 Inventarios' }},
                     {{ href: '/app/unidades', label: '📸 Registro de Unidades' }},
+                    {{ href: '/app/pdi', label: '📋 PDI Pre-Entrega' }},
                     {{ href: '/app/usuarios', label: '👥 Gestión de Usuarios' }},
                     {{ href: '/app/cluster', label: '⚡ Asignación por Cluster' }},
                     {{ href: '/app/asistencia', label: '📍 Control de Asistencia' }},
@@ -299,6 +300,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/tickets', label: '🎫 Tickets' }},
                     {{ href: '/app/inventario', label: '📦 Inventarios' }},
                     {{ href: '/app/unidades', label: '📸 Registro de Unidades' }},
+                    {{ href: '/app/pdi', label: '📋 PDI Pre-Entrega' }},
                     {{ href: '/app/usuarios', label: '👥 Gestión de Usuarios' }},
                     {{ href: '/app/asistencia', label: '📍 Control de Asistencia' }},
                     {{ href: '/app/alarmas', label: '🔔 Alarm Troubleshooting' }},
@@ -308,6 +310,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/mis-tareas', label: '🎯 Mis Tareas' }},
                     {{ href: '/app/solicitud', label: '🔔 Nueva Solicitud' }},
                     {{ href: '/app/mis-tickets', label: '🎫 Mis Tickets' }},
+                    {{ href: '/app/pdi', label: '📋 PDI Pre-Entrega' }},
                     {{ href: '/app/checkin', label: '📍 Registrar Asistencia' }},
                     {{ href: '/app/juegos', label: '🎮 Juegos' }},
                 ];
@@ -2117,6 +2120,258 @@ async def unidades():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("📸 Registro de Unidades", contenido, "unidades"))
+
+# ------------------------------------------------------------
+# PDI — PRE-DELIVERY INSPECTION (Inspección Pre-Entrega)
+# ------------------------------------------------------------
+@router.get("/app/pdi", response_class=HTMLResponse)
+async def pdi_lista():
+    contenido = """
+    <div class="inv-info-bar" id="infoBar">📋 Selecciona un lote para asignar el tipo de reefer (X4 / Vector) y ver el estado de PDI de cada unidad.</div>
+
+    <div id="loteConfigAdmin" style="display:none; margin-bottom:16px;"></div>
+
+    <div style="display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; align-items:center;">
+        <select id="selLote" onchange="cargarUnidadesLote()" style="min-width:220px;"><option value="">— Selecciona un lote —</option></select>
+        <span id="tipoLoteBadge"></span>
+    </div>
+
+    <div id="pdiTabla"></div>
+
+    <script>
+        const fetchAuth = window.fetchAuth;
+        let lotesConfig = [];
+
+        async function cargarLotes() {
+            const res = await fetchAuth('/api/pdi/lotes-config');
+            lotesConfig = await res.json();
+            const sel = document.getElementById('selLote');
+            sel.innerHTML = '<option value="">— Selecciona un lote —</option>' +
+                lotesConfig.map(l => `<option value="${l.id_lote}">${l.id_lote} (${l.total_unidades} unidades)${l.tipo_reefer ? ' — ' + l.tipo_reefer.toUpperCase() : ' — sin tipo asignado'}</option>`).join('');
+        }
+
+        function renderTipoBadge(lote) {
+            if (!lote) { document.getElementById('tipoLoteBadge').innerHTML = ''; return; }
+            const badge = lote.tipo_reefer
+                ? `<span class="user-chip" style="background:#0057A8;">🧊 ${lote.tipo_reefer.toUpperCase()}</span>`
+                : `<span class="user-chip" style="background:#d97706;">⚠️ Sin tipo de reefer asignado</span>`;
+            document.getElementById('tipoLoteBadge').innerHTML = badge;
+
+            if (window.role === 'admin') {
+                document.getElementById('loteConfigAdmin').style.display = 'block';
+                document.getElementById('loteConfigAdmin').innerHTML = `
+                    <div style="background:var(--bg-surface); border-radius:12px; padding:14px 18px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+                        <strong>Tipo de reefer para el lote ${lote.id_lote}:</strong>
+                        <button class="btn-primary" onclick="setTipoLote('${lote.id_lote}','x4')">X4 7300/7500</button>
+                        <button class="btn-primary" onclick="setTipoLote('${lote.id_lote}','vector')">Vector 8100/8500/8600MT/8611MT</button>
+                    </div>`;
+            }
+        }
+
+        async function setTipoLote(id_lote, tipo) {
+            const res = await fetchAuth('/api/pdi/lotes-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({id_lote, tipo_reefer: tipo}) });
+            const data = await res.json();
+            if (!res.ok) { alert(data.detail || 'Error'); return; }
+            await cargarLotes();
+            const sel = document.getElementById('selLote');
+            sel.value = id_lote;
+            cargarUnidadesLote();
+        }
+
+        async function cargarUnidadesLote() {
+            const id_lote = document.getElementById('selLote').value;
+            const lote = lotesConfig.find(l => l.id_lote === id_lote);
+            renderTipoBadge(lote);
+            const tabla = document.getElementById('pdiTabla');
+            if (!id_lote) { tabla.innerHTML = ''; return; }
+
+            const [unidadesRes, pdisRes] = await Promise.all([
+                fetchAuth('/api/unidades/'),
+                fetchAuth(`/api/pdi?id_lote=${encodeURIComponent(id_lote)}`)
+            ]);
+            const unidades = (await unidadesRes.json()).filter(u => u.id_lote === id_lote);
+            const pdis = await pdisRes.json();
+            const pdiPorUnidad = {};
+            pdis.forEach(p => { pdiPorUnidad[p.unit_number] = p; });
+
+            let html = '<table><thead><tr><th>Unidad</th><th>Modelo</th><th>Tipo PDI</th><th>Estado</th><th>Acción</th></tr></thead><tbody>';
+            unidades.forEach(u => {
+                const p = pdiPorUnidad[u.unit_number];
+                const estado = p ? p.estado : 'sin iniciar';
+                const colores = {'sin iniciar':'#9ca3af','borrador':'#d97706','completado':'#16a34a'};
+                html += `<tr>
+                    <td><strong>${u.unit_number}</strong></td>
+                    <td>${u.reefer_model || '<em>sin capturar</em>'}</td>
+                    <td>${p ? p.tipo.toUpperCase() : '—'}</td>
+                    <td><span style="color:${colores[estado]}; font-weight:700;">${estado}</span></td>
+                    <td><button class="btn-primary" onclick="location.href='/app/pdi/${u.unit_number}'">📋 Abrir PDI</button></td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            if (!unidades.length) html = '<p style="color:var(--text-secondary);">Este lote no tiene unidades registradas todavía.</p>';
+            tabla.innerHTML = html;
+        }
+
+        cargarLotes();
+    </script>
+    """
+    return HTMLResponse(content=pagina_con_menu("📋 PDI — Inspección Pre-Entrega", contenido, "pdi"))
+
+
+@router.get("/app/pdi/{unit_number}", response_class=HTMLResponse)
+async def pdi_form(unit_number: str):
+    contenido = f"""
+    <div id="pdiRoot">Cargando PDI de {unit_number}…</div>
+
+    <script>
+        const fetchAuth = window.fetchAuth;
+        const UNIT = {unit_number!r};
+        let PDI_ID = null, TEMPLATE = null, DATOS = {{}};
+
+        function chk(clave) {{ return DATOS[clave] === '1'; }}
+        function val(clave) {{ return DATOS[clave] || ''; }}
+        function esc(s) {{ return (s || '').toString().replace(/"/g, '&quot;'); }}
+
+        async function cargar() {{
+            const res = await fetchAuth(`/api/pdi/unidad/${{UNIT}}`);
+            const data = await res.json();
+
+            if (data.requiere_tipo) {{
+                document.getElementById('pdiRoot').innerHTML = `
+                    <div style="background:#fef3c7; border:1px solid #d97706; border-radius:12px; padding:20px;">
+                        <h3 style="margin-top:0;">⚠️ Falta asignar el tipo de reefer</h3>
+                        <p>${{data.mensaje}}</p>
+                        <button class="btn-primary" onclick="location.href='/app/pdi'">Ir a configurar el lote</button>
+                    </div>`;
+                return;
+            }}
+
+            PDI_ID = data.pdi.id; TEMPLATE = data.template; DATOS = data.datos;
+            renderForm(data.pdi, data.campos_faltantes);
+        }}
+
+        function renderForm(pdi, faltantes) {{
+            let html = '';
+
+            html += `<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:16px;">
+                <div><span class="user-chip" style="background:#0057A8;">🧊 ${{TEMPLATE.nombre}}</span> &nbsp; <span style="color:var(--text-secondary);">Unidad ${{UNIT}}</span></div>
+                <div>
+                    <button class="btn-warning" onclick="guardar('borrador')">💾 Guardar borrador</button>
+                    <button class="btn-primary" onclick="guardar('completado')">✅ Marcar como completado</button>
+                    <button class="btn-primary" onclick="window.print()">🖨️ Imprimir</button>
+                </div>
+            </div>`;
+
+            if (faltantes && faltantes.length) {{
+                html += `<div style="background:#fef3c7; border:1px solid #d97706; border-radius:12px; padding:14px 18px; margin-bottom:16px;">
+                    <strong>⚠️ Estas lecturas no existen todavía en Toma de Valores:</strong>
+                    <ul style="margin:8px 0;">${{faltantes.map(f => `<li>${{f}}</li>`).join('')}}</ul>
+                    ${{window.role === 'admin'
+                        ? `<button class="btn-primary" onclick='agregarFaltantes(${{JSON.stringify(faltantes)}})'>➕ Agregar a Toma de Valores</button>`
+                        : `<em>Pide a un administrador que los agregue a Toma de Valores para que se autocompleten aquí.</em>`}}
+                </div>`;
+            }}
+
+            // ── Encabezado ──────────────────────────────────────────────
+            html += `<div class="card" style="background:var(--bg-surface); border-radius:14px; padding:18px 22px; margin-bottom:18px;">
+                <h3 style="margin-top:0;">🧾 Identificación</h3>
+                <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(240px,1fr)); gap:12px;">
+                    ${{TEMPLATE.header_fields.map(hf => `
+                        <div>
+                            <label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin-bottom:4px;">${{hf.label}}</label>
+                            <input type="text" data-header="${{hf.clave}}" value="${{esc(pdi[hf.clave] || '')}}" style="width:100%;">
+                        </div>`).join('')}}
+                </div>
+            </div>`;
+
+            // ── Checklist por secciones ─────────────────────────────────
+            TEMPLATE.secciones.forEach(sec => {{
+                const badgeAuto = !sec.es_registro ? `<span style="font-size:0.75rem; color:#16a34a; font-weight:600;">✓ auto-completado — revisa y desmarca si algo falló</span>` : `<span style="font-size:0.75rem; color:#d97706; font-weight:700;">✋ requiere llenado manual</span>`;
+                html += `<div class="card" style="background:var(--bg-surface); border-radius:14px; padding:18px 22px; margin-bottom:14px;">
+                    <h3 style="margin-top:0; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">${{sec.titulo}} ${{badgeAuto}}</h3>`;
+                sec.items.forEach((texto, i) => {{
+                    const clave = `chk_${{sec.clave}}_${{i+1}}`;
+                    html += `<label style="display:flex; gap:10px; align-items:flex-start; padding:6px 0; border-bottom:1px solid var(--border-color-soft);">
+                        <input type="checkbox" data-check="${{clave}}" ${{chk(clave) ? 'checked' : ''}} style="margin-top:3px;">
+                        <span>${{texto}}</span>
+                    </label>`;
+                }});
+                html += `</div>`;
+            }});
+
+            // ── Lecturas ────────────────────────────────────────────────
+            const gruposLecturas = {{}};
+            TEMPLATE.lecturas.forEach(l => {{ (gruposLecturas[l.grupo] = gruposLecturas[l.grupo] || []).push(l); }});
+            html += `<div class="card" style="background:var(--bg-surface); border-radius:14px; padding:18px 22px; margin-bottom:14px;">
+                <h3 style="margin-top:0;">📊 Lecturas del Run Test</h3>
+                <p style="color:var(--text-secondary); font-size:0.85rem;">Se pre-llenan automáticamente desde Toma de Valores cuando existe un campo equivalente.</p>`;
+            Object.keys(gruposLecturas).forEach(grupo => {{
+                html += `<h4 style="margin:14px 0 6px; color:var(--text-secondary);">${{grupo}}</h4>
+                    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px,1fr)); gap:12px;">`;
+                gruposLecturas[grupo].forEach(l => {{
+                    const clave = `lec_${{l.clave}}`;
+                    html += `<div>
+                        <label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin-bottom:4px;">${{l.label}} ${{l.unidad ? '(' + l.unidad + ')' : ''}}</label>
+                        <input type="text" data-lectura="${{clave}}" value="${{esc(val(clave))}}" style="width:100%;">
+                    </div>`;
+                }});
+                html += `</div>`;
+            }});
+            html += `</div>`;
+
+            // ── Tabla de configuración ─────────────────────────────────
+            html += `<details style="background:var(--bg-surface); border-radius:14px; padding:14px 22px; margin-bottom:14px;">
+                <summary style="cursor:pointer; font-weight:700; font-size:1.05rem;">⚙️ Tabla de Configuración (Ajuste de Fábrica / Cambio a)</summary>
+                <table style="margin-top:12px;"><thead><tr><th>Grupo</th><th>Parámetro</th><th>Ajuste de Fábrica</th><th>Cambio a</th></tr></thead><tbody>`;
+            TEMPLATE.config_table.forEach((row, i) => {{
+                const clave = `cfg_${{i}}`;
+                html += `<tr><td>${{row[0]}}</td><td>${{row[1]}}</td><td>${{row[2]}}</td>
+                    <td><input type="text" data-config="${{clave}}" value="${{esc(val(clave))}}" style="width:100%; margin:0;"></td></tr>`;
+            }});
+            html += `</tbody></table></details>`;
+
+            // ── Firma / comentarios ─────────────────────────────────────
+            html += `<div class="card" style="background:var(--bg-surface); border-radius:14px; padding:18px 22px; margin-bottom:18px;">
+                <h3 style="margin-top:0;">✍️ Cierre</h3>
+                <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(240px,1fr)); gap:12px;">
+                    <div><label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Dealer / Distribuidor</label>
+                        <input type="text" data-header="dealer_firma" value="${{esc(pdi.dealer_firma || '')}}" style="width:100%;"></div>
+                    <div><label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Técnico que Inspeccionó</label>
+                        <input type="text" data-header="tecnico_inspecciono" value="${{esc(pdi.tecnico_inspecciono || '')}}" style="width:100%;"></div>
+                </div>
+                <label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin:12px 0 4px;">Comentarios</label>
+                <textarea data-header="comentarios" rows="3" style="width:100%;">${{pdi.comentarios || ''}}</textarea>
+            </div>`;
+
+            document.getElementById('pdiRoot').innerHTML = html;
+        }}
+
+        async function agregarFaltantes(campos) {{
+            const res = await fetchAuth(`/api/pdi/${{PDI_ID}}/campos-faltantes/agregar`, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify({{campos}})}});
+            const data = await res.json();
+            alert(data.mensaje || 'Listo');
+            cargar();
+        }}
+
+        async function guardar(estado) {{
+            const root = document.getElementById('pdiRoot');
+            const headerValores = {{}};
+            root.querySelectorAll('[data-header]').forEach(el => headerValores[el.dataset.header] = el.value);
+            const datosValores = {{}};
+            root.querySelectorAll('[data-check]').forEach(el => datosValores[el.dataset.check] = el.checked ? '1' : '0');
+            root.querySelectorAll('[data-lectura]').forEach(el => datosValores[el.dataset.lectura] = el.value);
+            root.querySelectorAll('[data-config]').forEach(el => {{ if (el.value) datosValores[el.dataset.config] = el.value; }});
+
+            await fetchAuth(`/api/pdi/${{PDI_ID}}`, {{method:'PUT', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify({{valores: headerValores, estado}})}});
+            await fetchAuth(`/api/pdi/${{PDI_ID}}/datos`, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify({{valores: datosValores}})}});
+            alert(estado === 'completado' ? '✅ PDI marcado como completado' : '💾 Borrador guardado');
+            cargar();
+        }}
+
+        cargar();
+    </script>
+    """
+    return HTMLResponse(content=pagina_con_menu(f"📋 PDI — {unit_number}", contenido, "pdi"))
 
 # ------------------------------------------------------------
 # GESTIÓN DE USUARIOS (admin) - se añadió opción "visor"
