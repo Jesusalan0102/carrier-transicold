@@ -2259,6 +2259,7 @@ async def pdi_form(unit_number: str):
                     <button class="btn-warning" onclick="guardar('borrador')">💾 Guardar borrador</button>
                     <button class="btn-primary" onclick="guardar('completado')">✅ Marcar como completado</button>
                     <button class="btn-primary" onclick="window.print()">🖨️ Imprimir</button>
+                    <button class="btn-primary" onclick="descargarPDF()" title="El PDF refleja el último guardado. Guarda antes de descargar si hiciste cambios.">📄 Descargar PDF</button>
                 </div>
             </div>`;
 
@@ -2366,6 +2367,29 @@ async def pdi_form(unit_number: str):
             await fetchAuth(`/api/pdi/${{PDI_ID}}/datos`, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify({{valores: datosValores}})}});
             alert(estado === 'completado' ? '✅ PDI marcado como completado' : '💾 Borrador guardado');
             cargar();
+        }}
+
+        async function descargarPDF() {{
+            const btn = event.target;
+            const textoOriginal = btn.textContent;
+            btn.disabled = true; btn.textContent = '⏳ Generando...';
+            try {{
+                const resp = await fetchAuth(`/api/pdi/${{PDI_ID}}/pdf`);
+                if (!resp.ok) throw new Error('No se pudo generar el PDF');
+                const blob = await resp.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `PDI_${{TEMPLATE.clave.toUpperCase()}}_${{UNIT}}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+            }} catch (e) {{
+                alert('❌ Error al generar el PDF: ' + e.message);
+            }} finally {{
+                btn.disabled = false; btn.textContent = textoOriginal;
+            }}
         }}
 
         cargar();

@@ -19,6 +19,7 @@ Flujo:
          poder agregarlos con un clic.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import Dict, Optional, List
 from datetime import datetime
@@ -27,6 +28,7 @@ from zoneinfo import ZoneInfo
 from auth import verify_token
 from db import execute_read, execute_write, execute_write_with_id
 import pdi_templates as PDI
+from pdi_pdf import generar_pdi_pdf
 
 router = APIRouter(prefix="/api/pdi", tags=["pdi"])
 TZ = ZoneInfo("America/Tijuana")
@@ -402,6 +404,24 @@ def agregar_campos_faltantes(insp_id: int, data: CamposFaltantesAdd, current_use
         orden += 1
         agregados.append(nombre)
     return {"mensaje": f"{len(agregados)} campo(s) agregado(s) a Toma de Valores", "agregados": agregados}
+
+
+@router.get("/{insp_id}/pdf")
+def descargar_pdi_pdf(insp_id: int, current_user=Depends(verify_token)):
+    """Genera y descarga el PDF del PDI con el formato oficial de Carrier Transicold."""
+    rows = execute_read("SELECT * FROM pdi_inspecciones WHERE id=%s", (insp_id,))
+    if not rows:
+        raise HTTPException(status_code=404, detail="PDI no encontrado")
+    pdi = rows[0]
+    tpl = PDI.TEMPLATES[pdi["tipo"]]
+    datos = _cargar_datos(insp_id)
+    pdf_bytes = generar_pdi_pdf(pdi, tpl, datos)
+    filename = f"PDI_{pdi['tipo'].upper()}_{pdi['unit_number']}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.delete("/{insp_id}")
