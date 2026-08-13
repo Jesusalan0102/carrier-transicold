@@ -29,6 +29,7 @@ from auth import verify_token
 from db import execute_read, execute_write, execute_write_with_id
 import pdi_templates as PDI
 from pdi_pdf import generar_pdi_pdf
+from pdi_pdf_overlay import generar_pdi_pdf_overlay_x4
 
 router = APIRouter(prefix="/api/pdi", tags=["pdi"])
 TZ = ZoneInfo("America/Tijuana")
@@ -408,14 +409,19 @@ def agregar_campos_faltantes(insp_id: int, data: CamposFaltantesAdd, current_use
 
 @router.get("/{insp_id}/pdf")
 def descargar_pdi_pdf(insp_id: int, current_user=Depends(verify_token)):
-    """Genera y descarga el PDF del PDI con el formato oficial de Carrier Transicold."""
+    """Genera y descarga el PDF del PDI. Para X4 usa overlay sobre el
+    documento OFICIAL de Carrier (62-90493-00); para Vector usa la
+    recreación propia (pdi_pdf.py) mientras se valida el overlay 1:1."""
     rows = execute_read("SELECT * FROM pdi_inspecciones WHERE id=%s", (insp_id,))
     if not rows:
         raise HTTPException(status_code=404, detail="PDI no encontrado")
     pdi = rows[0]
-    tpl = PDI.TEMPLATES[pdi["tipo"]]
     datos = _cargar_datos(insp_id)
-    pdf_bytes = generar_pdi_pdf(pdi, tpl, datos)
+    if pdi["tipo"] == "x4":
+        pdf_bytes = generar_pdi_pdf_overlay_x4(pdi, datos)
+    else:
+        tpl = PDI.TEMPLATES[pdi["tipo"]]
+        pdf_bytes = generar_pdi_pdf(pdi, tpl, datos)
     filename = f"PDI_{pdi['tipo'].upper()}_{pdi['unit_number']}.pdf"
     return Response(
         content=pdf_bytes,
