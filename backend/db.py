@@ -438,6 +438,47 @@ def _run_migrations():
                     conn.commit()
                     print("✅ Migración: columna mime_type añadida a evidencias")
 
+                # ── evidencias: onedrive_item_id + onedrive_url ─────────────────────
+                # Para video, el archivo se sube a OneDrive y NO se guarda el
+                # blob completo en la base de datos (para no saturarla); se
+                # guarda solo la referencia al archivo en OneDrive.
+                cur.execute("""
+                    SELECT COLUMN_NAME FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME   = 'evidencias'
+                      AND COLUMN_NAME IN ('onedrive_item_id', 'onedrive_url')
+                """)
+                cols_od = {
+                    (r[0] if isinstance(r, tuple) else list(r.values())[0])
+                    for r in (cur.fetchall() or [])
+                }
+                if "onedrive_item_id" not in cols_od:
+                    cur.execute(
+                        "ALTER TABLE evidencias ADD COLUMN onedrive_item_id VARCHAR(150) DEFAULT NULL"
+                    )
+                    conn.commit()
+                    print("✅ Migración: columna onedrive_item_id añadida a evidencias")
+                if "onedrive_url" not in cols_od:
+                    cur.execute(
+                        "ALTER TABLE evidencias ADD COLUMN onedrive_url VARCHAR(500) DEFAULT NULL"
+                    )
+                    conn.commit()
+                    print("✅ Migración: columna onedrive_url añadida a evidencias")
+                # contenido debe poder ser NULL para videos que solo viven en OneDrive
+                cur.execute("""
+                    SELECT IS_NULLABLE FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME   = 'evidencias'
+                      AND COLUMN_NAME  = 'contenido'
+                """)
+                row_null = cur.fetchone()
+                if row_null:
+                    is_nullable = (row_null[0] if isinstance(row_null, tuple) else list(row_null.values())[0])
+                    if is_nullable == "NO":
+                        cur.execute("ALTER TABLE evidencias MODIFY COLUMN contenido LONGBLOB NULL")
+                        conn.commit()
+                        print("✅ Migración: evidencias.contenido ahora permite NULL (video en OneDrive)")
+
                 # ── comentario en unidades (nota libre del admin en el dashboard) ─
                 cur.execute("""
                     SELECT COUNT(*) FROM information_schema.COLUMNS

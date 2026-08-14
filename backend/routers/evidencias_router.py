@@ -18,7 +18,7 @@ def require_admin_or_visor(current_user=Depends(verify_token)):
 
 # ── Importación opcional de OneDrive ────────────────────────────────────────
 try:
-    from onedrive_service import sync_evidencia, sync_zip_evidencias
+    from onedrive_service import sync_evidencia, sync_zip_evidencias, sync_video_evidencia, download_item_bytes, get_download_url
     ONEDRIVE_ENABLED = True
 except ImportError:
     ONEDRIVE_ENABLED = False
@@ -96,7 +96,14 @@ def comprimir_imagen(contenido: bytes, filename: str) -> bytes:
 # ── TAREA PARA UN SOLO ARCHIVO (foto o video) ─────────────────────────────
 async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_id: int = None) -> dict:
     """Lee, comprime (si es foto) y guarda una foto o video. Devuelve
-    {'filename', 'ok', 'error'}."""
+    {'filename', 'ok', 'error'}.
+
+    Para VIDEO: si OneDrive está configurado, se sube ahí de forma SÍNCRONA
+    (antes de responder) y en la DB solo se guarda la referencia
+    (onedrive_item_id / onedrive_url) con contenido=NULL, para no llenar la
+    base de datos de blobs pesados. Si OneDrive falla o no está configurado,
+    se guarda el blob completo en la DB como respaldo (no se pierde la
+    evidencia), igual que las fotos."""
     try:
         contenido = await file.read()
         tipo = _tipo_de_archivo(file.filename)
@@ -113,6 +120,21 @@ async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_
 
         mime_type = MIME_MAP.get(_extension(file.filename), file.content_type or "application/octet-stream")
 
+        onedrive_item_id = None
+        onedrive_url = None
+        contenido_a_guardar = contenido
+
+        if tipo == "video" and ONEDRIVE_ENABLED:
+            try:
+                resultado_od = await run_in_threadpool(sync_video_evidencia, unidad, file.filename, contenido)
+                onedrive_item_id = resultado_od.get("item_id") or None
+                onedrive_url = resultado_od.get("webUrl") or None
+                if onedrive_item_id:
+                    # Subida a OneDrive exitosa: no duplicar el video pesado en la DB
+                    contenido_a_guardar = None
+            except Exception as e:
+                logger.error(f"[OneDrive] Falló subida de video {file.filename}, se guarda en DB como respaldo: {e}")
+
         # execute_write es una llamada SÍNCRONA a MySQL; si se llama directo
         # dentro de un endpoint async bloquea TODO el event loop (la app corre
         # con 1 solo worker en Clever Cloud). Con varias fotos subiendo a la
@@ -121,13 +143,13 @@ async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_
         # no bloquear el loop mientras se escribe el BLOB en la base de datos.
         ok = await run_in_threadpool(
             execute_write,
-            "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico, asignacion_id, tipo, mime_type) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
-            (unidad, file.filename, contenido, tecnico, asignacion_id, tipo, mime_type)
+            "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico, asignacion_id, tipo, mime_type, onedrive_item_id, onedrive_url) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (unidad, file.filename, contenido_a_guardar, tecnico, asignacion_id, tipo, mime_type, onedrive_item_id, onedrive_url)
         )
 
-        # OneDrive en background — no bloquea la respuesta al celular
-        if ok and ONEDRIVE_ENABLED:
+        # OneDrive en background para FOTOS (el video ya se subió arriba, síncrono)
+        if ok and tipo == "foto" and ONEDRIVE_ENABLED:
             asyncio.create_task(_sync_onedrive_bg(unidad, file.filename, contenido))
 
         return {"filename": file.filename, "ok": bool(ok), "error": None}
@@ -267,25 +289,34 @@ async def subir_evidencias(
 @router.get("/download/{unit_number}")
 async def descargar_evidencias(unit_number: str, current_user=Depends(require_admin_or_visor)):
     meta = execute_read(
-        "SELECT id, nombre_archivo FROM evidencias WHERE unit_number=%s",
+        "SELECT id, nombre_archivo, contenido IS NULL AS sin_blob, onedrive_item_id FROM evidencias WHERE unit_number=%s",
         (unit_number,)
     )
     if not meta:
         raise HTTPException(status_code=404, detail="No hay evidencias para esta unidad")
 
-    # Traer todos los contenidos en una sola query (evita N queries)
-    ids = tuple(m["id"] for m in meta)
-    placeholders = ",".join(["%s"] * len(ids))
-    filas = execute_read(
-        f"SELECT id, contenido FROM evidencias WHERE id IN ({placeholders})", ids
-    )
-    contenidos = {f["id"]: f["contenido"] for f in filas if f["contenido"]}
+    # Traer los contenidos que SÍ están en la DB en una sola query (evita N queries)
+    ids_con_blob = tuple(m["id"] for m in meta if not m["sin_blob"])
+    contenidos = {}
+    if ids_con_blob:
+        placeholders = ",".join(["%s"] * len(ids_con_blob))
+        filas = execute_read(
+            f"SELECT id, contenido FROM evidencias WHERE id IN ({placeholders})", ids_con_blob
+        )
+        contenidos = {f["id"]: f["contenido"] for f in filas if f["contenido"]}
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as zf:
         nombres_vistos = {}
         for m in meta:
             contenido = contenidos.get(m["id"])
+            if contenido is None and m.get("onedrive_item_id"):
+                # Video que solo vive en OneDrive: se descarga aquí para incluirlo en el ZIP
+                try:
+                    contenido = await run_in_threadpool(download_item_bytes, m["onedrive_item_id"])
+                except Exception as e:
+                    logger.error(f"[OneDrive] No se pudo incluir en el ZIP la evidencia {m['id']}: {e}")
+                    continue
             if not contenido:
                 continue
             nombre = m["nombre_archivo"] or f"foto_{m['id']}.jpg"
@@ -427,18 +458,35 @@ def unidades_con_fotos(current_user=Depends(require_admin_or_visor)):
 @router.get("/foto/{foto_id}")
 def ver_foto(foto_id: int, range: Optional[str] = Header(None), current_user=Depends(require_admin_or_visor)):
     rows = execute_read(
-        "SELECT nombre_archivo, contenido, mime_type, tipo FROM evidencias WHERE id=%s",
+        "SELECT nombre_archivo, contenido, mime_type, tipo, onedrive_item_id FROM evidencias WHERE id=%s",
         (foto_id,)
     )
-    if not rows or not rows[0]["contenido"]:
+    if not rows:
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
 
-    contenido = rows[0]["contenido"]
-    contenido = bytes(contenido) if not isinstance(contenido, bytes) else contenido
-    nombre = rows[0]["nombre_archivo"] or "foto.jpg"
+    row = rows[0]
+    nombre = row["nombre_archivo"] or "foto.jpg"
     ext = _extension(nombre)
-    media_type = rows[0].get("mime_type") or MIME_MAP.get(ext, "application/octet-stream")
-    es_video = (rows[0].get("tipo") == "video")
+    media_type = row.get("mime_type") or MIME_MAP.get(ext, "application/octet-stream")
+    es_video = (row.get("tipo") == "video")
+
+    # ── Video que vive solo en OneDrive (no se guardó el blob en la DB) ───
+    if not row["contenido"] and row.get("onedrive_item_id"):
+        try:
+            download_url = get_download_url(row["onedrive_item_id"])
+            if not download_url:
+                raise Exception("OneDrive no devolvió URL de descarga")
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url=download_url, status_code=302)
+        except Exception as e:
+            logger.error(f"[OneDrive] No se pudo obtener URL de descarga para evidencia {foto_id}: {e}")
+            raise HTTPException(status_code=502, detail="No se pudo obtener el video desde OneDrive")
+
+    if not row["contenido"]:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+
+    contenido = row["contenido"]
+    contenido = bytes(contenido) if not isinstance(contenido, bytes) else contenido
 
     if not es_video:
         return Response(
@@ -447,8 +495,8 @@ def ver_foto(foto_id: int, range: Optional[str] = Header(None), current_user=Dep
             headers={"Cache-Control": "private, max-age=3600"},
         )
 
-    # ── Video: soporta Range requests para que el navegador pueda hacer
-    # streaming/seek en vez de tener que bajar el archivo completo primero ─
+    # ── Video con blob local (respaldo cuando OneDrive no está disponible):
+    # soporta Range requests para que el navegador pueda hacer streaming/seek
     total = len(contenido)
     if range is None:
         return Response(

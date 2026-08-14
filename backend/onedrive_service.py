@@ -226,6 +226,78 @@ def upload_large_file(content: bytes, onedrive_path: str, content_type: str = "a
     return result
 
 
+def get_download_url(item_id: str) -> str:
+    """Obtiene una URL de descarga directa y temporal (~1h) para un item de
+    OneDrive por su ID. Útil para servir video en streaming (soporta Range
+    de forma nativa en la CDN de Microsoft) sin pasar el archivo por
+    nuestro propio backend."""
+    url = f"{GRAPH_BASE}/me/drive/items/{item_id}?select=id,@microsoft.graph.downloadUrl"
+    resp = requests.get(
+        url, headers={"Authorization": f"Bearer {_get_token()}"}, timeout=15
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    return data.get("@microsoft.graph.downloadUrl", "")
+
+
+def download_item_bytes(item_id: str) -> bytes:
+    """Descarga el contenido completo de un item de OneDrive (para incluirlo
+    en el ZIP de evidencias, ya que ese archivo no vive en la DB)."""
+    download_url = get_download_url(item_id)
+    if not download_url:
+        raise Exception("No se pudo obtener la URL de descarga de OneDrive")
+    resp = requests.get(download_url, timeout=120)
+    resp.raise_for_status()
+    return resp.content
+
+
+def sync_video_evidencia(unit_number: str, nombre_archivo: str, contenido: bytes, unit_meta: dict = None) -> dict:
+    """
+    Sube un VIDEO de evidencia a OneDrive y devuelve {'webUrl', 'item_id'}.
+    A diferencia de sync_evidencia (fotos), esta función se llama de forma
+    SÍNCRONA antes de guardar la fila en la DB, porque para video no se
+    guarda el blob completo en la base de datos -- solo la referencia --
+    así que necesitamos confirmar que la subida a OneDrive funcionó antes
+    de decidir qué guardar.
+
+    Misma estructura de carpetas que las fotos:
+      carrier-transicold/Evidencias/<id_lote>/<unit_number>_<reefer_serial>/
+    """
+    if unit_meta is None:
+        try:
+            from db import execute_read
+            rows = execute_read(
+                "SELECT id_lote, reefer_serial FROM unidades WHERE unit_number=%s LIMIT 1",
+                (unit_number,)
+            )
+            unit_meta = rows[0] if rows else {}
+        except Exception as e:
+            logger.warning(f"[OneDrive] No se pudo obtener metadata de unidad {unit_number}: {e}")
+            unit_meta = {}
+
+    id_lote       = (unit_meta.get("id_lote") or "").strip()
+    reefer_serial = (unit_meta.get("reefer_serial") or "").strip()
+    subfolder_name = f"{unit_number}_{reefer_serial}" if reefer_serial else unit_number
+    folder_path = f"{EVIDENCIAS_DIR}/{id_lote}/{subfolder_name}" if id_lote else f"{EVIDENCIAS_DIR}/{subfolder_name}"
+
+    real_folder_path = _upload_with_retry(_ensure_folder, folder_path)
+
+    ext = nombre_archivo.rsplit(".", 1)[-1].lower() if "." in nombre_archivo else "mp4"
+    video_mime_map = {
+        "mp4": "video/mp4", "mov": "video/quicktime", "webm": "video/webm",
+        "m4v": "video/x-m4v", "3gp": "video/3gpp", "avi": "video/x-msvideo", "mkv": "video/x-matroska",
+    }
+    content_type = video_mime_map.get(ext, "application/octet-stream")
+    file_path = f"{real_folder_path}/{nombre_archivo}"
+
+    # Videos casi siempre superan los 4MB del upload simple -> sesión de subida
+    result = _upload_with_retry(upload_large_file, contenido, file_path, content_type)
+    web_url = result.get("webUrl", "")
+    item_id = result.get("id", "")
+    logger.info(f"[OneDrive] Video subido: {file_path} (id={item_id})")
+    return {"webUrl": web_url, "item_id": item_id}
+
+
 def sync_evidencia(unit_number: str, nombre_archivo: str, contenido: bytes, unit_meta: dict = None) -> str:
     """
     Sube una foto de evidencia a OneDrive.
@@ -287,6 +359,8 @@ def sync_evidencia(unit_number: str, nombre_archivo: str, contenido: bytes, unit
         "jpg": "image/jpeg", "jpeg": "image/jpeg",
         "png": "image/png",  "gif": "image/gif",
         "webp": "image/webp", "pdf": "application/pdf",
+        "mp4": "video/mp4", "mov": "video/quicktime", "webm": "video/webm",
+        "m4v": "video/x-m4v", "3gp": "video/3gpp", "avi": "video/x-msvideo", "mkv": "video/x-matroska",
     }
     content_type = mime_map.get(ext, "application/octet-stream")
     file_path = f"{real_folder_path}/{nombre_archivo}"
