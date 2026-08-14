@@ -409,6 +409,35 @@ def _run_migrations():
                     conn.commit()
                     print("✅ Migración: columna asignacion_id añadida a evidencias")
 
+                # ── evidencias: tipo (foto/video) + mime_type ──────────────────────
+                # Permite que los técnicos suban también video como evidencia.
+                # tipo se infiere del nombre de archivo al subir; mime_type se
+                # guarda para servir el Content-Type correcto (antes se adivinaba
+                # solo por extensión, lo cual no cubre .mov, .webm, etc.).
+                cur.execute("""
+                    SELECT COLUMN_NAME FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME   = 'evidencias'
+                      AND COLUMN_NAME IN ('tipo', 'mime_type')
+                """)
+                cols_existentes = {
+                    (r[0] if isinstance(r, tuple) else list(r.values())[0])
+                    for r in (cur.fetchall() or [])
+                }
+                if "tipo" not in cols_existentes:
+                    cur.execute(
+                        "ALTER TABLE evidencias ADD COLUMN tipo VARCHAR(10) NOT NULL DEFAULT 'foto', "
+                        "ADD INDEX idx_tipo (tipo)"
+                    )
+                    conn.commit()
+                    print("✅ Migración: columna tipo añadida a evidencias (foto/video)")
+                if "mime_type" not in cols_existentes:
+                    cur.execute(
+                        "ALTER TABLE evidencias ADD COLUMN mime_type VARCHAR(60) DEFAULT NULL"
+                    )
+                    conn.commit()
+                    print("✅ Migración: columna mime_type añadida a evidencias")
+
                 # ── comentario en unidades (nota libre del admin en el dashboard) ─
                 cur.execute("""
                     SELECT COUNT(*) FROM information_schema.COLUMNS

@@ -3205,6 +3205,7 @@ async def admin():
           z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:12px;
         " onclick="evCloseLightbox(event)">
           <img id="ev-lb-img" style="max-width:92vw;max-height:82vh;border-radius:8px;object-fit:contain;" />
+          <video id="ev-lb-video" controls playsinline style="display:none;max-width:92vw;max-height:82vh;border-radius:8px;"></video>
           <span id="ev-lb-caption" style="color:#e8f0ff;font-size:13px;"></span>
         </div>
       </div>
@@ -3469,7 +3470,7 @@ async def admin():
 
             evPaginaActual = data.page;
             evTotalPages   = data.pages;
-            badge.textContent = `${data.total} foto${data.total===1?'':'s'}`;
+            badge.textContent = `${data.total} archivo${data.total===1?'':'s'}`;
             btnZip.style.display = data.total > 0 ? 'inline-flex' : 'none';
 
             if (data.fotos.length === 0) {
@@ -3487,14 +3488,22 @@ async def admin():
                         ev.stopPropagation();
                         evToggleFoto(f.id, card);
                     } else {
-                        evAbrirLightbox(f.id, f.nombre, f.tecnico, f.fecha, f.actividad);
+                        evAbrirLightbox(f.id, f.nombre, f.tecnico, f.fecha, f.actividad, f.tipo);
                     }
                 };
 
-                const img = document.createElement('img');
-                img.alt   = f.nombre;
-                img.loading = 'lazy';
-                img.style.cssText = 'width:100%;height:130px;object-fit:cover;display:block;';
+                const esVideo = f.tipo === 'video';
+                const media = document.createElement(esVideo ? 'video' : 'img');
+                media.alt   = f.nombre;
+                if (esVideo) {
+                    media.muted = true;
+                    media.preload = 'metadata';
+                    media.style.cssText = 'width:100%;height:130px;object-fit:cover;display:block;background:#111827;';
+                } else {
+                    media.loading = 'lazy';
+                    media.style.cssText = 'width:100%;height:130px;object-fit:cover;display:block;';
+                }
+                const img = media;
                 img.onerror = ()=>{
                     // En vez de ocultar la foto silenciosamente (lo que la hacía "desaparecer"
                     // sin aviso), mostramos un placeholder visible de error de carga.
@@ -3503,7 +3512,7 @@ async def admin():
                         const ph = document.createElement('div');
                         ph.className = 'ev-error-placeholder';
                         ph.style.cssText = 'width:100%;height:130px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;background:#fef2f2;color:#b91c1c;font-size:11px;text-align:center;padding:6px;';
-                        ph.innerHTML = '⚠️<br>Error al cargar<br>esta foto';
+                        ph.innerHTML = `⚠️<br>Error al cargar<br>${esVideo ? 'este video' : 'esta foto'}`;
                         card.insertBefore(ph, card.firstChild);
                     }
                 };
@@ -3511,6 +3520,12 @@ async def admin():
                     .then(r => r.ok ? r.blob() : Promise.reject())
                     .then(blob => { img.src = URL.createObjectURL(blob); })
                     .catch(() => { img.onerror(); });
+
+                const playBadge = document.createElement('div');
+                if (esVideo) {
+                    playBadge.style.cssText = 'position:absolute;top:6px;right:6px;background:rgba(0,0,0,.55);color:#fff;border-radius:6px;padding:2px 6px;font-size:11px;display:flex;align-items:center;gap:3px;z-index:2;';
+                    playBadge.innerHTML = '▶ video';
+                }
 
                 const info = document.createElement('div');
                 info.style.cssText = 'padding:6px 8px;font-size:11px;color:var(--color-text-secondary);line-height:1.5;';
@@ -3533,6 +3548,7 @@ async def admin():
                 }
 
                 card.appendChild(img);
+                if (esVideo) card.appendChild(playBadge);
                 card.appendChild(info);
                 card.appendChild(checkbox);
                 grid.appendChild(card);
@@ -3566,26 +3582,42 @@ async def admin():
         }
     }
 
-    function evAbrirLightbox(id, nombre, tecnico, fecha, actividad) {
+    function evAbrirLightbox(id, nombre, tecnico, fecha, actividad, tipo) {
         const lb  = document.getElementById('ev-lightbox');
         const img = document.getElementById('ev-lb-img');
+        const vid = document.getElementById('ev-lb-video');
         const cap = document.getElementById('ev-lb-caption');
-        img.src   = '';
-        img.style.display = '';
+        const esVideo = tipo === 'video';
+        img.src = ''; img.style.display = 'none';
+        vid.pause(); vid.removeAttribute('src'); vid.load(); vid.style.display = 'none';
         cap.textContent = `${nombre}  ·  👷 ${tecnico||'—'}  ${actividad?'·  🛠 '+actividad+'  ':''}·  ${fecha?fecha.slice(0,10):''}`;
         lb.style.display = 'flex';
-        fetchAuth(`/api/evidencias/foto/${id}`)
-            .then(r => r.ok ? r.blob() : Promise.reject())
-            .then(blob => { img.src = URL.createObjectURL(blob); })
-            .catch(() => {
-                img.style.display = 'none';
-                cap.textContent = `⚠️ No se pudo cargar esta foto (${nombre}). El archivo podría estar dañado o incompleto.`;
-            });
+        if (esVideo) {
+            vid.style.display = '';
+            fetchAuth(`/api/evidencias/foto/${id}`)
+                .then(r => r.ok ? r.blob() : Promise.reject())
+                .then(blob => { vid.src = URL.createObjectURL(blob); })
+                .catch(() => {
+                    vid.style.display = 'none';
+                    cap.textContent = `⚠️ No se pudo cargar este video (${nombre}). El archivo podría estar dañado o incompleto.`;
+                });
+        } else {
+            img.style.display = '';
+            fetchAuth(`/api/evidencias/foto/${id}`)
+                .then(r => r.ok ? r.blob() : Promise.reject())
+                .then(blob => { img.src = URL.createObjectURL(blob); })
+                .catch(() => {
+                    img.style.display = 'none';
+                    cap.textContent = `⚠️ No se pudo cargar esta foto (${nombre}). El archivo podría estar dañado o incompleto.`;
+                });
+        }
     }
 
     function evCloseLightbox(e) {
         if (e.target.id === 'ev-lightbox' || e.target.id === 'ev-lb-img') {
             document.getElementById('ev-lightbox').style.display = 'none';
+            const vid = document.getElementById('ev-lb-video');
+            vid.pause(); vid.removeAttribute('src'); vid.load();
         }
     }
 
@@ -4245,9 +4277,10 @@ async def mis_tareas():
                     </div>
                     <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0;">
 
-                    <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">📸 Evidencia fotográfica</label>
-                    ${fotosPrevias > 0 ? `<p style="font-size:0.8rem;color:#16a34a;margin:0 0 8px;">✔ Ya tienes ${fotosPrevias} foto(s) guardada(s) para esta actividad. Puedes agregar más o continuar.</p>` : ''}
-                    <input type="file" id="fotosFinalizarInput" multiple accept="image/*" style="width:100%;margin-bottom:8px;">
+                    <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">📸 Evidencia fotográfica o de video</label>
+                    ${fotosPrevias > 0 ? `<p style="font-size:0.8rem;color:#16a34a;margin:0 0 8px;">✔ Ya tienes ${fotosPrevias} archivo(s) guardado(s) para esta actividad. Puedes agregar más o continuar.</p>` : ''}
+                    <input type="file" id="fotosFinalizarInput" multiple accept="image/*,video/*" style="width:100%;margin-bottom:8px;">
+                    <p style="font-size:0.75rem;color:#9ca3af;margin:0 0 8px;">Videos hasta 80MB por archivo.</p>
                     <div id="previewFotosFinalizar" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;"></div>
                     <div id="compressInfoFinalizar" style="font-size:12px;color:#666;margin-bottom:8px;"></div>
 
@@ -4267,19 +4300,33 @@ async def mis_tareas():
                 const previewDiv = document.getElementById('previewFotosFinalizar');
                 previewDiv.innerHTML = '';
                 let totalKB = 0;
+                let nFotos = 0, nVideos = 0;
                 files.forEach(f => {
                     totalKB += f.size / 1024;
-                    const r = new FileReader();
-                    r.onload = ev => {
-                        const img = document.createElement('img');
-                        img.src = ev.target.result;
-                        img.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:8px;';
-                        previewDiv.appendChild(img);
-                    };
-                    r.readAsDataURL(f);
+                    const esVideo = f.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|3gp|avi|mkv)$/i.test(f.name);
+                    if (esVideo) {
+                        nVideos++;
+                        const wrap = document.createElement('div');
+                        wrap.style.cssText = 'width:70px;height:70px;border-radius:8px;background:#111827;display:flex;align-items:center;justify-content:center;position:relative;';
+                        wrap.innerHTML = '<span style="font-size:22px;">🎬</span>';
+                        previewDiv.appendChild(wrap);
+                    } else {
+                        nFotos++;
+                        const r = new FileReader();
+                        r.onload = ev => {
+                            const img = document.createElement('img');
+                            img.src = ev.target.result;
+                            img.style.cssText = 'width:70px;height:70px;object-fit:cover;border-radius:8px;';
+                            previewDiv.appendChild(img);
+                        };
+                        r.readAsDataURL(f);
+                    }
                 });
+                const partes = [];
+                if (nFotos)  partes.push(`${nFotos} foto(s)`);
+                if (nVideos) partes.push(`${nVideos} video(s)`);
                 document.getElementById('compressInfoFinalizar').textContent =
-                    files.length ? `${files.length} foto(s) seleccionada(s) · ${(totalKB/1024).toFixed(1)} MB` : '';
+                    files.length ? `${partes.join(' · ')} · ${(totalKB/1024).toFixed(1)} MB` : '';
             });
 
             setTimeout(() => document.getElementById('comentarioTexto').focus(), 100);
@@ -4304,16 +4351,30 @@ async def mis_tareas():
             const btn = document.getElementById('btnConfirmarFinalizar');
             btn.disabled = true;
 
-            // 1) Subir evidencia (si hay fotos nuevas), vinculada a esta actividad exacta
+            // 1) Subir evidencia (si hay archivos nuevos), vinculada a esta actividad exacta
             if (archivosNuevos.length > 0) {
-                btn.textContent = '⏳ Comprimiendo fotos...';
-                const comprimidos = await Promise.all(archivosNuevos.map(f => _comprimirImagenCanvas(f)));
+                const MAX_VIDEO_MB = 80;
+                const videoDemasiadoGrande = archivosNuevos.find(f => {
+                    const esVideo = f.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|3gp|avi|mkv)$/i.test(f.name);
+                    return esVideo && f.size > MAX_VIDEO_MB * 1024 * 1024;
+                });
+                if (videoDemasiadoGrande) {
+                    errorEl.textContent = `El video "${videoDemasiadoGrande.name}" pesa más de ${MAX_VIDEO_MB}MB. Comprímelo o recorta la duración antes de subirlo.`;
+                    btn.disabled = false;
+                    return;
+                }
+
+                btn.textContent = '⏳ Preparando archivos...';
+                const procesados = await Promise.all(archivosNuevos.map(f => {
+                    const esVideo = f.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|3gp|avi|mkv)$/i.test(f.name);
+                    return esVideo ? Promise.resolve(f) : _comprimirImagenCanvas(f);
+                }));
                 btn.textContent = '📤 Subiendo evidencia...';
                 const fd = new FormData();
                 fd.append('unidad', unidad);
                 fd.append('tecnico', username);
                 fd.append('asignacion_id', id);
-                comprimidos.forEach(f => fd.append('files', f));
+                procesados.forEach(f => fd.append('files', f));
                 let upRes;
                 try {
                     upRes = await fetchAuth('/api/evidencias/upload', { method: 'POST', body: fd });

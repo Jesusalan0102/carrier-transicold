@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Header
 from fastapi.responses import StreamingResponse, Response
 from fastapi.concurrency import run_in_threadpool
 from auth import verify_token
 from db import execute_read, execute_write
-from typing import List
+from typing import List, Optional
 import zipfile
 import io
 import logging
@@ -32,6 +32,26 @@ MAX_DIMENSION    = 1280          # px — lado más largo
 JPEG_QUALITY     = 72            # 0-95; 72 es un buen balance calidad/tamaño
 MAX_BYTES_BEFORE = 800_000       # solo comprimir si pesa más de 800 KB
 MAX_CONCURRENT   = 5             # fotos que se procesan en paralelo a la vez
+
+# ── Video ───────────────────────────────────────────────────────────────
+VIDEO_EXTENSIONS = {"mp4", "mov", "webm", "m4v", "3gp", "avi", "mkv"}
+IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp", "heic", "heif"}
+MAX_VIDEO_BYTES  = 80 * 1024 * 1024   # 80 MB por video — suficiente para clips
+                                       # cortos de celular sin arriesgar la DB
+MIME_MAP = {
+    "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+    "gif": "image/gif", "webp": "image/webp", "heic": "image/heic", "heif": "image/heif",
+    "mp4": "video/mp4", "mov": "video/quicktime", "webm": "video/webm",
+    "m4v": "video/x-m4v", "3gp": "video/3gpp", "avi": "video/x-msvideo", "mkv": "video/x-matroska",
+}
+
+
+def _extension(filename: str) -> str:
+    return (filename.rsplit(".", 1)[-1].lower() if filename and "." in filename else "")
+
+
+def _tipo_de_archivo(filename: str) -> str:
+    return "video" if _extension(filename) in VIDEO_EXTENSIONS else "foto"
 
 
 # ── UTILIDAD: comprimir imagen ────────────────────────────────────────────
@@ -73,15 +93,25 @@ def comprimir_imagen(contenido: bytes, filename: str) -> bytes:
         return contenido
 
 
-# ── TAREA PARA UNA SOLA FOTO ──────────────────────────────────────────────
+# ── TAREA PARA UN SOLO ARCHIVO (foto o video) ─────────────────────────────
 async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_id: int = None) -> dict:
-    """Lee, comprime y guarda una foto. Devuelve {'filename', 'ok', 'error'}."""
+    """Lee, comprime (si es foto) y guarda una foto o video. Devuelve
+    {'filename', 'ok', 'error'}."""
     try:
         contenido = await file.read()
+        tipo = _tipo_de_archivo(file.filename)
 
-        # Comprimir solo si pesa más del umbral
-        if len(contenido) > MAX_BYTES_BEFORE:
-            contenido = await run_in_threadpool(comprimir_imagen, contenido, file.filename)
+        if tipo == "video":
+            if len(contenido) > MAX_VIDEO_BYTES:
+                mb = MAX_VIDEO_BYTES // (1024 * 1024)
+                return {"filename": file.filename, "ok": False,
+                        "error": f"El video pesa más de {mb}MB. Comprímelo o recorta la duración."}
+        else:
+            # Comprimir solo si pesa más del umbral
+            if len(contenido) > MAX_BYTES_BEFORE:
+                contenido = await run_in_threadpool(comprimir_imagen, contenido, file.filename)
+
+        mime_type = MIME_MAP.get(_extension(file.filename), file.content_type or "application/octet-stream")
 
         # execute_write es una llamada SÍNCRONA a MySQL; si se llama directo
         # dentro de un endpoint async bloquea TODO el event loop (la app corre
@@ -91,8 +121,9 @@ async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_
         # no bloquear el loop mientras se escribe el BLOB en la base de datos.
         ok = await run_in_threadpool(
             execute_write,
-            "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico, asignacion_id) VALUES (%s,%s,%s,%s,%s)",
-            (unidad, file.filename, contenido, tecnico, asignacion_id)
+            "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico, asignacion_id, tipo, mime_type) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (unidad, file.filename, contenido, tecnico, asignacion_id, tipo, mime_type)
         )
 
         # OneDrive en background — no bloquea la respuesta al celular
@@ -146,7 +177,7 @@ def contar_evidencias_asignacion(asignacion_id: int, current_user=Depends(verify
 @router.get("/por-actividad/{asignacion_id}")
 def evidencias_por_actividad(asignacion_id: int, current_user=Depends(require_admin_or_visor)):
     rows = execute_read(
-        """SELECT id, nombre_archivo, tecnico, unit_number,
+        """SELECT id, nombre_archivo, tecnico, unit_number, tipo,
                   COALESCE(created_at, '') AS fecha
            FROM evidencias
            WHERE asignacion_id=%s
@@ -158,6 +189,7 @@ def evidencias_por_actividad(asignacion_id: int, current_user=Depends(require_ad
         "nombre": r["nombre_archivo"] or f"foto_{r['id']}.jpg",
         "tecnico": r["tecnico"] or "",
         "unit_number": r["unit_number"],
+        "tipo": r.get("tipo") or "foto",
         "fecha": str(r["fecha"]) if r["fecha"] else "",
     } for r in (rows or [])]
     return {"asignacion_id": asignacion_id, "total": len(fotos), "fotos": fotos}
@@ -343,7 +375,7 @@ def listar_evidencias(
     total = total_res[0]["total"] if total_res else 0
 
     rows = execute_read(
-        """SELECT e.id, e.nombre_archivo, e.tecnico, e.asignacion_id,
+        """SELECT e.id, e.nombre_archivo, e.tecnico, e.asignacion_id, e.tipo,
                   COALESCE(e.created_at, '') AS fecha,
                   a.actividad_id AS actividad
            FROM evidencias e
@@ -359,6 +391,7 @@ def listar_evidencias(
             "id": r["id"],
             "nombre": r["nombre_archivo"] or f"foto_{r['id']}.jpg",
             "tecnico": r["tecnico"] or "",
+            "tipo": r.get("tipo") or "foto",
             "fecha": str(r["fecha"]) if r["fecha"] else "",
             "actividad": r.get("actividad") or "",
         })
@@ -390,28 +423,57 @@ def unidades_con_fotos(current_user=Depends(require_admin_or_visor)):
     return [{"unit_number": r["unit_number"], "total": r["total"], "id_lote": r["id_lote"]} for r in (rows or [])]
 
 
-# ── SERVIR UNA FOTO INDIVIDUAL — solo admin/visor ─────────────────────────
+# ── SERVIR UNA FOTO O VIDEO INDIVIDUAL — solo admin/visor ─────────────────
 @router.get("/foto/{foto_id}")
-def ver_foto(foto_id: int, current_user=Depends(require_admin_or_visor)):
+def ver_foto(foto_id: int, range: Optional[str] = Header(None), current_user=Depends(require_admin_or_visor)):
     rows = execute_read(
-        "SELECT nombre_archivo, contenido FROM evidencias WHERE id=%s",
+        "SELECT nombre_archivo, contenido, mime_type, tipo FROM evidencias WHERE id=%s",
         (foto_id,)
     )
     if not rows or not rows[0]["contenido"]:
-        raise HTTPException(status_code=404, detail="Foto no encontrada")
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
 
     contenido = rows[0]["contenido"]
+    contenido = bytes(contenido) if not isinstance(contenido, bytes) else contenido
     nombre = rows[0]["nombre_archivo"] or "foto.jpg"
-    ext = nombre.rsplit(".", 1)[-1].lower() if "." in nombre else "jpg"
-    media_map = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
-                 "gif": "image/gif", "webp": "image/webp"}
-    media_type = media_map.get(ext, "image/jpeg")
+    ext = _extension(nombre)
+    media_type = rows[0].get("mime_type") or MIME_MAP.get(ext, "application/octet-stream")
+    es_video = (rows[0].get("tipo") == "video")
 
-    return Response(
-        content=bytes(contenido) if not isinstance(contenido, bytes) else contenido,
-        media_type=media_type,
-        headers={"Cache-Control": "private, max-age=3600"},
-    )
+    if not es_video:
+        return Response(
+            content=contenido,
+            media_type=media_type,
+            headers={"Cache-Control": "private, max-age=3600"},
+        )
+
+    # ── Video: soporta Range requests para que el navegador pueda hacer
+    # streaming/seek en vez de tener que bajar el archivo completo primero ─
+    total = len(contenido)
+    if range is None:
+        return Response(
+            content=contenido,
+            media_type=media_type,
+            headers={"Cache-Control": "private, max-age=3600", "Accept-Ranges": "bytes"},
+        )
+
+    try:
+        _, rango = range.split("=")
+        start_s, end_s = rango.split("-")
+        start = int(start_s) if start_s else 0
+        end = int(end_s) if end_s else total - 1
+        end = min(end, total - 1)
+    except Exception:
+        start, end = 0, total - 1
+
+    chunk = contenido[start:end + 1]
+    headers = {
+        "Content-Range": f"bytes {start}-{end}/{total}",
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(len(chunk)),
+        "Cache-Control": "private, max-age=3600",
+    }
+    return Response(content=chunk, media_type=media_type, headers=headers, status_code=206)
 
 
 # ── ELIMINAR FOTOS SELECCIONADAS — solo admin ─────────────────────────────
