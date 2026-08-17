@@ -409,75 +409,98 @@ def _run_migrations():
                     conn.commit()
                     print("✅ Migración: columna asignacion_id añadida a evidencias")
 
-                # ── evidencias: tipo (foto/video) + mime_type ──────────────────────
-                # Permite que los técnicos suban también video como evidencia.
-                # tipo se infiere del nombre de archivo al subir; mime_type se
-                # guarda para servir el Content-Type correcto (antes se adivinaba
-                # solo por extensión, lo cual no cubre .mov, .webm, etc.).
-                cur.execute("""
-                    SELECT COLUMN_NAME FROM information_schema.COLUMNS
-                    WHERE TABLE_SCHEMA = DATABASE()
-                      AND TABLE_NAME   = 'evidencias'
-                      AND COLUMN_NAME IN ('tipo', 'mime_type')
-                """)
-                cols_existentes = {
-                    (r[0] if isinstance(r, tuple) else list(r.values())[0])
-                    for r in (cur.fetchall() or [])
-                }
-                if "tipo" not in cols_existentes:
-                    cur.execute(
-                        "ALTER TABLE evidencias ADD COLUMN tipo VARCHAR(10) NOT NULL DEFAULT 'foto', "
-                        "ADD INDEX idx_tipo (tipo)"
-                    )
-                    conn.commit()
-                    print("✅ Migración: columna tipo añadida a evidencias (foto/video)")
-                if "mime_type" not in cols_existentes:
-                    cur.execute(
-                        "ALTER TABLE evidencias ADD COLUMN mime_type VARCHAR(60) DEFAULT NULL"
-                    )
-                    conn.commit()
-                    print("✅ Migración: columna mime_type añadida a evidencias")
-
-                # ── evidencias: onedrive_item_id + onedrive_url ─────────────────────
-                # Para video, el archivo se sube a OneDrive y NO se guarda el
-                # blob completo en la base de datos (para no saturarla); se
-                # guarda solo la referencia al archivo en OneDrive.
-                cur.execute("""
-                    SELECT COLUMN_NAME FROM information_schema.COLUMNS
-                    WHERE TABLE_SCHEMA = DATABASE()
-                      AND TABLE_NAME   = 'evidencias'
-                      AND COLUMN_NAME IN ('onedrive_item_id', 'onedrive_url')
-                """)
-                cols_od = {
-                    (r[0] if isinstance(r, tuple) else list(r.values())[0])
-                    for r in (cur.fetchall() or [])
-                }
-                if "onedrive_item_id" not in cols_od:
-                    cur.execute(
-                        "ALTER TABLE evidencias ADD COLUMN onedrive_item_id VARCHAR(150) DEFAULT NULL"
-                    )
-                    conn.commit()
-                    print("✅ Migración: columna onedrive_item_id añadida a evidencias")
-                if "onedrive_url" not in cols_od:
-                    cur.execute(
-                        "ALTER TABLE evidencias ADD COLUMN onedrive_url VARCHAR(500) DEFAULT NULL"
-                    )
-                    conn.commit()
-                    print("✅ Migración: columna onedrive_url añadida a evidencias")
-                # contenido debe poder ser NULL para videos que solo viven en OneDrive
-                cur.execute("""
-                    SELECT IS_NULLABLE FROM information_schema.COLUMNS
-                    WHERE TABLE_SCHEMA = DATABASE()
-                      AND TABLE_NAME   = 'evidencias'
-                      AND COLUMN_NAME  = 'contenido'
-                """)
-                row_null = cur.fetchone()
-                if row_null:
-                    is_nullable = (row_null[0] if isinstance(row_null, tuple) else list(row_null.values())[0])
-                    if is_nullable == "NO":
-                        cur.execute("ALTER TABLE evidencias MODIFY COLUMN contenido LONGBLOB NULL")
+                # ── evidencias: tipo (foto/video) + mime_type + OneDrive ──────────
+                # Todo este bloque va en su propio try/except: si algo aquí falla,
+                # NO debe tumbar las migraciones que vienen después (comentario en
+                # unidades, tablas de PDI, etc.) — antes todo el archivo compartía
+                # un único try/except y un error a la mitad silenciaba todo el resto.
+                try:
+                    # Permite que los técnicos suban también video como evidencia.
+                    # tipo se infiere del nombre de archivo al subir; mime_type se
+                    # guarda para servir el Content-Type correcto (antes se adivinaba
+                    # solo por extensión, lo cual no cubre .mov, .webm, etc.).
+                    cur.execute("""
+                        SELECT COLUMN_NAME FROM information_schema.COLUMNS
+                        WHERE TABLE_SCHEMA = DATABASE()
+                          AND TABLE_NAME   = 'evidencias'
+                          AND COLUMN_NAME IN ('tipo', 'mime_type')
+                    """)
+                    cols_existentes = {
+                        (r[0] if isinstance(r, tuple) else list(r.values())[0])
+                        for r in (cur.fetchall() or [])
+                    }
+                    if "tipo" not in cols_existentes:
+                        cur.execute(
+                            "ALTER TABLE evidencias ADD COLUMN tipo VARCHAR(10) NOT NULL DEFAULT 'foto'"
+                        )
                         conn.commit()
-                        print("✅ Migración: evidencias.contenido ahora permite NULL (video en OneDrive)")
+                        print("✅ Migración: columna tipo añadida a evidencias (foto/video)")
+                    if "mime_type" not in cols_existentes:
+                        cur.execute(
+                            "ALTER TABLE evidencias ADD COLUMN mime_type VARCHAR(60) DEFAULT NULL"
+                        )
+                        conn.commit()
+                        print("✅ Migración: columna mime_type añadida a evidencias")
+
+                    # Índice de tipo por separado (algunas versiones de TiDB no
+                    # aceptan combinar ADD COLUMN + ADD INDEX del mismo campo en
+                    # un solo ALTER cuando el campo se acaba de crear)
+                    cur.execute("""
+                        SELECT COUNT(*) FROM information_schema.STATISTICS
+                        WHERE TABLE_SCHEMA = DATABASE()
+                          AND TABLE_NAME   = 'evidencias'
+                          AND INDEX_NAME   = 'idx_tipo'
+                    """)
+                    row_idx = cur.fetchone()
+                    count_idx = row_idx[0] if isinstance(row_idx, tuple) else list(row_idx.values())[0]
+                    if count_idx == 0:
+                        cur.execute("ALTER TABLE evidencias ADD INDEX idx_tipo (tipo)")
+                        conn.commit()
+                        print("✅ Migración: índice idx_tipo añadido a evidencias")
+
+                    # ── onedrive_item_id + onedrive_url ────────────────────────
+                    # Para video, el archivo se sube a OneDrive y NO se guarda el
+                    # blob completo en la base de datos (para no saturarla); se
+                    # guarda solo la referencia al archivo en OneDrive.
+                    cur.execute("""
+                        SELECT COLUMN_NAME FROM information_schema.COLUMNS
+                        WHERE TABLE_SCHEMA = DATABASE()
+                          AND TABLE_NAME   = 'evidencias'
+                          AND COLUMN_NAME IN ('onedrive_item_id', 'onedrive_url')
+                    """)
+                    cols_od = {
+                        (r[0] if isinstance(r, tuple) else list(r.values())[0])
+                        for r in (cur.fetchall() or [])
+                    }
+                    if "onedrive_item_id" not in cols_od:
+                        cur.execute(
+                            "ALTER TABLE evidencias ADD COLUMN onedrive_item_id VARCHAR(150) DEFAULT NULL"
+                        )
+                        conn.commit()
+                        print("✅ Migración: columna onedrive_item_id añadida a evidencias")
+                    if "onedrive_url" not in cols_od:
+                        cur.execute(
+                            "ALTER TABLE evidencias ADD COLUMN onedrive_url VARCHAR(500) DEFAULT NULL"
+                        )
+                        conn.commit()
+                        print("✅ Migración: columna onedrive_url añadida a evidencias")
+                    # contenido debe poder ser NULL para videos que solo viven en OneDrive
+                    cur.execute("""
+                        SELECT IS_NULLABLE FROM information_schema.COLUMNS
+                        WHERE TABLE_SCHEMA = DATABASE()
+                          AND TABLE_NAME   = 'evidencias'
+                          AND COLUMN_NAME  = 'contenido'
+                    """)
+                    row_null = cur.fetchone()
+                    if row_null:
+                        is_nullable = (row_null[0] if isinstance(row_null, tuple) else list(row_null.values())[0])
+                        if is_nullable == "NO":
+                            cur.execute("ALTER TABLE evidencias MODIFY COLUMN contenido LONGBLOB NULL")
+                            conn.commit()
+                            print("✅ Migración: evidencias.contenido ahora permite NULL (video en OneDrive)")
+                except Exception as e_video:
+                    print(f"⚠️  Migración de video/OneDrive en evidencias omitida: {e_video}")
+                    conn.rollback()
 
                 # ── comentario en unidades (nota libre del admin en el dashboard) ─
                 cur.execute("""

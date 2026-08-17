@@ -141,12 +141,27 @@ async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_
         # vez esto acumula bloqueo suficiente para que el gateway corte la
         # conexión antes de recibir respuesta. Se ejecuta en threadpool para
         # no bloquear el loop mientras se escribe el BLOB en la base de datos.
-        ok = await run_in_threadpool(
-            execute_write,
-            "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico, asignacion_id, tipo, mime_type, onedrive_item_id, onedrive_url) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-            (unidad, file.filename, contenido_a_guardar, tecnico, asignacion_id, tipo, mime_type, onedrive_item_id, onedrive_url)
-        )
+        try:
+            ok = await run_in_threadpool(
+                execute_write,
+                "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico, asignacion_id, tipo, mime_type, onedrive_item_id, onedrive_url) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                (unidad, file.filename, contenido_a_guardar, tecnico, asignacion_id, tipo, mime_type, onedrive_item_id, onedrive_url)
+            )
+        except Exception as e_insert:
+            # Columnas nuevas (tipo/mime_type/onedrive_*) aún no migradas en la
+            # DB (deploy muy reciente) — no perder el archivo del técnico:
+            # reintentar con el INSERT clásico. Si es un video y ya se subió a
+            # OneDrive, se guarda igual el blob completo como respaldo porque
+            # sin la columna onedrive_item_id no hay forma de solo guardar la
+            # referencia.
+            logger.warning(f"[evidencias] Fallback de INSERT sin columnas nuevas: {e_insert}")
+            ok = await run_in_threadpool(
+                execute_write,
+                "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico, asignacion_id) "
+                "VALUES (%s,%s,%s,%s,%s)",
+                (unidad, file.filename, contenido, tecnico, asignacion_id)
+            )
 
         # OneDrive en background para FOTOS (el video ya se subió arriba, síncrono)
         if ok and tipo == "foto" and ONEDRIVE_ENABLED:
@@ -198,14 +213,27 @@ def contar_evidencias_asignacion(asignacion_id: int, current_user=Depends(verify
 # ── LISTAR FOTOS DE UNA ACTIVIDAD ESPECÍFICA — solo admin/visor ──────────
 @router.get("/por-actividad/{asignacion_id}")
 def evidencias_por_actividad(asignacion_id: int, current_user=Depends(require_admin_or_visor)):
-    rows = execute_read(
-        """SELECT id, nombre_archivo, tecnico, unit_number, tipo,
-                  COALESCE(created_at, '') AS fecha
-           FROM evidencias
-           WHERE asignacion_id=%s
-           ORDER BY id ASC""",
-        (asignacion_id,)
-    )
+    try:
+        rows = execute_read(
+            """SELECT id, nombre_archivo, tecnico, unit_number, tipo,
+                      COALESCE(created_at, '') AS fecha
+               FROM evidencias
+               WHERE asignacion_id=%s
+               ORDER BY id ASC""",
+            (asignacion_id,)
+        )
+    except Exception as e:
+        # Columna 'tipo' aún no migrada en la DB (deploy reciente) — no tronar,
+        # responder igual sin ese campo (se asume 'foto' por defecto).
+        logger.warning(f"[evidencias] Fallback sin columna 'tipo' en por-actividad: {e}")
+        rows = execute_read(
+            """SELECT id, nombre_archivo, tecnico, unit_number,
+                      COALESCE(created_at, '') AS fecha
+               FROM evidencias
+               WHERE asignacion_id=%s
+               ORDER BY id ASC""",
+            (asignacion_id,)
+        )
     fotos = [{
         "id": r["id"],
         "nombre": r["nombre_archivo"] or f"foto_{r['id']}.jpg",
@@ -405,17 +433,33 @@ def listar_evidencias(
     )
     total = total_res[0]["total"] if total_res else 0
 
-    rows = execute_read(
-        """SELECT e.id, e.nombre_archivo, e.tecnico, e.asignacion_id, e.tipo,
-                  COALESCE(e.created_at, '') AS fecha,
-                  a.actividad_id AS actividad
-           FROM evidencias e
-           LEFT JOIN asignaciones a ON a.id = e.asignacion_id
-           WHERE e.unit_number=%s
-           ORDER BY e.id DESC
-           LIMIT %s OFFSET %s""",
-        (unit_number, per_page, offset)
-    )
+    try:
+        rows = execute_read(
+            """SELECT e.id, e.nombre_archivo, e.tecnico, e.asignacion_id, e.tipo,
+                      COALESCE(e.created_at, '') AS fecha,
+                      a.actividad_id AS actividad
+               FROM evidencias e
+               LEFT JOIN asignaciones a ON a.id = e.asignacion_id
+               WHERE e.unit_number=%s
+               ORDER BY e.id DESC
+               LIMIT %s OFFSET %s""",
+            (unit_number, per_page, offset)
+        )
+    except Exception as e:
+        # Columna 'tipo' aún no migrada en la DB (deploy reciente) — no tronar,
+        # responder igual sin ese campo (se asume 'foto' por defecto).
+        logger.warning(f"[evidencias] Fallback sin columna 'tipo' en lista: {e}")
+        rows = execute_read(
+            """SELECT e.id, e.nombre_archivo, e.tecnico, e.asignacion_id,
+                      COALESCE(e.created_at, '') AS fecha,
+                      a.actividad_id AS actividad
+               FROM evidencias e
+               LEFT JOIN asignaciones a ON a.id = e.asignacion_id
+               WHERE e.unit_number=%s
+               ORDER BY e.id DESC
+               LIMIT %s OFFSET %s""",
+            (unit_number, per_page, offset)
+        )
     fotos = []
     for r in (rows or []):
         fotos.append({
@@ -457,10 +501,21 @@ def unidades_con_fotos(current_user=Depends(require_admin_or_visor)):
 # ── SERVIR UNA FOTO O VIDEO INDIVIDUAL — solo admin/visor ─────────────────
 @router.get("/foto/{foto_id}")
 def ver_foto(foto_id: int, range: Optional[str] = Header(None), current_user=Depends(require_admin_or_visor)):
-    rows = execute_read(
-        "SELECT nombre_archivo, contenido, mime_type, tipo, onedrive_item_id FROM evidencias WHERE id=%s",
-        (foto_id,)
-    )
+    try:
+        rows = execute_read(
+            "SELECT nombre_archivo, contenido, mime_type, tipo, onedrive_item_id FROM evidencias WHERE id=%s",
+            (foto_id,)
+        )
+    except Exception as e:
+        logger.warning(f"[evidencias] Fallback sin columnas nuevas en ver_foto: {e}")
+        rows = execute_read(
+            "SELECT nombre_archivo, contenido FROM evidencias WHERE id=%s",
+            (foto_id,)
+        )
+        if rows:
+            rows[0]["mime_type"] = None
+            rows[0]["tipo"] = "foto"
+            rows[0]["onedrive_item_id"] = None
     if not rows:
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
 
