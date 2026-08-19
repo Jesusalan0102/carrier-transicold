@@ -50,11 +50,16 @@ _PUSH_LABELS = {
     "actividad_completada": ("🏁 Actividad completada",    "Una actividad fue completada"),
     "ticket_nuevo":         ("🎫 Nuevo ticket",             "Se creó un nuevo ticket de servicio"),
     "corriendo_6h":         ("⏱️ 6 horas corriendo",        "Una unidad lleva 6 horas corriendo"),
+    "horario_actualizado":  ("📅 Horario actualizado",      "Tu horario semanal fue actualizado"),
 }
 
 
 async def notify(event: str, payload: dict = None):
-    """Emite evento por WebSocket Y envía push notification."""
+    """Emite evento por WebSocket Y envía push notification.
+
+    Si payload trae "usernames" (lista), el push solo se manda a esos
+    usuarios (ej. horario_actualizado). Si no, se manda a todos.
+    """
     data = {
         "type": event,
         "payload": payload or {},
@@ -71,11 +76,17 @@ async def notify(event: str, payload: dict = None):
         if p.get("tecnico"):     parts.append(p["tecnico"])
         if p.get("unidad"):      parts.append(f"Unidad {p['unidad']}")
         if p.get("unit_number"): parts.append(f"Unidad {p['unit_number']}")
+        if p.get("semana"):      parts.append(f"Semana del {p['semana']}")
         body = " · ".join(parts) if parts else base_body
 
         loop = asyncio.get_event_loop()
-        from routers.push_router import send_push_to_all
-        await loop.run_in_executor(None, send_push_to_all, title, body, event)
+        usernames = p.get("usernames")
+        if usernames:
+            from routers.push_router import send_push_to_users
+            await loop.run_in_executor(None, send_push_to_users, usernames, title, body, event)
+        else:
+            from routers.push_router import send_push_to_all
+            await loop.run_in_executor(None, send_push_to_all, title, body, event)
 
 
 UMBRAL_HORAS_CORRIENDO = 6

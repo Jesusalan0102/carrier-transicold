@@ -38,6 +38,85 @@ def ahora_tijuana():
 router = APIRouter(prefix="/api/horarios", tags=["horarios"])
 
 
+# ── Alertas persistentes de horario ─────────────────────────────────────────
+# Complementa el push (VAPID): el push requiere permiso del navegador y
+# muchos técnicos nunca lo aceptan. Esta tabla guarda un aviso "in-app" que
+# el técnico ve la próxima vez que abre la app, hasta que lo cierre.
+
+def _ensure_notif_table():
+    execute_write("""
+        CREATE TABLE IF NOT EXISTS horario_notificaciones (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            username    VARCHAR(100) NOT NULL,
+            semana      VARCHAR(20)  NOT NULL,
+            visto       TINYINT(1)   NOT NULL DEFAULT 0,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_username_visto (username, visto)
+        )
+    """)
+
+
+def registrar_alertas_horario(usernames, semana: str):
+    """Crea (o actualiza) el aviso in-app 'tu horario cambió' para cada username.
+    Si ya existe un aviso sin leer para esa semana, no duplica — solo refresca
+    la fecha para que vuelva a aparecer como reciente."""
+    if not usernames:
+        return
+    _ensure_notif_table()
+    for username in usernames:
+        existente = execute_read(
+            "SELECT id FROM horario_notificaciones WHERE username=%s AND semana=%s AND visto=0",
+            (username, semana)
+        )
+        if existente:
+            execute_write(
+                "UPDATE horario_notificaciones SET created_at=CURRENT_TIMESTAMP WHERE id=%s",
+                (existente[0]["id"],)
+            )
+        else:
+            execute_write(
+                "INSERT INTO horario_notificaciones (username, semana) VALUES (%s,%s)",
+                (username, semana)
+            )
+
+
+# ── GET /api/horarios/alertas ────────────────────────────────────────────────
+# El técnico consulta sus avisos de horario sin leer (banner en su app).
+
+@router.get("/alertas")
+def get_mis_alertas(current_user=Depends(verify_token)):
+    _ensure_notif_table()
+    rows = execute_read(
+        "SELECT id, semana, created_at FROM horario_notificaciones "
+        "WHERE username=%s AND visto=0 ORDER BY created_at DESC",
+        (current_user["username"],)
+    ) or []
+    return [
+        {"id": r["id"], "semana": r["semana"], "creado": _to_str(r["created_at"])}
+        for r in rows
+    ]
+
+
+class MarcarVistoPayload(BaseModel):
+    ids: List[int]
+
+
+# ── POST /api/horarios/alertas/marcar-visto ──────────────────────────────────
+
+@router.post("/alertas/marcar-visto")
+def marcar_alertas_vistas(payload: MarcarVistoPayload, current_user=Depends(verify_token)):
+    if not payload.ids:
+        return {"ok": True, "marcados": 0}
+    _ensure_notif_table()
+    placeholders = ",".join(["%s"] * len(payload.ids))
+    execute_write(
+        f"UPDATE horario_notificaciones SET visto=1 "
+        f"WHERE username=%s AND id IN ({placeholders})",
+        (current_user["username"], *payload.ids)
+    )
+    return {"ok": True, "marcados": len(payload.ids)}
+
+
 # ── Schemas ────────────────────────────────────────────────────────────────────
 
 class HorarioItem(BaseModel):
@@ -203,47 +282,102 @@ def get_mis_horarios(
 # ── POST /api/horarios/ ────────────────────────────────────────────────────────
 
 @router.post("/")
-def save_horarios(payload: HorariosBatch, current_user=Depends(verify_token)):
+async def save_horarios(payload: HorariosBatch, current_user=Depends(verify_token)):
+    """
+    Guarda el horario semanal.
+
+    Optimizaciones:
+      - 1 sola query para precargar TODOS los horarios existentes del
+        username/fecha del payload, en vez de un SELECT por fila (antes eran
+        hasta N SELECT + N UPDATE/INSERT secuenciales — esto es lo que hacía
+        lento el botón "Guardar Horarios" con varios técnicos).
+      - Filas sin cambios reales se saltan por completo (no se escriben en
+        la BD), lo que también evita mandar alertas de "horario actualizado"
+        quien en realidad no tuvo ningún cambio.
+
+    Al final, si hubo cambios reales, dispara una alerta (WebSocket + push)
+    a los técnicos afectados avisándoles que su horario cambió.
+    """
     if current_user["role"] not in ("admin",):
         raise HTTPException(status_code=403, detail="Solo administradores")
 
+    if not payload.registros:
+        return {"ok": True, "guardados": 0, "eliminados": 0, "notificados": 0}
+
+    usernames_payload = list({item.username for item in payload.registros})
+    fechas_payload = list({item.fecha for item in payload.registros})
+
+    existentes = {}
+    if usernames_payload and fechas_payload:
+        ph_u = ",".join(["%s"] * len(usernames_payload))
+        ph_f = ",".join(["%s"] * len(fechas_payload))
+        rows = execute_read(
+            f"SELECT username, fecha, hora_entrada, hora_salida FROM horarios "
+            f"WHERE username IN ({ph_u}) AND fecha IN ({ph_f})",
+            (*usernames_payload, *fechas_payload)
+        ) or []
+        for r in rows:
+            existentes[(r["username"], _to_str(r["fecha"]))] = r
+
     guardados  = 0
     eliminados = 0
+    afectados  = set()
+    semana_afectada = None
 
     for item in payload.registros:
-        entrada = (item.hora_entrada or "").strip()
-        salida  = (item.hora_salida  or "").strip()
+        entrada = (item.hora_entrada or "").strip() or None
+        salida  = (item.hora_salida  or "").strip() or None
 
-        existente = execute_read(
-            "SELECT id FROM horarios WHERE username=%s AND fecha=%s",
-            (item.username, item.fecha)
-        )
+        fila_actual = existentes.get((item.username, item.fecha))
+        actual_entrada = _to_str(fila_actual["hora_entrada"]) if fila_actual else None
+        actual_salida  = _to_str(fila_actual["hora_salida"])  if fila_actual else None
 
         if not entrada and not salida:
-            if existente:
+            if fila_actual:
                 execute_write(
                     "DELETE FROM horarios WHERE username=%s AND fecha=%s",
                     (item.username, item.fecha)
                 )
                 eliminados += 1
-        else:
-            if existente:
-                execute_write(
-                    "UPDATE horarios SET hora_entrada=%s, hora_salida=%s, semana=%s "
-                    "WHERE username=%s AND fecha=%s",
-                    (entrada or None, salida or None, item.semana,
-                     item.username, item.fecha)
-                )
-            else:
-                execute_write(
-                    "INSERT INTO horarios (username, fecha, semana, hora_entrada, hora_salida) "
-                    "VALUES (%s,%s,%s,%s,%s)",
-                    (item.username, item.fecha, item.semana,
-                     entrada or None, salida or None)
-                )
-            guardados += 1
+                afectados.add(item.username)
+                semana_afectada = item.semana
+            continue
 
-    return {"ok": True, "guardados": guardados, "eliminados": eliminados}
+        # Sin cambios reales respecto a lo guardado: no tocar la BD.
+        if fila_actual and entrada == actual_entrada and salida == actual_salida:
+            continue
+
+        if fila_actual:
+            execute_write(
+                "UPDATE horarios SET hora_entrada=%s, hora_salida=%s, semana=%s "
+                "WHERE username=%s AND fecha=%s",
+                (entrada, salida, item.semana, item.username, item.fecha)
+            )
+        else:
+            execute_write(
+                "INSERT INTO horarios (username, fecha, semana, hora_entrada, hora_salida) "
+                "VALUES (%s,%s,%s,%s,%s)",
+                (item.username, item.fecha, item.semana, entrada, salida)
+            )
+        guardados += 1
+        afectados.add(item.username)
+        semana_afectada = item.semana
+
+    if afectados:
+        registrar_alertas_horario(sorted(afectados), semana_afectada)
+        from routers.ws import notify
+        await notify("horario_actualizado", {
+            "usernames": sorted(afectados),
+            "semana": semana_afectada,
+            "cantidad": len(afectados),
+        })
+
+    return {
+        "ok": True,
+        "guardados": guardados,
+        "eliminados": eliminados,
+        "notificados": len(afectados),
+    }
 
 
 # ── POST /api/horarios/importar-excel ──────────────────────────────────────────
@@ -527,50 +661,83 @@ class ConfirmarImportacion(BaseModel):
     registros: List[HorarioImportRow]
 
 @router.post("/confirmar-importacion")
-def confirmar_importacion(payload: ConfirmarImportacion, current_user=Depends(verify_token)):
+async def confirmar_importacion(payload: ConfirmarImportacion, current_user=Depends(verify_token)):
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo administradores")
 
+    usernames_payload = list({row.username for row in payload.registros if row.username})
+    fechas_payload = list({dia.fecha for row in payload.registros for dia in row.horarios})
+
+    existentes = {}
+    if usernames_payload and fechas_payload:
+        ph_u = ",".join(["%s"] * len(usernames_payload))
+        ph_f = ",".join(["%s"] * len(fechas_payload))
+        rows = execute_read(
+            f"SELECT username, fecha, hora_entrada, hora_salida FROM horarios "
+            f"WHERE username IN ({ph_u}) AND fecha IN ({ph_f})",
+            (*usernames_payload, *fechas_payload)
+        ) or []
+        for r in rows:
+            existentes[(r["username"], _to_str(r["fecha"]))] = r
+
     guardados  = 0
     eliminados = 0
+    afectados  = set()
 
     for row in payload.registros:
         if not row.username:
             continue
         for dia in row.horarios:
-            entrada = (dia.hora_entrada or "").strip()
-            salida  = (dia.hora_salida  or "").strip()
+            entrada = (dia.hora_entrada or "").strip() or None
+            salida  = (dia.hora_salida  or "").strip() or None
 
-            existente = execute_read(
-                "SELECT id FROM horarios WHERE username=%s AND fecha=%s",
-                (row.username, dia.fecha)
-            )
+            fila_actual = existentes.get((row.username, dia.fecha))
+            actual_entrada = _to_str(fila_actual["hora_entrada"]) if fila_actual else None
+            actual_salida  = _to_str(fila_actual["hora_salida"])  if fila_actual else None
 
             if not entrada and not salida:
-                if existente:
+                if fila_actual:
                     execute_write(
                         "DELETE FROM horarios WHERE username=%s AND fecha=%s",
                         (row.username, dia.fecha)
                     )
                     eliminados += 1
-            else:
-                if existente:
-                    execute_write(
-                        "UPDATE horarios SET hora_entrada=%s, hora_salida=%s, semana=%s "
-                        "WHERE username=%s AND fecha=%s",
-                        (entrada or None, salida or None, payload.semana,
-                         row.username, dia.fecha)
-                    )
-                else:
-                    execute_write(
-                        "INSERT INTO horarios (username, fecha, semana, hora_entrada, hora_salida) "
-                        "VALUES (%s,%s,%s,%s,%s)",
-                        (row.username, dia.fecha, payload.semana,
-                         entrada or None, salida or None)
-                    )
-                guardados += 1
+                    afectados.add(row.username)
+                continue
 
-    return {"ok": True, "guardados": guardados, "eliminados": eliminados}
+            if fila_actual and entrada == actual_entrada and salida == actual_salida:
+                continue  # sin cambios: no escribir ni notificar
+
+            if fila_actual:
+                execute_write(
+                    "UPDATE horarios SET hora_entrada=%s, hora_salida=%s, semana=%s "
+                    "WHERE username=%s AND fecha=%s",
+                    (entrada, salida, payload.semana, row.username, dia.fecha)
+                )
+            else:
+                execute_write(
+                    "INSERT INTO horarios (username, fecha, semana, hora_entrada, hora_salida) "
+                    "VALUES (%s,%s,%s,%s,%s)",
+                    (row.username, dia.fecha, payload.semana, entrada, salida)
+                )
+            guardados += 1
+            afectados.add(row.username)
+
+    if afectados:
+        from routers.ws import notify
+        await notify("horario_actualizado", {
+            "usernames": sorted(afectados),
+            "semana": payload.semana,
+            "cantidad": len(afectados),
+        })
+        registrar_alertas_horario(sorted(afectados), payload.semana)
+
+    return {
+        "ok": True,
+        "guardados": guardados,
+        "eliminados": eliminados,
+        "notificados": len(afectados),
+    }
 
 
 # ── Comentarios semanales de asistencia ─────────────────────────────────────

@@ -93,6 +93,30 @@ def send_push_to_all(title: str, body: str, tag: str = "carrier-event", url: str
     except Exception:
         return
 
+    _enviar_a_suscriptores(subs, title, body, tag, url)
+
+
+# ── Enviar push solo a un subconjunto de usuarios ─────────────────────────────
+def send_push_to_users(usernames: list, title: str, body: str, tag: str = "carrier-event", url: str = "/app"):
+    """Llamar desde ws.notify() cuando el evento aplica solo a ciertos técnicos
+    (p.ej. cambios de horario), en vez de avisarle a todo mundo."""
+    if not VAPID_PRIVATE or not VAPID_PUBLIC or not usernames:
+        return
+
+    try:
+        ensure_push_table()
+        placeholders = ",".join(["%s"] * len(usernames))
+        subs = execute_read(
+            f"SELECT * FROM push_subscriptions WHERE username IN ({placeholders})",
+            tuple(usernames)
+        )
+    except Exception:
+        return
+
+    _enviar_a_suscriptores(subs, title, body, tag, url)
+
+
+def _enviar_a_suscriptores(subs, title: str, body: str, tag: str, url: str):
     if not subs:
         return
 
