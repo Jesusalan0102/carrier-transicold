@@ -206,12 +206,16 @@ async def ocultar_lote(
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo administradores")
 
-    existentes = execute_read("SELECT id FROM unidades WHERE id_lote=%s", (id_lote,))
+    existentes = await run_in_threadpool(
+        execute_read, "SELECT id FROM unidades WHERE id_lote=%s", (id_lote,)
+    )
     if not existentes:
         raise HTTPException(status_code=404, detail=f"Lote '{id_lote}' no encontrado")
 
     # Ocultar el lote INMEDIATAMENTE — no esperar el backup
-    execute_write("UPDATE unidades SET oculto=1 WHERE id_lote=%s", (id_lote,))
+    await run_in_threadpool(
+        execute_write, "UPDATE unidades SET oculto=1 WHERE id_lote=%s", (id_lote,)
+    )
 
     respuesta = {
         "mensaje": f"Lote '{id_lote}' ocultado del dashboard",

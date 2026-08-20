@@ -11,6 +11,7 @@ Fixes aplicados:
 """
 
 from fastapi import APIRouter, HTTPException, Query, Depends, UploadFile, File
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import Optional, List
 import pymysql
@@ -266,6 +267,12 @@ async def importar_horarios(
     if not registros:
         return {"ok": True, "guardados": 0, "eliminados": 0, "errores": []}
 
+    return await run_in_threadpool(_importar_horarios_sync, registros)
+
+
+def _importar_horarios_sync(registros: List["HorarioImportItem"]):
+    """Loop de guardado de importar_horarios, síncrono para correr en
+    threadpool (endpoint admin, poco frecuente, pero igual bloqueaba)."""
     guardados  = 0
     eliminados = 0
     errores    = []
@@ -375,24 +382,25 @@ def guardar_configuracion(config: GeofenceConfig):
 
 # ── POST /api/asistencia/registrar ───────────────────────────────────────────
 
-@router.post("/registrar")
-async def registrar_asistencia(
-    body: RegistroAsistenciaBody,
-    current_user=Depends(verify_token)
-):
-    username = current_user["username"]
+def _registrar_asistencia_sync(body: "RegistroAsistenciaBody", username: str):
+    """
+    Todo el trabajo de check-in (config de geocerca, cálculo de retardo,
+    INSERT con la foto) en una función síncrona, para correr en threadpool.
+
+    registrar_asistencia es el endpoint con más tráfico simultáneo de toda
+    la app (todos los técnicos entrando casi a la misma hora). Antes hacía
+    execute_read + un INSERT con blob de foto directo dentro de un async def
+    sin threadpool: cada check-in bloqueaba el event loop para TODA la app
+    mientras corría, justo en la hora pico. Mismo patrón que evidencias
+    (fotos) y horarios ya corregido.
+    """
     tipo = body.tipo
 
-    if tipo not in ("entrada", "salida"):
-        raise HTTPException(400, "Tipo debe ser 'entrada' o 'salida'")
-
     # 1. Validar precisión GPS — MODO SOLO-REGISTRO: nunca se rechaza el check-in.
-    #    Se conserva el dato de precisión/ubicación para auditoría, pero ya no
-    #    bloquea a nadie. (Antes: HTTPException 422 si accuracy > GPS_ACCURACY_LIMIT)
     gps_ok, gps_msg = es_gps_preciso(body.accuracy, limite_metros=GPS_ACCURACY_LIMIT)
 
-    # 2. Validar geocerca — MODO SOLO-REGISTRO: si no hay coordenadas (permiso
-    #    de ubicación denegado), simplemente se registra sin dato de distancia.
+    # 2. Validar geocerca — MODO SOLO-REGISTRO: si no hay coordenadas, se
+    #    registra sin dato de distancia.
     config = obtener_configuracion()
     if body.lat is None or body.lon is None:
         dentro, distancia = True, None
@@ -473,6 +481,18 @@ async def registrar_asistencia(
         raise HTTPException(500, str(e))
     finally:
         connection.close()
+
+
+@router.post("/registrar")
+async def registrar_asistencia(
+    body: RegistroAsistenciaBody,
+    current_user=Depends(verify_token)
+):
+    username = current_user["username"]
+    if body.tipo not in ("entrada", "salida"):
+        raise HTTPException(400, "Tipo debe ser 'entrada' o 'salida'")
+
+    return await run_in_threadpool(_registrar_asistencia_sync, body, username)
 
 
 # ── GET /api/asistencia/generar-qr ───────────────────────────────────────────
