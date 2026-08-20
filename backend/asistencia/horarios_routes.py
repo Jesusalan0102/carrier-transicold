@@ -15,6 +15,7 @@ from datetime import date, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -281,28 +282,11 @@ def get_mis_horarios(
 
 # ── POST /api/horarios/ ────────────────────────────────────────────────────────
 
-@router.post("/")
-async def save_horarios(payload: HorariosBatch, current_user=Depends(verify_token)):
-    """
-    Guarda el horario semanal.
-
-    Optimizaciones:
-      - 1 sola query para precargar TODOS los horarios existentes del
-        username/fecha del payload, en vez de un SELECT por fila (antes eran
-        hasta N SELECT + N UPDATE/INSERT secuenciales — esto es lo que hacía
-        lento el botón "Guardar Horarios" con varios técnicos).
-      - Filas sin cambios reales se saltan por completo (no se escriben en
-        la BD), lo que también evita mandar alertas de "horario actualizado"
-        quien en realidad no tuvo ningún cambio.
-
-    Al final, si hubo cambios reales, dispara una alerta (WebSocket + push)
-    a los técnicos afectados avisándoles que su horario cambió.
-    """
-    if current_user["role"] not in ("admin",):
-        raise HTTPException(status_code=403, detail="Solo administradores")
-
+def _save_horarios_sync(payload: HorariosBatch):
+    """Todo el trabajo de BD de save_horarios, síncrono a propósito para
+    correr en threadpool (ver nota de bloqueo de event loop arriba)."""
     if not payload.registros:
-        return {"ok": True, "guardados": 0, "eliminados": 0, "notificados": 0}
+        return 0, 0, set(), None
 
     usernames_payload = list({item.username for item in payload.registros})
     fechas_payload = list({item.fecha for item in payload.registros})
@@ -365,6 +349,41 @@ async def save_horarios(payload: HorariosBatch, current_user=Depends(verify_toke
 
     if afectados:
         registrar_alertas_horario(sorted(afectados), semana_afectada)
+
+    return guardados, eliminados, afectados, semana_afectada
+
+
+@router.post("/")
+async def save_horarios(payload: HorariosBatch, current_user=Depends(verify_token)):
+    """
+    Guarda el horario semanal.
+
+    Optimizaciones:
+      - 1 sola query para precargar TODOS los horarios existentes del
+        username/fecha del payload, en vez de un SELECT por fila (antes eran
+        hasta N SELECT + N UPDATE/INSERT secuenciales — esto es lo que hacía
+        lento el botón "Guardar Horarios" con varios técnicos).
+      - Filas sin cambios reales se saltan por completo (no se escriben en
+        la BD), lo que también evita mandar alertas de "horario actualizado"
+        a quien en realidad no tuvo ningún cambio.
+      - Todo el trabajo de BD corre en threadpool (_save_horarios_sync) para
+        no bloquear el event loop: execute_write/execute_read son llamadas
+        SÍNCRONAS a MySQL, y la app corre con 1 solo worker — si se llaman
+        directo dentro de un endpoint async, congelan la app entera (tickets,
+        asistencia, todo) mientras se guarda el horario. Mismo criterio que
+        ya se documentó en evidencias_router.py.
+
+    Al final, si hubo cambios reales, dispara una alerta (WebSocket + push)
+    a los técnicos afectados avisándoles que su horario cambió.
+    """
+    if current_user["role"] not in ("admin",):
+        raise HTTPException(status_code=403, detail="Solo administradores")
+
+    guardados, eliminados, afectados, semana_afectada = await run_in_threadpool(
+        _save_horarios_sync, payload
+    )
+
+    if afectados:
         from routers.ws import notify
         await notify("horario_actualizado", {
             "usernames": sorted(afectados),
@@ -660,11 +679,10 @@ class ConfirmarImportacion(BaseModel):
     semana:   str
     registros: List[HorarioImportRow]
 
-@router.post("/confirmar-importacion")
-async def confirmar_importacion(payload: ConfirmarImportacion, current_user=Depends(verify_token)):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores")
 
+def _confirmar_importacion_sync(payload: ConfirmarImportacion):
+    """Trabajo de BD de confirmar_importacion, síncrono para correr en
+    threadpool (mismo motivo que _save_horarios_sync)."""
     usernames_payload = list({row.username for row in payload.registros if row.username})
     fechas_payload = list({dia.fecha for row in payload.registros for dia in row.horarios})
 
@@ -724,13 +742,27 @@ async def confirmar_importacion(payload: ConfirmarImportacion, current_user=Depe
             afectados.add(row.username)
 
     if afectados:
+        registrar_alertas_horario(sorted(afectados), payload.semana)
+
+    return guardados, eliminados, afectados
+
+
+@router.post("/confirmar-importacion")
+async def confirmar_importacion(payload: ConfirmarImportacion, current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+
+    guardados, eliminados, afectados = await run_in_threadpool(
+        _confirmar_importacion_sync, payload
+    )
+
+    if afectados:
         from routers.ws import notify
         await notify("horario_actualizado", {
             "usernames": sorted(afectados),
             "semana": payload.semana,
             "cantidad": len(afectados),
         })
-        registrar_alertas_horario(sorted(afectados), payload.semana)
 
     return {
         "ok": True,
