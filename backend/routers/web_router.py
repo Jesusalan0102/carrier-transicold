@@ -429,6 +429,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 actividad_completada: function(){{ _playTone([523,659,784,1047],0.12,'sine',0.4); }},
                 ticket_nuevo:         function(){{ _playTone([330,262,220],0.2,'sawtooth',0.25); }},
                 corriendo_6h:         function(){{ _playTone([880,660,880,660],0.16,'square',0.4); }},
+                horario_actualizado:  function(){{ _playTone([587,740,880],0.14,'sine',0.32); }},
             }};
             const _LABELS = {{
                 solicitud_nueva:      'Solicitud de actividad',
@@ -439,13 +440,14 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 actividad_completada: 'Actividad completada',
                 ticket_nuevo:         'Nuevo ticket creado',
                 corriendo_6h:         'Unidad lleva 6 horas corriendo',
+                horario_actualizado:  'Tu horario fue actualizado',
             }};
             const _ICONS = {{
                 solicitud_nueva:'&#x1F4CB;', asignacion_nueva:'&#x2705;',
                 solicitud_aprobada:'&#x1F44D;', actividad_iniciada:'&#x25B6;&#xFE0F;',
                 actividad_pausada:'&#x23F8;&#xFE0F;',
                 actividad_completada:'&#x1F3C1;', ticket_nuevo:'&#x1F3AB;',
-                corriendo_6h:'&#x23F1;&#xFE0F;',
+                corriendo_6h:'&#x23F1;&#xFE0F;', horario_actualizado:'&#x1F4C5;',
             }};
 
             function _showToast(evType, payload) {{
@@ -456,9 +458,9 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     + 'padding:12px 18px;border-radius:10px;font-size:13px;font-family:Arial,sans-serif;'
                     + 'z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.35);max-width:280px;'
                     + 'line-height:1.4;opacity:0;transition:opacity .25s';
-                var extra = (payload && (payload.unidad || payload.unit_number || payload.tecnico))
+                var extra = (payload && (payload.unidad || payload.unit_number || payload.tecnico || payload.semana))
                     ? '<br><span style="opacity:.75;font-size:11px">'
-                        + (payload.unidad || payload.unit_number || '')
+                        + (payload.unidad || payload.unit_number || (payload.semana ? ('Semana del ' + payload.semana) : ''))
                         + (payload.tecnico ? ' &middot; ' + payload.tecnico : '')
                         + '</span>'
                     : '';
@@ -486,7 +488,27 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     socket.onmessage = function(ev) {{
                         try {{
                             const d = JSON.parse(ev.data);
-                            if (d.type && d.type !== 'status' && _SOUNDS[d.type]) {{
+                            if (!d.type || d.type === 'status') return;
+
+                            // "horario_actualizado" es dirigido: solo interesa a los
+                            // técnicos afectados (payload.usernames) o al admin que lo
+                            // guardó (para confirmar que la alerta salió).
+                            if (d.type === 'horario_actualizado') {{
+                                const usuariosAfectados = (d.payload && d.payload.usernames) || [];
+                                const meAfecta = usuariosAfectados.indexOf(window.username) !== -1;
+                                if (!meAfecta && window.role !== 'admin') return;
+                                if (meAfecta) {{
+                                    _SOUNDS[d.type] && _SOUNDS[d.type]();
+                                    _showToast(d.type, {{ semana: d.payload.semana }});
+                                    // Refrescar widgets de horario del técnico si están visibles
+                                    if (typeof _ctCargarHorarioHoy === 'function') _ctCargarHorarioHoy();
+                                    if (typeof _ctCargarHistorial === 'function') _ctCargarHistorial();
+                                    if (typeof _ctCargarAlertaHorario === 'function') _ctCargarAlertaHorario();
+                                }}
+                                return;
+                            }}
+
+                            if (_SOUNDS[d.type]) {{
                                 _SOUNDS[d.type]();
                                 _showToast(d.type, d.payload || {{}});
                             }}
@@ -6610,6 +6632,13 @@ async def asistencia_admin():
         .est-ausente   { background:#fee2e2; color:#dc2626; padding:3px 10px; border-radius:12px; font-size:.78rem; font-weight:600; }
         .est-libre     { background:#f3f4f6; color:#9ca3af; padding:3px 10px; border-radius:12px; font-size:.78rem; font-weight:600; }
         .est-sin_salida { background:#fef3c7; color:#92400e; padding:3px 10px; border-radius:12px; font-size:.78rem; font-weight:600; }
+        .hor-input.dirty { border-color:#f59e0b !important; background:#fffbeb; }
+        .hor-skel { border-radius:12px; overflow:hidden; background:white; box-shadow:0 2px 12px rgba(0,43,91,0.08); padding:16px; }
+        .hor-skel-row { display:flex; gap:8px; margin-bottom:10px; }
+        .hor-skel-cell { height:34px; border-radius:6px; background:linear-gradient(90deg,#eef1f5 25%,#e2e6ec 37%,#eef1f5 63%); background-size:400% 100%; animation:hor-shimmer 1.3s ease infinite; }
+        @keyframes hor-shimmer { 0%{background-position:100% 0} 100%{background-position:0 0} }
+        .hor-save-bar { display:flex; align-items:center; gap:10px; font-size:.82rem; color:#6b7280; }
+        .hor-save-bar.dirty { color:#d97706; font-weight:600; }
     </style>
 
     <!-- Tabs -->
@@ -6657,9 +6686,10 @@ async def asistencia_admin():
     <div id="tab-horarios" class="tab-panel">
         <div style="display:flex; gap:12px; align-items:center; margin-bottom:20px; flex-wrap:wrap;">
             <label style="font-weight:600; font-size:.9rem;">Semana del lunes:</label>
-            <input type="date" id="semanaInput" style="width:auto; margin-bottom:0;" onchange="cargarHorarios()">
-            <button class="btn-primary" style="width:auto; padding:10px 22px;" onclick="guardarHorarios()">💾 Guardar Horarios</button>
+            <input type="date" id="semanaInput" style="width:auto; margin-bottom:0;" onchange="onCambioSemana()">
+            <button class="btn-primary" id="btnGuardarHorarios" style="width:auto; padding:10px 22px;" onclick="guardarHorarios()">💾 Guardar Horarios</button>
             <button class="btn-success" style="width:auto; padding:10px 22px;" onclick="abrirModalImportacion()">📂 Importar Excel</button>
+            <span id="horDirtyIndicator" class="hor-save-bar"></span>
         </div>
         <div id="tablaHorarios" style="overflow-x:auto;"></div>
 
@@ -6817,6 +6847,14 @@ async def asistencia_admin():
         let horariosData = {};
         const diasSemana = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
 
+        // Cache en memoria por semana: evita re-descargar todo al ir y venir
+        // entre semanas ya visitadas -> la tabla aparece instantánea y de
+        // fondo se refresca por si hubo cambios (stale-while-revalidate).
+        let horCache = {};
+        let horSemanaActual = null;
+        let horDirty = false;
+        let horCargaId = 0; // evita que una respuesta vieja pise una más nueva
+
         function getLunes(semanaStr) {
             return semanaStr; // ya viene como YYYY-MM-DD del lunes
         }
@@ -6830,9 +6868,55 @@ async def asistencia_admin():
             });
         }
 
+        function onCambioSemana() {
+            if (horDirty && !confirm('Tienes cambios de horario sin guardar. Si cambias de semana se perderán. ¿Continuar de todos modos?')) {
+                document.getElementById('semanaInput').value = horSemanaActual || document.getElementById('semanaInput').value;
+                return;
+            }
+            cargarHorarios();
+        }
+
+        function marcarHorDirty(inputEl) {
+            if (inputEl) inputEl.classList.add('dirty');
+            if (horDirty) return;
+            horDirty = true;
+            const ind = document.getElementById('horDirtyIndicator');
+            if (ind) { ind.textContent = '● Cambios sin guardar'; ind.classList.add('dirty'); }
+        }
+
+        function limpiarHorDirty() {
+            horDirty = false;
+            const ind = document.getElementById('horDirtyIndicator');
+            if (ind) { ind.textContent = ''; ind.classList.remove('dirty'); }
+            document.querySelectorAll('.hor-input.dirty').forEach(el => el.classList.remove('dirty'));
+        }
+
+        function mostrarSkeletonHorarios() {
+            let filas = '';
+            for (let i = 0; i < 5; i++) {
+                filas += '<div class="hor-skel-row"><div class="hor-skel-cell" style="width:140px;"></div>'
+                    + Array.from({length:6}).map(() => '<div class="hor-skel-cell" style="flex:1;"></div>').join('')
+                    + '</div>';
+            }
+            document.getElementById('tablaHorarios').innerHTML = `<div class="hor-skel">${filas}</div>`;
+        }
+
         async function cargarHorarios() {
             const semana = document.getElementById('semanaInput').value;
             if (!semana) return;
+            horSemanaActual = semana;
+            limpiarHorDirty();
+            const miCargaId = ++horCargaId;
+
+            // 1. Si ya tenemos esta semana en cache, renderizar de inmediato
+            //    (percepción de carga instantánea) y refrescar en segundo plano.
+            const cacheado = horCache[semana];
+            if (cacheado) {
+                renderHorarios(semana, cacheado);
+            } else {
+                mostrarSkeletonHorarios();
+            }
+
             try {
                 const [tecRes, horRes, resRes, comRes] = await Promise.all([
                     fetchAuth('/api/usuarios/'),
@@ -6840,45 +6924,59 @@ async def asistencia_admin():
                     fetchAuth(`/api/horarios/resumen?semana=${semana}`),
                     fetchAuth(`/api/horarios/comentarios?semana=${semana}`)
                 ]);
-                const tecRaw = await tecRes.json(); tecnicosData = (Array.isArray(tecRaw) ? tecRaw : []).filter(u => u.role === 'tecnico');
+                const tecRaw = await tecRes.json();
                 const horarios = await horRes.json();
                 const resumen = await resRes.json();
                 const comentarios = comRes.ok ? await comRes.json() : {};
 
-                horariosData = {};
-                horarios.forEach(h => { horariosData[h.username+'_'+h.fecha] = h; });
+                // Si el usuario ya cambió de semana mientras esto cargaba, descartar.
+                if (miCargaId !== horCargaId) return;
 
-                const fechas = fechasDeSemana(semana);
-
-                // Tabla editable de horarios
-                let html = '<table class="horario-tbl"><thead><tr><th>Técnico</th>';
-                fechas.forEach((f,i) => { html += `<th>${diasSemana[i]}<br><small style="font-weight:400;opacity:.8;">${f.slice(5)}</small></th>`; });
-                html += '</tr></thead><tbody>';
-                tecnicosData.forEach(tec => {
-                    html += `<tr><td>${tec.nombre_completo || tec.username}</td>`;
-                    fechas.forEach(f => {
-                        const h = horariosData[tec.username+'_'+f] || {};
-                        html += `<td>
-                            <div style="display:flex;flex-direction:column;gap:4px;align-items:center;">
-                                <input type="time" class="hor-input" data-user="${tec.username}" data-fecha="${f}" data-tipo="entrada" value="${h.hora_entrada||''}" title="Entrada">
-                                <input type="time" class="hor-input" data-user="${tec.username}" data-fecha="${f}" data-tipo="salida"  value="${h.hora_salida||''}"  title="Salida">
-                            </div>
-                        </td>`;
-                    });
-                    html += '</tr>';
-                });
-                html += '</tbody></table>';
-                document.getElementById('tablaHorarios').innerHTML = html;
-
-                // Tabla de resumen de asistencia real
-                const nombreMap = {};
-                tecnicosData.forEach(t => { nombreMap[t.username] = t.nombre_completo || t.username; });
-                renderResumen(resumen, fechas, comentarios, semana, nombreMap);
-
+                const datos = {
+                    tecnicos: (Array.isArray(tecRaw) ? tecRaw : []).filter(u => u.role === 'tecnico'),
+                    horarios, resumen, comentarios
+                };
+                horCache[semana] = datos;
+                renderHorarios(semana, datos);
             } catch(e) {
                 console.error('Error cargando horarios:', e);
-                document.getElementById('tablaHorarios').innerHTML = '<p style="color:#dc2626;">Error al cargar horarios.</p>';
+                if (miCargaId === horCargaId && !cacheado) {
+                    document.getElementById('tablaHorarios').innerHTML = '<p style="color:#dc2626;">Error al cargar horarios.</p>';
+                }
             }
+        }
+
+        function renderHorarios(semana, datos) {
+            tecnicosData = datos.tecnicos;
+            horariosData = {};
+            datos.horarios.forEach(h => { horariosData[h.username+'_'+h.fecha] = h; });
+
+            const fechas = fechasDeSemana(semana);
+
+            // Tabla editable de horarios
+            let html = '<table class="horario-tbl"><thead><tr><th>Técnico</th>';
+            fechas.forEach((f,i) => { html += `<th>${diasSemana[i]}<br><small style="font-weight:400;opacity:.8;">${f.slice(5)}</small></th>`; });
+            html += '</tr></thead><tbody>';
+            tecnicosData.forEach(tec => {
+                html += `<tr><td>${tec.nombre_completo || tec.username}</td>`;
+                fechas.forEach(f => {
+                    const h = horariosData[tec.username+'_'+f] || {};
+                    html += `<td>
+                        <div style="display:flex;flex-direction:column;gap:4px;align-items:center;">
+                            <input type="time" class="hor-input" data-user="${tec.username}" data-fecha="${f}" data-tipo="entrada" value="${h.hora_entrada||''}" title="Entrada" oninput="marcarHorDirty(this)">
+                            <input type="time" class="hor-input" data-user="${tec.username}" data-fecha="${f}" data-tipo="salida"  value="${h.hora_salida||''}"  title="Salida" oninput="marcarHorDirty(this)">
+                        </div>
+                    </td>`;
+                });
+                html += '</tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('tablaHorarios').innerHTML = html;
+
+            // Tabla de resumen de asistencia real
+            const nombreMap = {};
+            tecnicosData.forEach(t => { nombreMap[t.username] = t.nombre_completo || t.username; });
+            renderResumen(datos.resumen, fechas, datos.comentarios, semana, nombreMap);
         }
 
         function renderResumen(resumen, fechas, comentarios, semana, nombreMap) {
@@ -6991,6 +7089,15 @@ async def asistencia_admin():
             setTimeout(() => { el.style.borderColor = '#e2e8f0'; }, 1200);
         }
 
+        function _horarioToast(texto, tipo) {
+            const t = document.createElement('div');
+            const bg = tipo === 'error' ? '#dc2626' : '#16a34a';
+            t.style.cssText = `position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:${bg};color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;`;
+            t.textContent = texto;
+            document.body.appendChild(t);
+            setTimeout(() => t.remove(), 4000);
+        }
+
         async function guardarHorarios() {
             const semana = document.getElementById('semanaInput').value;
             const inputs = document.querySelectorAll('.hor-input');
@@ -7003,14 +7110,31 @@ async def asistencia_admin():
                 else map[key].hora_salida = inp.value||null;
             });
             Object.values(map).forEach(r => registros.push(r));
+
+            const btn = document.getElementById('btnGuardarHorarios');
+            const textoOriginal = btn ? btn.innerHTML : null;
+            if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Guardando...'; }
+
             try {
                 const res = await fetchAuth('/api/horarios/', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({registros})});
                 const data = await res.json();
                 if (data.ok) {
-                    alert(`✅ Guardado: ${data.guardados} horarios, ${data.eliminados} días libres.`);
+                    delete horCache[semana]; // invalidar cache: hay cambios reales
+                    limpiarHorDirty();
+                    let msg = `✅ Guardado: ${data.guardados} horarios, ${data.eliminados} días libres.`;
+                    if (data.notificados > 0) {
+                        msg += ` 📅 Se notificó a ${data.notificados} técnico${data.notificados === 1 ? '' : 's'}.`;
+                    }
+                    _horarioToast(msg, 'ok');
                     cargarHorarios();
-                } else { alert('Error al guardar.'); }
-            } catch(e) { alert('Error al guardar horarios.'); }
+                } else {
+                    _horarioToast('❌ Error al guardar el horario.', 'error');
+                }
+            } catch(e) {
+                _horarioToast('❌ Error al guardar horarios.', 'error');
+            } finally {
+                if (btn) { btn.disabled = false; btn.innerHTML = textoOriginal; }
+            }
         }
 
         // -- Importar Excel ----------------------------------------------------
@@ -7142,8 +7266,13 @@ async def asistencia_admin():
                 });
                 const data = await res.json();
                 if (data.ok) {
+                    delete horCache[semana]; // invalidar cache: hay cambios reales
                     const el = document.getElementById('impResultado');
-                    el.textContent = `✅ Importación exitosa: ${data.guardados} horarios guardados, ${data.eliminados} eliminados.`;
+                    let msg = `✅ Importación exitosa: ${data.guardados} horarios guardados, ${data.eliminados} eliminados.`;
+                    if (data.notificados > 0) {
+                        msg += ` 📅 Se notificó a ${data.notificados} técnico${data.notificados === 1 ? '' : 's'}.`;
+                    }
+                    el.textContent = msg;
                     el.style.display = '';
                     cargarHorarios();
                     setTimeout(() => cerrarModalImportacion(), 2500);
@@ -7449,9 +7578,34 @@ async def checkin_tecnico():
       .ct-toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
       .ct-toast.green { background:var(--ct-green); }
       .ct-toast.red   { background:var(--ct-red); }
+
+      /* Banner de alerta de horario actualizado */
+      .ct-horario-banner {
+        display:none;
+        align-items:center; gap:12px;
+        background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af;
+        border-radius:14px; padding:14px 16px; margin-bottom:16px;
+        font-size:14px; line-height:1.4;
+      }
+      .ct-horario-banner.show { display:flex; }
+      .ct-horario-banner .ct-hb-icon { font-size:22px; flex-shrink:0; }
+      .ct-horario-banner .ct-hb-text { flex:1; }
+      .ct-horario-banner .ct-hb-close {
+        background:none; border:none; color:#1e40af; font-size:18px;
+        cursor:pointer; padding:4px 8px; flex-shrink:0; opacity:.7;
+      }
+      .ct-horario-banner .ct-hb-close:hover { opacity:1; }
     </style>
 
     <div class="ct-wrap">
+
+      <!-- Alerta: tu horario cambió -->
+      <div class="ct-horario-banner" id="ctHorarioBanner">
+        <span class="ct-hb-icon">📅</span>
+        <span class="ct-hb-text" id="ctHorarioBannerTexto">Tu horario fue actualizado.</span>
+        <button class="ct-hb-close" onclick="_ctCerrarAlertaHorario()" title="Entendido">✕</button>
+      </div>
+
 
       <!-- Saludo / hora -->
       <div class="ct-greeting">
@@ -7643,6 +7797,40 @@ async def checkin_tecnico():
         }).join('');
       } catch(e) {}
     }
+
+    // ── Alerta de horario actualizado (in-app, persiste hasta que se cierre) ──
+    var _ctAlertasHorarioIds = [];
+
+    async function _ctCargarAlertaHorario() {
+      try {
+        var res = await window.fetchAuth('/api/horarios/alertas');
+        var alertas = await res.json();
+        if (!alertas || !alertas.length) return;
+        _ctAlertasHorarioIds = alertas.map(function(a){ return a.id; });
+        var semanas = alertas.map(function(a){ return a.semana; })
+          .filter(function(v,i,arr){ return arr.indexOf(v)===i; });
+        var texto = semanas.length === 1
+          ? 'Tu horario para la semana del ' + semanas[0] + ' fue actualizado.'
+          : 'Tu horario fue actualizado para ' + semanas.length + ' semanas.';
+        document.getElementById('ctHorarioBannerTexto').textContent = texto;
+        document.getElementById('ctHorarioBanner').classList.add('show');
+      } catch(e) {}
+    }
+
+    async function _ctCerrarAlertaHorario() {
+      document.getElementById('ctHorarioBanner').classList.remove('show');
+      if (!_ctAlertasHorarioIds.length) return;
+      try {
+        await window.fetchAuth('/api/horarios/alertas/marcar-visto', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ ids: _ctAlertasHorarioIds })
+        });
+      } catch(e) {}
+      _ctAlertasHorarioIds = [];
+    }
+
+    _ctCargarAlertaHorario();
 
     // ── Geocerca ───────────────────────────────────────────────────────────────
     async function _ctCargarGeocerca() {
