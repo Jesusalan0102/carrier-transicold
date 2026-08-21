@@ -77,10 +77,22 @@ def crear_usuario(user: UserCreate, current_user=Depends(verify_token)):
     if existing:
         raise HTTPException(status_code=400, detail="El nombre de usuario ya existe")
     hashed_password = bcrypt.hashpw(user.password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    execute_write(
-        "INSERT INTO users (username, password, role, nombre_completo) VALUES (%s,%s,%s,%s)",
-        (user.username, hashed_password, user.role, user.nombre_completo.strip() or None)
-    )
+    try:
+        execute_write(
+            "INSERT INTO users (username, password, role, nombre_completo) VALUES (%s,%s,%s,%s)",
+            (user.username, hashed_password, user.role, user.nombre_completo.strip() or None)
+        )
+    except Exception as e:
+        # Causa más probable: la columna `role` en MySQL es un ENUM fijo
+        # (p.ej. ENUM('admin','tecnico','visor')) que no incluye este rol
+        # todavía. Ver migración pendiente: ALTER TABLE users MODIFY COLUMN
+        # role VARCHAR(20) ...
+        raise HTTPException(
+            status_code=500,
+            detail=f"No se pudo crear el usuario. Es probable que la base de datos "
+                   f"aún no acepte el rol '{user.role}' (columna role tipo ENUM sin "
+                   f"actualizar). Detalle técnico: {e}"
+        )
     return {"mensaje": "Usuario creado", "username": user.username, "role": user.role}
 
 @router.put("/{user_id}/password")
