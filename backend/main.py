@@ -1,13 +1,14 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 import uvicorn
 import os
 from dotenv import load_dotenv
 import logging
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(levelname)s [%(name)s]: %(message)s')
+logger = logging.getLogger(__name__)
 
 # ── Autenticación ────────────────────────────────────────────────────────────
 from routers.auth_router import router as auth_router
@@ -54,6 +55,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Manejador global de errores ───────────────────────────────────────────────
+# Sin esto, cualquier excepción no controlada (p.ej. la BD rechaza un INSERT
+# por un tipo de dato/ENUM no actualizado) regresa el 500 de texto plano de
+# Starlette -- el frontend hace res.json() sobre eso y truena con un
+# "Unexpected token... is not valid JSON" que no dice nada del error real.
+# Con esto, cualquier crash no controlado sigue devolviendo JSON, así se
+# puede leer el mensaje real en la consola del navegador en vez de adivinar.
+@app.exception_handler(Exception)
+async def manejador_global_de_errores(request: Request, exc: Exception):
+    logger.error(f"Error no controlado en {request.method} {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Error interno del servidor: {exc}"}
+    )
 
 # ── Registro de routers ───────────────────────────────────────────────────────
 app.include_router(auth_router,          prefix="/api/auth",     tags=["auth"])
