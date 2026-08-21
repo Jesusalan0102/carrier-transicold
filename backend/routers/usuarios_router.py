@@ -6,7 +6,7 @@ from auth import verify_token
 
 router = APIRouter(prefix="/api/usuarios", tags=["usuarios"])
 
-ROLES_PERMITIDOS = {"admin", "tecnico", "visor"}
+ROLES_PERMITIDOS = {"admin", "tecnico", "visor", "lider"}
 
 class UserCreate(BaseModel):
     username: str
@@ -37,7 +37,10 @@ def mi_perfil(current_user=Depends(verify_token)):
 
 @router.get("/")
 def listar_usuarios(current_user=Depends(verify_token)):
-    if current_user["role"] not in ("admin", "visor"):
+    """Ver la lista es distinto a administrar usuarios: el líder la necesita
+    para poder elegir a qué técnico asignarle una tarea, pero sigue sin
+    poder crear/editar/eliminar usuarios (ver endpoints abajo, admin-only)."""
+    if current_user["role"] not in ("admin", "visor", "lider"):
         raise HTTPException(status_code=403, detail="Acceso denegado")
     return execute_read(
         "SELECT id, username, role, foto_url, puesto, nombre_completo FROM users ORDER BY role, username"
