@@ -257,7 +257,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
             document.addEventListener('DOMContentLoaded', function() {{
                 if (window.role === 'visor') {{ document.body.classList.add('visor-mode'); }}
                 document.getElementById('sidebarUser').textContent = window.username;
-                const roleLabels = {{ admin: '🛡 Administrador', tecnico: '🔧 Técnico', visor: '👁 Visor' }};
+                const roleLabels = {{ admin: '🛡 Administrador', tecnico: '🔧 Técnico', visor: '👁 Visor', lider: '⭐ Líder' }};
                 document.getElementById('sidebarRole').textContent = roleLabels[window.role] || window.role;
 
                 // Cargar foto y puesto del usuario en sesión (funciona para cualquier rol)
@@ -314,7 +314,15 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/checkin', label: '📍 Registrar Asistencia' }},
                     {{ href: '/app/juegos', label: '🎮 Juegos' }},
                 ];
-                const menu = window.role === 'admin' ? adminMenu : (window.role === 'visor' ? visorMenu : techMenu);
+                const liderMenu = [
+                    {{ href: '/app/dashboard', label: '📊 Dashboard Ejecutivo' }},
+                    {{ href: '/app/asignaciones', label: '🎯 Control de Asignaciones' }},
+                    {{ href: '/app/checkin', label: '📍 Registrar Asistencia' }},
+                    {{ href: '/app/juegos', label: '🎮 Juegos' }},
+                ];
+                const menu = window.role === 'admin' ? adminMenu
+                    : (window.role === 'visor' ? visorMenu
+                    : (window.role === 'lider' ? liderMenu : techMenu));
                 let navHtml = '';
                 menu.forEach(item => {{
                     const active = item.href === '/app/{pagina_activa}' ? ' active' : '';
@@ -720,7 +728,7 @@ async def login():
 @router.get("/app/dashboard", response_class=HTMLResponse)
 async def dashboard():
     contenido = """
-    <script> if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; } </script>
+    <script> if (window.role !== 'admin' && window.role !== 'visor' && window.role !== 'lider') { window.location.href = '/app/mis-tareas'; } </script>
     <style>
         .status-tbl { width:100%; border-collapse:collapse; background:white; border-radius:12px; overflow:hidden; box-shadow:0 4px 12px rgba(0,43,91,0.08); font-size:0.78rem; }
         .status-tbl th { background:#002B5B; color:white; padding:8px 10px; text-align:center; font-weight:600; white-space:nowrap; border-right:1px solid #1a4a8a; }
@@ -1714,7 +1722,7 @@ async def dashboard():
 @router.get("/app/asignaciones", response_class=HTMLResponse)
 async def asignaciones():
     contenido = """
-    <script> if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; } </script>
+    <script> if (window.role !== 'admin' && window.role !== 'visor' && window.role !== 'lider') { window.location.href = '/app/mis-tareas'; } </script>
     <div id="solicitudesPendientes">
         <div style="display:flex; justify-content:space-between; align-items:center;">
             <div class="section-title" style="margin:0;">🔔 Solicitudes Pendientes</div>
@@ -2487,6 +2495,7 @@ async def usuarios():
         <input type="password" id="newUserPassword" placeholder="Contraseña" required>
         <select id="role" required>
             <option value="tecnico">Técnico</option>
+            <option value="lider">Líder</option>
             <option value="admin">Administrador</option>
             <option value="visor">Visor (solo lectura)</option>
         </select>
@@ -3061,6 +3070,7 @@ async def admin():
           <select id="filter-rol" onchange="filterTable('usr')">
             <option value="">Todos los roles</option>
             <option value="admin">Administrador</option>
+            <option value="lider">Líder</option>
             <option value="tecnico">Técnico</option>
             <option value="visor">Visor</option>
           </select>
@@ -3101,6 +3111,7 @@ async def admin():
             <div class="field-group"><label>Rol</label>
               <select id="uf-rol">
                 <option value="admin">Administrador</option>
+                <option value="lider">Líder</option>
                 <option value="tecnico">Técnico</option>
                 <option value="visor">Visor (solo lectura)</option>
               </select>

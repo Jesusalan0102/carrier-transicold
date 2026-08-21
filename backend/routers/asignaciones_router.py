@@ -27,10 +27,10 @@ def _notify(event: str, payload: dict = None):
 
 router = APIRouter(prefix="/api/asignaciones", tags=["asignaciones"])
 
-# ── LISTAR (admin ve todo, técnico ve solo las suyas) ──────────────────────
+# ── LISTAR (admin/lider/visor ven todo, técnico ve solo las suyas) ─────────
 @router.get("/")
 def listar_asignaciones(estado: str = None, tecnico: str = None, current_user=Depends(verify_token)):
-    if current_user["role"] not in ("admin", "visor"):
+    if current_user["role"] not in ("admin", "visor", "lider"):
         tecnico = current_user["username"]
     query = "SELECT * FROM asignaciones WHERE 1=1"
     params = []
@@ -43,11 +43,11 @@ def listar_asignaciones(estado: str = None, tecnico: str = None, current_user=De
     query += " ORDER BY id DESC"
     return execute_read(query, tuple(params))
 
-# ── SOLICITUDES PENDIENTES DE APROBACIÓN (solo admin) ─────────────────────
+# ── SOLICITUDES PENDIENTES DE APROBACIÓN (admin y líder) ───────────────────
 @router.get("/solicitudes")
 def listar_solicitudes(current_user=Depends(verify_token)):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if current_user["role"] not in ("admin", "lider"):
+        raise HTTPException(status_code=403, detail="Solo administradores o líderes")
     solicitudes = execute_read(
         "SELECT * FROM asignaciones WHERE estado='solicitado' ORDER BY id DESC"
     )
@@ -87,11 +87,11 @@ def mis_tareas(current_user=Depends(verify_token)):
         (current_user["username"],)
     )
 
-# ── CREAR (admin asigna directo) ───────────────────────────────────────────
+# ── CREAR (admin o líder asigna directo) ───────────────────────────────────
 @router.post("/")
 def crear_asignacion(asig: AsignacionCreate, current_user=Depends(verify_token)):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores pueden asignar directamente")
+    if current_user["role"] not in ("admin", "lider"):
+        raise HTTPException(status_code=403, detail="Solo administradores o líderes pueden asignar directamente")
     execute_write(
         "INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado, fecha_asignacion) VALUES (%s,%s,%s,%s,%s)",
         (asig.unidad, asig.actividad_id, asig.tecnico, asig.estado, datetime.now(TZ))
@@ -127,20 +127,20 @@ def solicitar_actividad(asig: AsignacionCreate, current_user=Depends(verify_toke
     _notify("solicitud_nueva", {"tecnico": tecnico, "unidad": asig.unidad})
     return {"mensaje": "Solicitud enviada, pendiente de aprobación"}
 
-# ── APROBAR (admin) ────────────────────────────────────────────────────────
+# ── APROBAR (admin o líder) ─────────────────────────────────────────────────
 @router.post("/{asig_id}/aprobar")
 def aprobar(asig_id: int, current_user=Depends(verify_token)):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if current_user["role"] not in ("admin", "lider"):
+        raise HTTPException(status_code=403, detail="Solo administradores o líderes")
     execute_write("UPDATE asignaciones SET estado='pendiente' WHERE id=%s", (asig_id,))
     _notify("solicitud_aprobada", {"asignacion_id": asig_id})
     return {"mensaje": "Solicitud aprobada"}
 
-# ── RECHAZAR/ELIMINAR (admin) ──────────────────────────────────────────────
+# ── RECHAZAR/ELIMINAR (admin o líder) ──────────────────────────────────────
 @router.delete("/{asig_id}/rechazar")
 def rechazar(asig_id: int, current_user=Depends(verify_token)):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if current_user["role"] not in ("admin", "lider"):
+        raise HTTPException(status_code=403, detail="Solo administradores o líderes")
     execute_write("DELETE FROM asignaciones WHERE id=%s", (asig_id,))
     return {"mensaje": "Solicitud rechazada y eliminada"}
 
@@ -208,11 +208,11 @@ def finalizar(asig_id: int, data: dict, current_user=Depends(verify_token)):
     _notify("actividad_completada", {"asignacion_id": asig_id, "tecnico": current_user["username"]})
     return {"mensaje": "Actividad finalizada"}
 
-# ── EDITAR (admin: cambiar estado/técnico/actividad + comentario) ──────────
+# ── EDITAR (admin o líder: cambiar estado/técnico/actividad + comentario) ──
 @router.put("/{asig_id}")
 def editar_asignacion(asig_id: int, update: AsignacionUpdate, current_user=Depends(verify_token)):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if current_user["role"] not in ("admin", "lider"):
+        raise HTTPException(status_code=403, detail="Solo administradores o líderes")
     fields, params = [], []
     if update.estado is not None:
         fields.append("estado=%s"); params.append(update.estado)
@@ -230,11 +230,11 @@ def editar_asignacion(asig_id: int, update: AsignacionUpdate, current_user=Depen
         )
     return {"mensaje": "Asignación actualizada"}
 
-# ── ELIMINAR (admin) ───────────────────────────────────────────────────────
+# ── ELIMINAR (admin o líder) ────────────────────────────────────────────────
 @router.delete("/{asig_id}")
 def eliminar_asignacion(asig_id: int, current_user=Depends(verify_token)):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if current_user["role"] not in ("admin", "lider"):
+        raise HTTPException(status_code=403, detail="Solo administradores o líderes")
     execute_write("DELETE FROM comentarios_actividades WHERE asignacion_id=%s", (asig_id,))
     execute_write("DELETE FROM asignaciones WHERE id=%s", (asig_id,))
     return {"mensaje": "Asignación eliminada"}
