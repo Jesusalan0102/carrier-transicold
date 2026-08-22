@@ -317,6 +317,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 const liderMenu = [
                     {{ href: '/app/dashboard', label: '📊 Dashboard Ejecutivo' }},
                     {{ href: '/app/asignaciones', label: '🎯 Control de Asignaciones' }},
+                    {{ href: '/app/mis-tareas', label: '✅ Mis Tareas Asignadas' }},
                     {{ href: '/app/checkin', label: '📍 Registrar Asistencia' }},
                     {{ href: '/app/juegos', label: '🎮 Juegos' }},
                 ];
@@ -1010,7 +1011,7 @@ async def dashboard():
                 ]);
                 const statsRaw = await statsRes.json();
                 const usuariosAll = await usuariosRes.json();
-                const tecSet = new Set(usuariosAll.filter(u => u.role === 'tecnico').map(u => u.username));
+                const tecSet = new Set(usuariosAll.filter(u => u.role === 'tecnico' || u.role === 'lider').map(u => u.username));
                 const stats = statsRaw.filter(s => tecSet.has(s.tecnico));
 
                 if (stats.length > 0) {
@@ -1775,7 +1776,7 @@ async def asignaciones():
             const [unidadesRes, tecnicosRes] = await Promise.all([fetchAuth('/api/unidades/'), fetchAuth('/api/usuarios/')]);
             const unidades = await unidadesRes.json(); const tecnicos = await tecnicosRes.json();
             document.getElementById('unidad').innerHTML = '<option value="">Unidad</option>' + (Array.isArray(unidades) ? unidades.map(u => `<option value="${u.unit_number}">${u.id_lote} - ${u.unit_number}</option>`).join('') : '');
-            document.getElementById('tecnico').innerHTML = '<option value="">Técnico</option>' + (Array.isArray(tecnicos) ? tecnicos.filter(u => u.role === 'tecnico').map(u => `<option value="${u.username}">${u.username}</option>`).join('') : '');
+            document.getElementById('tecnico').innerHTML = '<option value="">Técnico</option>' + (Array.isArray(tecnicos) ? tecnicos.filter(u => u.role === 'tecnico' || u.role === 'lider').map(u => `<option value="${u.username}">${u.username}</option>`).join('') : '');
             document.getElementById('actividad').innerHTML = '<option value="">Actividad</option>' + actividades.map(a => `<option value="${a}">${a}</option>`).join('');
         }
 
@@ -1841,7 +1842,7 @@ async def tickets():
             const [unidadesRes, tecnicosRes] = await Promise.all([fetchAuth('/api/unidades/'), fetchAuth('/api/usuarios/')]);
             const unidades = await unidadesRes.json(); const tecnicos = await tecnicosRes.json();
             document.getElementById('unidad').innerHTML = '<option value="">Unidad</option>' + (Array.isArray(unidades) ? unidades.map(u => `<option value="${u.unit_number}">${u.unit_number} (${u.id_lote})</option>`).join('') : '');
-            document.getElementById('tecnico').innerHTML = '<option value="">Asignar a técnico</option>' + (Array.isArray(tecnicos) ? tecnicos.filter(u => u.role === 'tecnico').map(u => `<option value="${u.username}">${u.username}</option>`).join('') : '');
+            document.getElementById('tecnico').innerHTML = '<option value="">Asignar a técnico</option>' + (Array.isArray(tecnicos) ? tecnicos.filter(u => u.role === 'tecnico' || u.role === 'lider').map(u => `<option value="${u.username}">${u.username}</option>`).join('') : '');
         }
         async function eliminarTicket(id) { if (confirm('¿Eliminar ticket?')) { await fetchAuth('/api/tickets/' + id, { method: 'DELETE' }); cargarTickets(); } }
         async function marcarReporte(id) { await fetchAuth('/api/tickets/' + id + '/report', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reporte: 'Reporte enviado' }) }); cargarTickets(); }
@@ -6944,7 +6945,7 @@ async def asistencia_admin():
                 if (miCargaId !== horCargaId) return;
 
                 const datos = {
-                    tecnicos: (Array.isArray(tecRaw) ? tecRaw : []).filter(u => u.role === 'tecnico'),
+                    tecnicos: (Array.isArray(tecRaw) ? tecRaw : []).filter(u => u.role === 'tecnico' || u.role === 'lider'),
                     horarios, resumen, comentarios
                 };
                 horCache[semana] = datos;
@@ -7343,7 +7344,7 @@ async def asistencia_admin():
 @router.get("/app/checkin", response_class=HTMLResponse)
 async def checkin_tecnico():
     contenido = """
-    <script>if (window.role !== 'tecnico' && window.role !== 'admin') { window.location.href = '/app/dashboard'; }</script>
+    <script>if (window.role !== 'tecnico' && window.role !== 'admin' && window.role !== 'lider') { window.location.href = '/app/dashboard'; }</script>
 
     <style>
       /* ── Variables ── */

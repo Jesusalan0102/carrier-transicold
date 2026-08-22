@@ -559,7 +559,7 @@ async def _importar_excel_impl(semana: str, file):
     # Intentar con nombre_completo primero; si la columna no existe en el schema, caer a username
     try:
         users_db = execute_read(
-            "SELECT username, nombre_completo AS nombre FROM users WHERE role='tecnico' AND nombre_completo IS NOT NULL AND nombre_completo != ''"
+            "SELECT username, nombre_completo AS nombre FROM users WHERE role IN ('tecnico','lider') AND nombre_completo IS NOT NULL AND nombre_completo != ''"
         ) or []
     except Exception:
         users_db = []
@@ -568,7 +568,7 @@ async def _importar_excel_impl(semana: str, file):
         # nombre_completo no existe o vacío para todos -> usar username como referencia
         try:
             users_db = execute_read(
-                "SELECT username, username AS nombre FROM users WHERE role='tecnico'"
+                "SELECT username, username AS nombre FROM users WHERE role IN ('tecnico','lider')"
             ) or []
         except Exception:
             users_db = []
@@ -629,7 +629,7 @@ async def _importar_excel_impl(semana: str, file):
     # Lista de técnicos disponibles para el selector de corrección manual
     try:
         tecnicos_disponibles = [u["username"] for u in (execute_read(
-            "SELECT username FROM users WHERE role='tecnico' ORDER BY username"
+            "SELECT username FROM users WHERE role IN ('tecnico','lider') ORDER BY username"
         ) or [])]
     except Exception:
         tecnicos_disponibles = [u["username"] for u in users_db]
