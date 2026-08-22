@@ -22,7 +22,7 @@ class ClusterAsignacion(BaseModel):
 def listar_tecnicos(current_user=Depends(verify_token)):
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo administradores")
-    return execute_read("SELECT username FROM users WHERE role='tecnico' ORDER BY username")
+    return execute_read("SELECT username FROM users WHERE role IN ('tecnico','lider') ORDER BY username")
 
 @router.get("/unidades")
 def listar_unidades(current_user=Depends(verify_token)):
