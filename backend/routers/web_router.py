@@ -300,7 +300,6 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/tickets', label: '🎫 Tickets' }},
                     {{ href: '/app/inventario', label: '📦 Inventarios' }},
                     {{ href: '/app/unidades', label: '📸 Registro de Unidades' }},
-                    {{ href: '/app/pdi', label: '📋 PDI Pre-Entrega' }},
                     {{ href: '/app/usuarios', label: '👥 Gestión de Usuarios' }},
                     {{ href: '/app/asistencia', label: '📍 Control de Asistencia' }},
                     {{ href: '/app/alarmas', label: '🔔 Alarm Troubleshooting' }},
@@ -310,7 +309,6 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/mis-tareas', label: '🎯 Mis Tareas' }},
                     {{ href: '/app/solicitud', label: '🔔 Nueva Solicitud' }},
                     {{ href: '/app/mis-tickets', label: '🎫 Mis Tickets' }},
-                    {{ href: '/app/pdi', label: '📋 PDI Pre-Entrega' }},
                     {{ href: '/app/checkin', label: '📍 Registrar Asistencia' }},
                     {{ href: '/app/juegos', label: '🎮 Juegos' }},
                 ];
@@ -2160,6 +2158,7 @@ async def unidades():
 @router.get("/app/pdi", response_class=HTMLResponse)
 async def pdi_lista():
     contenido = """
+    <script> if (window.role !== 'admin') { window.location.href = '/app/mis-tareas'; } </script>
     <div class="inv-info-bar" id="infoBar">📋 Selecciona un lote para asignar el tipo de reefer (X4 / Vector) y ver el estado de PDI de cada unidad.</div>
 
     <div id="loteConfigAdmin" style="display:none; margin-bottom:16px;"></div>
@@ -2254,6 +2253,7 @@ async def pdi_lista():
 @router.get("/app/pdi/{unit_number}", response_class=HTMLResponse)
 async def pdi_form(unit_number: str):
     contenido = f"""
+    <script> if (window.role !== 'admin') {{ window.location.href = '/app/mis-tareas'; }} </script>
     <div id="pdiRoot">Cargando PDI de {unit_number}…</div>
 
     <script>
