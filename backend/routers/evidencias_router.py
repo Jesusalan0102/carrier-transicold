@@ -12,8 +12,8 @@ from PIL import Image
 
 
 def require_admin_or_visor(current_user=Depends(verify_token)):
-    if current_user["role"] not in ("admin", "visor"):
-        raise HTTPException(status_code=403, detail="Acceso restringido a administradores y visores")
+    if current_user["role"] not in ("admin", "visor", "lider"):
+        raise HTTPException(status_code=403, detail="Acceso restringido a administradores, visores y líderes")
     return current_user
 
 # ── Importación opcional de OneDrive ────────────────────────────────────────

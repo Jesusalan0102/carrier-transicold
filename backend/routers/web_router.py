@@ -318,6 +318,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/dashboard', label: '📊 Dashboard Ejecutivo' }},
                     {{ href: '/app/asignaciones', label: '🎯 Control de Asignaciones' }},
                     {{ href: '/app/mis-tareas', label: '✅ Mis Tareas Asignadas' }},
+                    {{ href: '/app/admin', label: '📸 Evidencias' }},
                     {{ href: '/app/checkin', label: '📍 Registrar Asistencia' }},
                     {{ href: '/app/juegos', label: '🎮 Juegos' }},
                 ];
@@ -2775,7 +2776,7 @@ async def usuarios():
 @router.get("/app/admin", response_class=HTMLResponse)
 async def admin():
     contenido = """
-    <script> if (window.role !== 'admin') { window.location.href = '/app/mis-tareas'; } </script>
+    <script> if (window.role !== 'admin' && window.role !== 'lider') { window.location.href = '/app/mis-tareas'; } </script>
 
     <!-- Tabler Icons CDN -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
@@ -3001,6 +3002,18 @@ async def admin():
           <i class="ti ti-layout-grid"></i> Lotes
         </button>
       </div>
+
+      <script>
+        // Los líderes solo pueden ver la galería de evidencias en este panel;
+        // el resto de pestañas (usuarios, unidades, SQL, lotes) sigue siendo admin-only.
+        if (window.role === 'lider') {
+          ['usuarios', 'unidades', 'sql', 'lotes'].forEach(s => {
+            const tabBtn = document.getElementById('tab-' + s);
+            if (tabBtn) tabBtn.style.display = 'none';
+          });
+          document.addEventListener('DOMContentLoaded', () => { if (typeof showTab === 'function') showTab('evidencias'); });
+        }
+      </script>
 
       <!-- -- ACTIVIDADES -- -->
       <div id="sec-actividades" class="section active">
@@ -6805,6 +6818,21 @@ async def asistencia_admin():
         const lunes = new Date(hoyTJ); lunes.setDate(hoyTJ.getDate() - (hoyTJ.getDay() === 0 ? 6 : hoyTJ.getDay()-1));
         document.getElementById('semanaInput').value = fechaTijuana(lunes);
 
+        // -- Horarios Semanales: estado (debe declararse antes de las llamadas
+        //    de abajo, ya que cargarHorarios() usa estas variables `let` de
+        //    inmediato y de lo contrario cae en su temporal dead zone) --------
+        let tecnicosData = [];
+        let horariosData = {};
+        const diasSemana = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+
+        // Cache en memoria por semana: evita re-descargar todo al ir y venir
+        // entre semanas ya visitadas -> la tabla aparece instantánea y de
+        // fondo se refresca por si hubo cambios (stale-while-revalidate).
+        let horCache = {};
+        let horSemanaActual = null;
+        let horDirty = false;
+        let horCargaId = 0; // evita que una respuesta vieja pise una más nueva
+
         cargarRegistros();
         cargarHorarios();
 
@@ -6855,17 +6883,7 @@ async def asistencia_admin():
         }
 
         // -- Horarios Semanales ------------------------------------------------
-        let tecnicosData = [];
-        let horariosData = {};
-        const diasSemana = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
-
-        // Cache en memoria por semana: evita re-descargar todo al ir y venir
-        // entre semanas ya visitadas -> la tabla aparece instantánea y de
-        // fondo se refresca por si hubo cambios (stale-while-revalidate).
-        let horCache = {};
-        let horSemanaActual = null;
-        let horDirty = false;
-        let horCargaId = 0; // evita que una respuesta vieja pise una más nueva
+        // (declaraciones movidas arriba, antes de cargarHorarios())
 
         function getLunes(semanaStr) {
             return semanaStr; // ya viene como YYYY-MM-DD del lunes
