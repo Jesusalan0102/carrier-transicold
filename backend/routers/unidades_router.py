@@ -462,6 +462,138 @@ def ficha_unidad(q: str = Query(..., min_length=1), current_user=Depends(verify_
     }
 
 
+# GET /api/unidades/timeline?q=XXX
+# Línea de tiempo unificada de una unidad: PDI + asignaciones + tickets +
+# evidencias, todo en un solo arreglo ordenado cronológicamente. Reutiliza
+# la misma búsqueda por cualquier identificador de serie que /ficha.
+@router.get("/timeline")
+def timeline_unidad(q: str = Query(..., min_length=1), current_user=Depends(verify_token)):
+    q = q.strip()
+    if not q:
+        raise HTTPException(status_code=400, detail="Debes indicar un valor de búsqueda")
+
+    condiciones = " OR ".join(f"{c}=%s" for c in CAMPOS_SERIE_BUSCABLES)
+    params = [q] * len(CAMPOS_SERIE_BUSCABLES)
+    filas = execute_read(
+        f"SELECT * FROM unidades WHERE {condiciones} ORDER BY unit_number LIMIT 50",
+        tuple(params)
+    )
+    if not filas:
+        condiciones_like = " OR ".join(f"{c} LIKE %s" for c in CAMPOS_SERIE_BUSCABLES)
+        params_like = [f"%{q}%"] * len(CAMPOS_SERIE_BUSCABLES)
+        filas = execute_read(
+            f"SELECT * FROM unidades WHERE {condiciones_like} ORDER BY unit_number LIMIT 50",
+            tuple(params_like)
+        )
+    if not filas:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No se encontró ninguna unidad con '{q}' en VIN, series, lote o número económico"
+        )
+    if len(filas) > 1:
+        return {
+            "seleccion_multiple": True,
+            "criterio": q,
+            "unidades": [
+                {"unit_number": f["unit_number"], "id_lote": f.get("id_lote"),
+                 "vin_number": f.get("vin_number"), "reefer_model": f.get("reefer_model")}
+                for f in filas
+            ],
+        }
+
+    unidad = filas[0]
+    unit_number = unidad["unit_number"]
+    eventos = []
+
+    # ── PDI: se crea una vez por unidad, marca el "nacimiento" del registro ──
+    if _tabla_existe("pdi_inspecciones"):
+        for p in execute_read(
+            "SELECT tipo, estado, tecnico_inspecciono, created_at FROM pdi_inspecciones "
+            "WHERE unit_number=%s ORDER BY created_at", (unit_number,)
+        ):
+            eventos.append({
+                "fecha": p["created_at"],
+                "tipo": "pdi",
+                "titulo": f"PDI {p['tipo']} — {p['estado']}",
+                "detalle": p.get("tecnico_inspecciono") or "",
+            })
+
+    # ── Asignaciones: cada actividad genera hasta 3 puntos en la línea de
+    #    tiempo (asignada / iniciada / completada) cuando esa fecha existe ──
+    asignaciones = execute_read(
+        "SELECT actividad_id, tecnico, estado, fecha_asignacion, fecha_inicio, fecha_fin "
+        "FROM asignaciones WHERE unidad=%s", (unit_number,)
+    )
+    for a in asignaciones:
+        if a.get("fecha_asignacion"):
+            eventos.append({
+                "fecha": a["fecha_asignacion"], "tipo": "asignacion",
+                "titulo": f"Actividad asignada: {a['actividad_id']}",
+                "detalle": f"Técnico: {a['tecnico']}",
+            })
+        if a.get("fecha_inicio"):
+            eventos.append({
+                "fecha": a["fecha_inicio"], "tipo": "asignacion",
+                "titulo": f"Actividad iniciada: {a['actividad_id']}",
+                "detalle": f"Técnico: {a['tecnico']}",
+            })
+        if a.get("fecha_fin"):
+            eventos.append({
+                "fecha": a["fecha_fin"], "tipo": "asignacion",
+                "titulo": f"Actividad completada: {a['actividad_id']}",
+                "detalle": f"Técnico: {a['tecnico']}",
+            })
+
+    # ── Tickets: creación / atención / reporte de cierre ──────────────────
+    for t in execute_read(
+        "SELECT ticket_num, descripcion, creado_por, fecha_creacion, "
+        "fecha_atencion, fecha_reporte, reporte_enviado "
+        "FROM tickets WHERE unit_number=%s", (unit_number,)
+    ):
+        if t.get("fecha_creacion"):
+            eventos.append({
+                "fecha": t["fecha_creacion"], "tipo": "ticket",
+                "titulo": f"Ticket #{t['ticket_num']} creado",
+                "detalle": (t.get("descripcion") or "")[:140],
+            })
+        if t.get("fecha_atencion"):
+            eventos.append({
+                "fecha": t["fecha_atencion"], "tipo": "ticket",
+                "titulo": f"Ticket #{t['ticket_num']} atendido",
+                "detalle": "",
+            })
+        if t.get("fecha_reporte") and t.get("reporte_enviado"):
+            eventos.append({
+                "fecha": t["fecha_reporte"], "tipo": "ticket",
+                "titulo": f"Ticket #{t['ticket_num']} cerrado con reporte",
+                "detalle": "",
+            })
+
+    # ── Evidencias subidas ─────────────────────────────────────────────────
+    for e in execute_read(
+        "SELECT nombre_archivo, tecnico, created_at FROM evidencias "
+        "WHERE unit_number=%s ORDER BY created_at", (unit_number,)
+    ):
+        if e.get("created_at"):
+            eventos.append({
+                "fecha": e["created_at"], "tipo": "evidencia",
+                "titulo": f"Evidencia subida: {e['nombre_archivo']}",
+                "detalle": f"Técnico: {e['tecnico']}" if e.get("tecnico") else "",
+            })
+
+    eventos = [ev for ev in eventos if ev["fecha"] is not None]
+    eventos.sort(key=lambda ev: ev["fecha"])
+
+    return {
+        "unit_number": unit_number,
+        "id_lote": unidad.get("id_lote"),
+        "vin_number": unidad.get("vin_number"),
+        "reefer_model": unidad.get("reefer_model"),
+        "total_eventos": len(eventos),
+        "eventos": eventos,
+    }
+
+
 def _tabla_existe(nombre_tabla: str) -> bool:
     """Verifica si una tabla existe en la BD, para no romper si aún no se ha creado."""
     try:

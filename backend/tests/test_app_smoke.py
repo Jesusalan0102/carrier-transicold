@@ -40,6 +40,21 @@ def test_ruta_inexistente_da_404():
     assert response.status_code == 404
 
 
+def test_layout_compartido_renderiza_sin_errores():
+    """
+    pagina_con_menu() es un f-string enorme que arma el layout (sidebar +
+    header + modal de búsqueda global) para TODAS las páginas /app/*. Un
+    solo '{' o '}' sin escapar ahí rompe absolutamente todas las páginas
+    del sistema a la vez — este test existe para atrapar justo eso.
+    """
+    from routers.web_router import pagina_con_menu
+
+    html = pagina_con_menu("Prueba", "<p>contenido</p>", "dashboard")
+    assert "<html" in html
+    assert "globalSearchOverlay" in html  # modal de búsqueda global (Ctrl+K)
+    assert "/api/search/global" in html
+
+
 def test_todos_los_routers_quedaron_registrados():
     """
     Verifica que la app tenga rutas registradas de cada módulo de negocio

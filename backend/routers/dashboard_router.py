@@ -406,3 +406,101 @@ def reporte_excel(current_user: dict = Depends(verify_token)):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename=Carrier_Reporte_{fecha}.xlsx"}
     )
+
+
+# ── KPIs POR TÉCNICO (vista ejecutiva consolidada) ─────────────────────────
+# A diferencia de /stats_tecnicos (que solo cuenta actividades por estado),
+# esto cruza tickets + asistencia para dar una foto más completa de cada
+# técnico: qué tan rápido cierra tickets, si adjunta reporte, y su
+# puntualidad. Solo admin/líder puede verlo — es información de desempeño.
+@router.get("/kpis_tecnico")
+def get_kpis_tecnico(dias: int = 30, current_user: dict = Depends(verify_token)):
+    if current_user["role"] not in ("admin", "lider"):
+        raise HTTPException(status_code=403, detail="Solo administradores y líderes")
+
+    if dias < 1 or dias > 365:
+        raise HTTPException(status_code=400, detail="'dias' debe estar entre 1 y 365")
+
+    # 1. Tiempo promedio de resolución + tickets con/sin reporte adjunto,
+    #    por técnico. Se basa en asignaciones.tecnico (quien atendió el
+    #    ticket), no en tickets.creado_por (quien lo levantó).
+    tickets_por_tecnico = execute_read(
+        """
+        SELECT
+            a.tecnico,
+            COALESCE(NULLIF(usr.nombre_completo, ''), a.tecnico) AS tecnico_display,
+            COUNT(DISTINCT t.id) AS tickets_cerrados,
+            SUM(t.reporte_archivo_nombre IS NOT NULL) AS con_reporte_adjunto,
+            SUM(t.reporte_archivo_nombre IS NULL) AS sin_reporte_adjunto,
+            ROUND(AVG(TIMESTAMPDIFF(MINUTE, t.fecha_creacion, t.fecha_reporte)) / 60, 1)
+                AS horas_promedio_resolucion
+        FROM tickets t
+        INNER JOIN asignaciones a ON a.ticket_id = t.id
+        LEFT JOIN users usr ON usr.username = a.tecnico
+        WHERE t.reporte_enviado = TRUE
+          AND t.fecha_reporte >= DATE_SUB(NOW(), INTERVAL %s DAY)
+        GROUP BY a.tecnico, usr.nombre_completo
+        ORDER BY tickets_cerrados DESC
+        """,
+        (dias,)
+    )
+
+    # 2. Asistencia vs. tardanzas por técnico en la misma ventana de días.
+    #    retardo_min > 0 marca un check-in tarde (ver migración en db.py).
+    asistencia_por_tecnico = execute_read(
+        """
+        SELECT
+            username AS tecnico,
+            COALESCE(NULLIF(usr.nombre_completo, ''), ra.username) AS tecnico_display,
+            COUNT(*) AS dias_con_checkin,
+            SUM(ra.retardo_min > 0) AS dias_con_tardanza,
+            ROUND(AVG(ra.retardo_min), 1) AS retardo_promedio_min,
+            ROUND(SUM(ra.retardo_min > 0) / COUNT(*) * 100) AS pct_tardanza
+        FROM registros_asistencia ra
+        LEFT JOIN users usr ON usr.username = ra.username
+        WHERE ra.tipo = 'entrada'
+          AND ra.fecha >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
+        GROUP BY ra.username, usr.nombre_completo
+        ORDER BY pct_tardanza DESC
+        """,
+        (dias,)
+    )
+
+    # 3. Merge por técnico: cada técnico puede tener datos de tickets,
+    #    de asistencia, o ambos — no asumimos que siempre existan los dos.
+    por_tecnico = {}
+    for row in tickets_por_tecnico:
+        por_tecnico[row["tecnico"]] = {
+            "tecnico": row["tecnico"],
+            "tecnico_display": row["tecnico_display"],
+            "tickets_cerrados": row["tickets_cerrados"],
+            "con_reporte_adjunto": row["con_reporte_adjunto"],
+            "sin_reporte_adjunto": row["sin_reporte_adjunto"],
+            "horas_promedio_resolucion": row["horas_promedio_resolucion"],
+            "dias_con_checkin": None,
+            "dias_con_tardanza": None,
+            "retardo_promedio_min": None,
+            "pct_tardanza": None,
+        }
+    for row in asistencia_por_tecnico:
+        entry = por_tecnico.setdefault(row["tecnico"], {
+            "tecnico": row["tecnico"],
+            "tecnico_display": row["tecnico_display"],
+            "tickets_cerrados": 0,
+            "con_reporte_adjunto": 0,
+            "sin_reporte_adjunto": 0,
+            "horas_promedio_resolucion": None,
+        })
+        entry["dias_con_checkin"] = row["dias_con_checkin"]
+        entry["dias_con_tardanza"] = row["dias_con_tardanza"]
+        entry["retardo_promedio_min"] = row["retardo_promedio_min"]
+        entry["pct_tardanza"] = row["pct_tardanza"]
+
+    return {
+        "dias": dias,
+        "tecnicos": sorted(
+            por_tecnico.values(),
+            key=lambda x: x["tickets_cerrados"],
+            reverse=True,
+        ),
+    }

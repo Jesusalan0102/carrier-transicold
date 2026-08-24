@@ -160,6 +160,48 @@ BASE_STYLE = """
         .hamburger { left: 14px !important; }
         body.sidebar-hidden .main-content { padding-top: 4rem; }
     }
+
+    /* ── Búsqueda global (Ctrl+K) ────────────────────────────────────── */
+    .global-search-trigger {
+        display: flex; align-items: center; gap: 8px;
+        background: var(--card-bg, #fff); border: 1px solid var(--border-color, #d8dee6);
+        border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; cursor: pointer;
+        color: var(--text-secondary, #5a6b82);
+    }
+    .global-search-trigger:hover { border-color: #6366f1; color: #6366f1; }
+    .global-search-trigger-kbd {
+        font-size: 0.7rem; background: rgba(99,102,241,0.1); color: #6366f1;
+        padding: 2px 6px; border-radius: 4px; font-family: monospace;
+    }
+    @media (max-width: 640px) { .global-search-trigger-label, .global-search-trigger-kbd { display: none; } }
+
+    .global-search-overlay {
+        display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.55);
+        z-index: 3000; align-items: flex-start; justify-content: center; padding-top: 10vh;
+    }
+    .global-search-overlay.open { display: flex; }
+    .global-search-box {
+        width: min(560px, 92vw); background: var(--card-bg, #fff); border-radius: 14px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.35); overflow: hidden; max-height: 70vh;
+        display: flex; flex-direction: column;
+    }
+    .global-search-box input {
+        border: none; border-bottom: 1px solid var(--border-color, #e5e9f0); padding: 18px 20px;
+        font-size: 1.05rem; outline: none; background: transparent; color: var(--text-primary, #1a2332);
+    }
+    .global-search-results { overflow-y: auto; padding: 8px 0; }
+    .global-search-hint { padding: 16px 20px; color: var(--text-secondary, #8a97ab); font-size: 0.9rem; margin: 0; }
+    .global-search-section {
+        padding: 10px 20px 4px; font-size: 0.72rem; font-weight: 700; letter-spacing: .04em;
+        text-transform: uppercase; color: #6366f1;
+    }
+    .global-search-item {
+        display: flex; flex-direction: column; padding: 10px 20px; text-decoration: none;
+        color: var(--text-primary, #1a2332); border-bottom: 1px solid var(--border-color, #f0f2f5);
+    }
+    .global-search-item:hover { background: rgba(99,102,241,0.08); }
+    .global-search-item-titulo { font-weight: 600; font-size: 0.92rem; }
+    .global-search-item-sub { font-size: 0.8rem; color: var(--text-secondary, #8a97ab); }
 </style>
 """
 
@@ -245,7 +287,21 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
         <div class="main-content">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; flex-wrap:wrap; gap:12px;">
                 <h1 class="main-header">{titulo}</h1>
-                <div id="liveClock" class="time-badge"></div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <button id="globalSearchBtn" onclick="abrirBusquedaGlobal()" class="global-search-trigger" title="Buscar en todo el sistema">
+                        🔍 <span class="global-search-trigger-label">Buscar</span>
+                        <span class="global-search-trigger-kbd">Ctrl K</span>
+                    </button>
+                    <div id="liveClock" class="time-badge"></div>
+                </div>
+            </div>
+
+            <!-- ── Búsqueda global (Ctrl+K) ─────────────────────────────── -->
+            <div id="globalSearchOverlay" class="global-search-overlay" onclick="if(event.target===this)cerrarBusquedaGlobal()">
+                <div class="global-search-box">
+                    <input id="globalSearchInput" type="text" placeholder="Buscar unidad, ticket, evidencia… (mínimo 2 letras)" autocomplete="off" oninput="_onGlobalSearchInput()">
+                    <div id="globalSearchResults" class="global-search-results"></div>
+                </div>
             </div>
             <div id="visorBanner" style="display:none" class="visor-banner">👁 Modo solo lectura — No tienes permisos para editar</div>
             <script>if(window.role==='visor') document.getElementById('visorBanner').style.display='block';</script>
@@ -376,6 +432,75 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 localStorage.clear();
                 window.location.href = '/app';
             }}
+
+            // ── Búsqueda global (Ctrl+K) ─────────────────────────────────
+            let _globalSearchDebounce = null;
+
+            function abrirBusquedaGlobal() {{
+                const overlay = document.getElementById('globalSearchOverlay');
+                overlay.classList.add('open');
+                const input = document.getElementById('globalSearchInput');
+                input.value = '';
+                document.getElementById('globalSearchResults').innerHTML = '';
+                setTimeout(() => input.focus(), 30);
+            }}
+
+            function cerrarBusquedaGlobal() {{
+                document.getElementById('globalSearchOverlay').classList.remove('open');
+            }}
+
+            function _onGlobalSearchInput() {{
+                clearTimeout(_globalSearchDebounce);
+                const q = document.getElementById('globalSearchInput').value.trim();
+                const resultsEl = document.getElementById('globalSearchResults');
+                if (q.length < 2) {{
+                    resultsEl.innerHTML = q.length === 0 ? '' : '<p class="global-search-hint">Escribe al menos 2 letras…</p>';
+                    return;
+                }}
+                _globalSearchDebounce = setTimeout(() => _ejecutarBusquedaGlobal(q), 250);
+            }}
+
+            async function _ejecutarBusquedaGlobal(q) {{
+                const resultsEl = document.getElementById('globalSearchResults');
+                resultsEl.innerHTML = '<p class="global-search-hint">Buscando…</p>';
+                try {{
+                    const res = await window.fetchAuth('/api/search/global?q=' + encodeURIComponent(q));
+                    if (!res.ok) {{ resultsEl.innerHTML = '<p class="global-search-hint">Error al buscar.</p>'; return; }}
+                    const data = await res.json();
+                    const secciones = [
+                        {{ key: 'unidades',   label: '📸 Unidades'   }},
+                        {{ key: 'tickets',    label: '🎫 Tickets'    }},
+                        {{ key: 'evidencias', label: '🖼 Evidencias' }},
+                    ];
+                    let html = '';
+                    let total = 0;
+                    secciones.forEach(sec => {{
+                        const items = data[sec.key] || [];
+                        if (!items.length) return;
+                        total += items.length;
+                        html += `<div class="global-search-section">${{sec.label}}</div>`;
+                        items.forEach(item => {{
+                            html += `<a class="global-search-item" href="${{item.url}}">
+                                <span class="global-search-item-titulo">${{item.titulo}}</span>
+                                <span class="global-search-item-sub">${{item.subtitulo || ''}}</span>
+                            </a>`;
+                        }});
+                    }});
+                    resultsEl.innerHTML = total ? html : '<p class="global-search-hint">Sin resultados para "' + q + '"</p>';
+                }} catch (e) {{
+                    resultsEl.innerHTML = '<p class="global-search-hint">Error al buscar.</p>';
+                }}
+            }}
+
+            document.addEventListener('keydown', function(e) {{
+                const isK = e.key === 'k' || e.key === 'K';
+                if ((e.ctrlKey || e.metaKey) && isK) {{
+                    e.preventDefault();
+                    abrirBusquedaGlobal();
+                }} else if (e.key === 'Escape') {{
+                    cerrarBusquedaGlobal();
+                }}
+            }});
 
             function actualizarReloj() {{
                 const ahora = new Date();

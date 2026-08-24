@@ -55,6 +55,7 @@ from routers.juegos_router      import router as juegos_router
 from routers.schedule_router    import router as schedule_router
 from routers.ws                 import router as ws_router
 from routers.push_router        import router as push_router
+from routers.search_router      import router as search_router
 
 # ── Asistencia / QR ──────────────────────────────────────────────────────────
 from asistencia.routes          import router as asistencia_router
@@ -127,6 +128,7 @@ app.include_router(juegos_router)
 app.include_router(schedule_router)
 app.include_router(ws_router)
 app.include_router(push_router)
+app.include_router(search_router)
 
 app.include_router(asistencia_router,    prefix="/api")
 app.include_router(horarios_router)
