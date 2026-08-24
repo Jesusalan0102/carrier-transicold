@@ -4249,7 +4249,7 @@ async def mis_tareas():
                     let btn = '';
                     if (t.estado === 'pendiente') btn = `<button class="btn-primary" onclick="iniciarTarea(${t.id})">▶️ Iniciar Actividad</button>`;
                     else if (t.estado === 'en_proceso') {
-                        btn = `<button class="btn-success" onclick="completarTarea(${t.id}, '${t.unidad}', '${t.actividad_id}')">✅ Finalizar</button>`;
+                        btn = `<button class="btn-success" onclick="completarTarea(${t.id}, '${t.unidad}', '${t.actividad_id}', ${t.ticket_id != null ? t.ticket_id : 'null'})">✅ Finalizar</button>`;
                         if (t.actividad_id === 'Corriendo') btn += `<button class="btn-primary" onclick="pausarTarea(${t.id})">⏸️ Pausar</button>`;
                         if (t.actividad_id === 'Toma de Valores') btn += `<button class="btn-primary" onclick="tomarValores(${t.id})">📊 Ingresar Valores</button>`;
                         if (t.actividad_id === 'Toma de Series') btn += `<button class="btn-primary" onclick="tomarSeries(${t.id})">🔢 Ingresar Series</button>`;
@@ -4298,9 +4298,11 @@ async def mis_tareas():
             });
         }
 
-        async function completarTarea(id, unidad, actividad) {
+        async function completarTarea(id, unidad, actividad, ticketId) {
             const prev = document.getElementById('modalFinalizar');
             if (prev) prev.remove();
+
+            const esTicket = !!(actividad && actividad.indexOf('Ticket #') === 0 && ticketId);
 
             // ¿Ya tiene fotos guardadas esta actividad? (por si se subieron antes o se reintenta)
             let fotosPrevias = 0;
@@ -4313,6 +4315,8 @@ async def mis_tareas():
             modal.id = 'modalFinalizar';
             modal.dataset.unidad = unidad || '';
             modal.dataset.fotosPrevias = fotosPrevias;
+            modal.dataset.esTicket = esTicket ? '1' : '0';
+            modal.dataset.ticketId = ticketId != null ? ticketId : '';
             modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);display:flex;justify-content:center;align-items:center;z-index:500;overflow-y:auto;padding:20px 0;';
             modal.innerHTML = `
                 <div style="background:white;border-radius:20px;padding:32px;width:90%;max-width:520px;box-shadow:0 20px 60px rgba(0,43,91,0.25);animation:fadeInM 0.2s ease;">
@@ -4334,6 +4338,11 @@ async def mis_tareas():
 
                     <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">📝 Comentario del técnico</label>
                     <textarea id="comentarioTexto" rows="4" placeholder="Describe brevemente el trabajo realizado, observaciones, etc." style="width:100%;border:1.5px solid #d1d5db;border-radius:12px;padding:12px;font-size:0.95rem;resize:vertical;font-family:inherit;transition:border-color 0.2s;"></textarea>
+                    ${esTicket ? `
+                    <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin:14px 0 6px;">📎 Adjuntar reporte del ticket (Word o PDF) — opcional</label>
+                    <input type="file" id="reporteTicketArchivo" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="width:100%;border:1.5px solid #d1d5db;border-radius:12px;padding:10px;font-size:0.88rem;font-family:inherit;">
+                    <p style="margin:4px 0 0;font-size:0.78rem;color:#6b7280;">Formatos permitidos: .pdf, .doc, .docx — máx. 20 MB. Este archivo solo aplica para tickets.</p>
+                    ` : ''}
                     <p id="comentarioError" style="color:var(--carrier-danger);font-size:0.82rem;min-height:18px;margin:4px 0 12px;"></p>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                         <button onclick="document.getElementById('modalFinalizar').remove()" style="background:#f1f5f9;color:#374151;border:none;border-radius:10px;padding:13px;font-weight:600;font-size:0.95rem;cursor:pointer;">✖ Cancelar</button>
@@ -4388,8 +4397,23 @@ async def mis_tareas():
             const modal = document.getElementById('modalFinalizar');
             const unidad = modal.dataset.unidad;
             const fotosPrevias = parseInt(modal.dataset.fotosPrevias, 10) || 0;
+            const esTicket = modal.dataset.esTicket === '1';
+            const ticketId = modal.dataset.ticketId;
             const input = document.getElementById('fotosFinalizarInput');
             const archivosNuevos = input && input.files ? Array.from(input.files) : [];
+
+            // Reporte adjunto (solo tickets) — opcional, PDF o Word
+            let reporteArchivo = null;
+            if (esTicket) {
+                const reporteInput = document.getElementById('reporteTicketArchivo');
+                reporteArchivo = reporteInput && reporteInput.files ? reporteInput.files[0] : null;
+                if (reporteArchivo) {
+                    const extPermitidas = ['pdf', 'doc', 'docx'];
+                    const ext = reporteArchivo.name.split('.').pop().toLowerCase();
+                    if (!extPermitidas.includes(ext)) { errorEl.textContent = 'El reporte del ticket debe ser PDF o Word (.pdf, .doc, .docx).'; return; }
+                    if (reporteArchivo.size > 20 * 1024 * 1024) { errorEl.textContent = 'El reporte del ticket no debe superar 20 MB.'; return; }
+                }
+            }
 
             if (fotosPrevias === 0 && archivosNuevos.length === 0) {
                 errorEl.textContent = 'Debes agregar al menos una foto de evidencia de tu trabajo.';
@@ -4441,9 +4465,20 @@ async def mis_tareas():
                 }
             }
 
-            // 2) Marcar la actividad como finalizada con el comentario
+            // 2) Cerrar la actividad con el comentario
             btn.textContent = 'Guardando...';
-            const res = await fetchAuth('/api/asignaciones/' + id + '/finalizar', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ comentario }) });
+            let res;
+            if (esTicket && ticketId) {
+                // Los tickets se cierran vía /api/tickets (marca atendido + reporte,
+                // y esto a su vez cierra la asignación vinculada automáticamente).
+                await fetchAuth('/api/tickets/' + ticketId + '/atender', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ atendido: true }) });
+                const fdReporte = new FormData();
+                fdReporte.append('reporte', comentario);
+                if (reporteArchivo) fdReporte.append('archivo', reporteArchivo);
+                res = await fetchAuth('/api/tickets/' + ticketId + '/report', { method: 'PUT', body: fdReporte });
+            } else {
+                res = await fetchAuth('/api/asignaciones/' + id + '/finalizar', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ comentario }) });
+            }
             if (res.ok) {
                 document.getElementById('modalFinalizar').remove();
                 const toast = document.createElement('div');
