@@ -318,6 +318,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/dashboard', label: '📊 Dashboard Ejecutivo' }},
                     {{ href: '/app/asignaciones', label: '🎯 Control de Asignaciones' }},
                     {{ href: '/app/mis-tareas', label: '✅ Mis Tareas Asignadas' }},
+                    {{ href: '/app/tickets', label: '🎫 Tickets' }},
                     {{ href: '/app/admin', label: '📸 Evidencias' }},
                     {{ href: '/app/checkin', label: '📍 Registrar Asistencia' }},
                     {{ href: '/app/juegos', label: '🎮 Juegos' }},
@@ -1819,7 +1820,7 @@ async def asignaciones():
 @router.get("/app/tickets", response_class=HTMLResponse)
 async def tickets():
     contenido = """
-    <script> if (window.role !== 'admin' && window.role !== 'visor') { window.location.href = '/app/mis-tareas'; } </script>
+    <script> if (window.role !== 'admin' && window.role !== 'visor' && window.role !== 'lider') { window.location.href = '/app/mis-tareas'; } </script>
     <div id="ticketsList"></div>
     <div class="section-title admin-only">➕ Nuevo Ticket</div>
     <form id="ticketForm" class="admin-only">
@@ -1837,7 +1838,7 @@ async def tickets():
             if (tickets.length) tickets.forEach(t => {
                 const estado = t.atendido ? (t.reporte_enviado ? '🟢 Completado' : '🟡 Atendido (sin reporte)') : '🔴 No atendido';
                 const color = t.atendido ? (t.reporte_enviado ? 'var(--carrier-success)' : 'var(--carrier-warn)') : 'var(--carrier-danger)';
-                html += `<div style="border-left:6px solid ${color}; background:white; padding:16px; margin-bottom:12px; border-radius:0 12px 12px 0; box-shadow:0 2px 8px rgba(0,0,0,0.05);"><span style="font-size:1.5rem; font-weight:800; color:var(--carrier-blue);">#${t.ticket_num}</span><span class="badge" style="background:${color}; color:white;">${estado}</span><p><b>Unidad:</b> ${t.unit_number} | <b>VIN:</b> ${t.vin_number || 'N/D'}</p><p><b>Descripción:</b> ${t.descripcion}</p><small>Creado por: ${t.creado_por} · ${t.fecha_creacion}</small>${!t.atendido ? `<button class="btn-danger" onclick="eliminarTicket(${t.id})">🗑️</button>` : ''}${t.atendido && !t.reporte_enviado ? `<button class="btn-primary" onclick="marcarReporte(${t.id})">📤 Marcar reporte enviado</button>` : ''}</div>`;
+                html += `<div style="border-left:6px solid ${color}; background:white; padding:16px; margin-bottom:12px; border-radius:0 12px 12px 0; box-shadow:0 2px 8px rgba(0,0,0,0.05);"><span style="font-size:1.5rem; font-weight:800; color:var(--carrier-blue);">#${t.ticket_num}</span><span class="badge" style="background:${color}; color:white;">${estado}</span><p><b>Unidad:</b> ${t.unit_number} | <b>VIN:</b> ${t.vin_number || 'N/D'}</p><p><b>Descripción:</b> ${t.descripcion}</p><small>Creado por: ${t.creado_por} · ${t.fecha_creacion}</small>${!t.atendido && window.role === 'admin' ? `<button class="btn-danger" onclick="eliminarTicket(${t.id})">🗑️</button>` : ''}${t.atendido && !t.reporte_enviado ? `<button class="btn-primary" onclick="marcarReporte(${t.id})">📤 Marcar reporte enviado</button>` : ''}</div>`;
             });
             if (!html) html = '<p>📋 No hay tickets.</p>'; document.getElementById('ticketsList').innerHTML = html;
             const [unidadesRes, tecnicosRes] = await Promise.all([fetchAuth('/api/unidades/'), fetchAuth('/api/usuarios/')]);

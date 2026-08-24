@@ -39,7 +39,7 @@ class TicketReport(BaseModel):
 # ── LISTAR ─────────────────────────────────────────────────────────────────
 @router.get("/")
 def listar_tickets(current_user=Depends(verify_token)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ("admin", "lider"):
         return execute_read(
             """SELECT t.* FROM tickets t
                JOIN asignaciones a ON t.id = a.ticket_id
@@ -65,8 +65,8 @@ def next_ticket_number(current_user=Depends(verify_token)):
 # ── CREAR ──────────────────────────────────────────────────────────────────
 @router.post("/")
 def crear_ticket(ticket: TicketCreate, current_user=Depends(verify_token)):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if current_user["role"] not in ("admin", "lider"):
+        raise HTTPException(status_code=403, detail="Solo administradores y líderes")
 
     from db import get_db_connection
     import pymysql
