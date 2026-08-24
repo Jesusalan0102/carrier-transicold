@@ -3,3 +3,8 @@ node-v*/
 # Python bytecode cache
 __pycache__/
 *.pyc
+
+# Secretos — nunca deben subirse al repo
+.env
+.env.*
+!.env.example

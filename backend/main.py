@@ -10,6 +10,27 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(levelname)s [%(name)s]: %(message)s')
 logger = logging.getLogger(__name__)
 
+# ── Sentry (monitoreo de errores) ─────────────────────────────────────────────
+# Se activa solo si existe SENTRY_DSN en el entorno; en local sin la variable
+# simplemente no hace nada (no truena, no manda datos a ningún lado).
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+if SENTRY_DSN:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        environment=os.getenv("SENTRY_ENVIRONMENT", "production"),
+        release=os.getenv("SENTRY_RELEASE"),  # opcional: p.ej. el SHA del commit
+        # % de requests para las que se guarda traza de performance.
+        # 0.2 = 20% es un punto de partida razonable para no gastar cuota gratis
+        # de un proyecto de este tamaño; se puede subir/bajar desde el .env.
+        traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.2")),
+        send_default_pii=False,  # no mandar datos personales de usuarios por defecto
+    )
+    logger.info("Sentry inicializado (environment=%s)", os.getenv("SENTRY_ENVIRONMENT", "production"))
+else:
+    sentry_sdk = None
+    logger.info("SENTRY_DSN no configurado — monitoreo de errores desactivado")
+
 # ── Autenticación ────────────────────────────────────────────────────────────
 from routers.auth_router import router as auth_router
 from routers.auth_router import refresh_router
@@ -66,6 +87,17 @@ app.add_middleware(
 @app.exception_handler(Exception)
 async def manejador_global_de_errores(request: Request, exc: Exception):
     logger.error(f"Error no controlado en {request.method} {request.url.path}: {exc}", exc_info=True)
+    # Como este handler intercepta la excepción antes de que llegue al
+    # middleware ASGI, la captura automática de Sentry nunca se dispara sola;
+    # hay que mandarle el error explícitamente para que aparezca en el dashboard.
+    if sentry_sdk is not None:
+        with sentry_sdk.push_scope() as scope:
+            scope.set_context("request", {
+                "method": request.method,
+                "path": request.url.path,
+                "query": str(request.query_params),
+            })
+            sentry_sdk.capture_exception(exc)
     return JSONResponse(
         status_code=500,
         content={"detail": f"Error interno del servidor: {exc}"}

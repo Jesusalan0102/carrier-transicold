@@ -44,6 +44,9 @@ pytz==2026.2
 # --- Utilidades ---
 python-dotenv==1.2.2
 
+# --- Monitoreo de errores ---
+sentry-sdk[fastapi]==2.42.0
+
 # ============================================================
 # Dependencias transitivas (fijadas para reproducibilidad)
 # ============================================================
