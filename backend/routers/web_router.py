@@ -1838,7 +1838,7 @@ async def tickets():
             if (tickets.length) tickets.forEach(t => {
                 const estado = t.atendido ? (t.reporte_enviado ? '🟢 Completado' : '🟡 Atendido (sin reporte)') : '🔴 No atendido';
                 const color = t.atendido ? (t.reporte_enviado ? 'var(--carrier-success)' : 'var(--carrier-warn)') : 'var(--carrier-danger)';
-                html += `<div style="border-left:6px solid ${color}; background:white; padding:16px; margin-bottom:12px; border-radius:0 12px 12px 0; box-shadow:0 2px 8px rgba(0,0,0,0.05);"><span style="font-size:1.5rem; font-weight:800; color:var(--carrier-blue);">#${t.ticket_num}</span><span class="badge" style="background:${color}; color:white;">${estado}</span><p><b>Unidad:</b> ${t.unit_number} | <b>VIN:</b> ${t.vin_number || 'N/D'}</p><p><b>Descripción:</b> ${t.descripcion}</p><small>Creado por: ${t.creado_por} · ${t.fecha_creacion}</small>${!t.atendido && window.role === 'admin' ? `<button class="btn-danger" onclick="eliminarTicket(${t.id})">🗑️</button>` : ''}${t.atendido && !t.reporte_enviado ? `<button class="btn-primary" onclick="marcarReporte(${t.id})">📤 Marcar reporte enviado</button>` : ''}</div>`;
+                html += `<div style="border-left:6px solid ${color}; background:white; padding:16px; margin-bottom:12px; border-radius:0 12px 12px 0; box-shadow:0 2px 8px rgba(0,0,0,0.05);"><span style="font-size:1.5rem; font-weight:800; color:var(--carrier-blue);">#${t.ticket_num}</span><span class="badge" style="background:${color}; color:white;">${estado}</span><p><b>Unidad:</b> ${t.unit_number} | <b>VIN:</b> ${t.vin_number || 'N/D'}</p><p><b>Descripción:</b> ${t.descripcion}</p><small>Creado por: ${t.creado_por} · ${t.fecha_creacion}</small>${t.reporte_archivo_url ? `<p style="margin:8px 0 0;"><a href="${t.reporte_archivo_url}" target="_blank" style="color:var(--carrier-blue);font-weight:600;">📎 Ver reporte adjunto</a></p>` : ''}${!t.atendido && window.role === 'admin' ? `<button class="btn-danger" onclick="eliminarTicket(${t.id})">🗑️</button>` : ''}${t.atendido && !t.reporte_enviado ? `<button class="btn-primary" onclick="marcarReporte(${t.id})">📤 Marcar reporte enviado</button>` : ''}</div>`;
             });
             if (!html) html = '<p>📋 No hay tickets.</p>'; document.getElementById('ticketsList').innerHTML = html;
             const [unidadesRes, tecnicosRes] = await Promise.all([fetchAuth('/api/unidades/'), fetchAuth('/api/usuarios/')]);
@@ -1847,7 +1847,7 @@ async def tickets():
             document.getElementById('tecnico').innerHTML = '<option value="">Asignar a técnico</option>' + (Array.isArray(tecnicos) ? tecnicos.filter(u => u.role === 'tecnico' || u.role === 'lider').map(u => `<option value="${u.username}">${u.username}</option>`).join('') : '');
         }
         async function eliminarTicket(id) { if (confirm('¿Eliminar ticket?')) { await fetchAuth('/api/tickets/' + id, { method: 'DELETE' }); cargarTickets(); } }
-        async function marcarReporte(id) { await fetchAuth('/api/tickets/' + id + '/report', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reporte: 'Reporte enviado' }) }); cargarTickets(); }
+        async function marcarReporte(id) { const fd = new FormData(); fd.append('reporte', 'Reporte enviado'); await fetchAuth('/api/tickets/' + id + '/report', { method: 'PUT', body: fd }); cargarTickets(); }
         document.getElementById('ticketForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const unidad      = document.getElementById('unidad').value;
@@ -4594,6 +4594,7 @@ async def mis_tickets():
                                     <p style="margin:8px 0 4px;"><b>Unidad:</b> ${t.unit_number} | <b>VIN:</b> ${t.vin_number || 'N/D'}</p>
                                     <p style="margin:4px 0;"><b>Descripción:</b> ${t.descripcion}</p>
                                     <small style="color:#6b7280;">Creado: ${t.fecha_creacion}</small>
+                                    ${t.reporte_archivo_url ? `<p style="margin:8px 0 0;"><a href="${t.reporte_archivo_url}" target="_blank" style="color:var(--carrier-blue);font-weight:600;">📎 Ver reporte adjunto</a></p>` : ''}
                                 </div>
                                 <div style="display:flex; align-items:center;">${acciones}</div>
                             </div>
@@ -4630,6 +4631,9 @@ async def mis_tickets():
                     <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0;">
                     <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">📝 Descripción del trabajo realizado</label>
                     <textarea id="reporteTexto" rows="5" placeholder="Describe detalladamente las acciones realizadas, piezas cambiadas, diagnóstico, etc." style="width:100%;border:1.5px solid #d1d5db;border-radius:12px;padding:12px;font-size:0.95rem;resize:vertical;font-family:inherit;transition:border-color 0.2s;"></textarea>
+                    <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin:14px 0 6px;">📎 Adjuntar reporte (Word o PDF) — opcional</label>
+                    <input type="file" id="reporteArchivo" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="width:100%;border:1.5px solid #d1d5db;border-radius:12px;padding:10px;font-size:0.88rem;font-family:inherit;">
+                    <p style="margin:4px 0 0;font-size:0.78rem;color:#6b7280;">Formatos permitidos: .pdf, .doc, .docx — máx. 20 MB</p>
                     <p id="reporteError" style="color:var(--carrier-danger);font-size:0.82rem;min-height:18px;margin:4px 0 12px;"></p>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px;">
                         <button onclick="document.getElementById('modalReporte').remove()" style="background:#f1f5f9;color:#374151;border:none;border-radius:10px;padding:13px;font-weight:600;font-size:0.95rem;cursor:pointer;">✖ Cancelar</button>
@@ -4645,9 +4649,24 @@ async def mis_tickets():
             const reporte = document.getElementById('reporteTexto').value.trim();
             const errorEl = document.getElementById('reporteError');
             if (!reporte) { errorEl.textContent = 'El reporte no puede estar vacío.'; return; }
+
+            const fileInput = document.getElementById('reporteArchivo');
+            const archivo = fileInput.files[0];
+            if (archivo) {
+                const extPermitidas = ['pdf', 'doc', 'docx'];
+                const ext = archivo.name.split('.').pop().toLowerCase();
+                if (!extPermitidas.includes(ext)) { errorEl.textContent = 'El archivo debe ser PDF o Word (.pdf, .doc, .docx).'; return; }
+                if (archivo.size > 20 * 1024 * 1024) { errorEl.textContent = 'El archivo no debe superar 20 MB.'; return; }
+            }
+
             const btn = document.getElementById('btnEnviarReporte');
             btn.textContent = 'Enviando...'; btn.disabled = true;
-            const res = await fetchAuth('/api/tickets/' + id + '/report', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reporte }) });
+
+            const formData = new FormData();
+            formData.append('reporte', reporte);
+            if (archivo) formData.append('archivo', archivo);
+
+            const res = await fetchAuth('/api/tickets/' + id + '/report', { method: 'PUT', body: formData });
             if (res.ok) {
                 document.getElementById('modalReporte').remove();
                 const toast = document.createElement('div');
@@ -4657,7 +4676,8 @@ async def mis_tickets():
                 setTimeout(() => toast.remove(), 3000);
                 cargarTickets();
             } else {
-                errorEl.textContent = 'Error al enviar el reporte. Intenta de nuevo.';
+                const err = await res.json().catch(() => ({}));
+                errorEl.textContent = err.detail || 'Error al enviar el reporte. Intenta de nuevo.';
                 btn.textContent = '📤 Enviar y Cerrar Ticket'; btn.disabled = false;
             }
         }

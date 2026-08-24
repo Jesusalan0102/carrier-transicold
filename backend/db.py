@@ -628,6 +628,30 @@ def _run_migrations():
                 conn.commit()
                 print("✅ Migración: tablas de PDI (lotes_config, pdi_inspecciones, pdi_datos) verificadas")
 
+            # ── tickets: archivo de reporte (Word/PDF) subido por el técnico ──
+            # Bloque aislado en su propio try/except (ver nota arriba) para que
+            # un fallo aquí no tumbe migraciones futuras.
+            try:
+                cur.execute("""
+                    SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME   = 'tickets'
+                      AND COLUMN_NAME  = 'reporte_archivo_url'
+                """)
+                row_tra = cur.fetchone()
+                count_tra = row_tra[0] if isinstance(row_tra, tuple) else list(row_tra.values())[0]
+                if count_tra == 0:
+                    cur.execute(
+                        "ALTER TABLE tickets "
+                        "ADD COLUMN reporte_archivo_nombre VARCHAR(255) DEFAULT NULL, "
+                        "ADD COLUMN reporte_archivo_url VARCHAR(500) DEFAULT NULL, "
+                        "ADD COLUMN reporte_archivo_item_id VARCHAR(150) DEFAULT NULL"
+                    )
+                    conn.commit()
+                    print("✅ Migración: columnas de archivo de reporte añadidas a tickets")
+            except Exception as e_tra:
+                print(f"⚠️  Migración (tickets.reporte_archivo_*) omitida: {e_tra}")
+
     except Exception as e:
         print(f"⚠️  Migración omitida: {e}")
     finally:

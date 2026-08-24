@@ -251,6 +251,34 @@ def download_item_bytes(item_id: str) -> bytes:
     return resp.content
 
 
+def sync_reporte_ticket(ticket_num: int, nombre_archivo: str, contenido: bytes) -> dict:
+    """
+    Sube el reporte final (Word/PDF) que el técnico adjunta al cerrar un
+    ticket. Se guarda en:
+      carrier-transicold/Reportes/Tickets/Ticket_<num>_<nombre_original>
+
+    Devuelve {'webUrl', 'item_id'} para guardarlos en tickets.reporte_archivo_*.
+    """
+    folder_path = f"{REPORTES_DIR}/Tickets"
+    real_folder_path = _upload_with_retry(_ensure_folder, folder_path)
+
+    ext = nombre_archivo.rsplit(".", 1)[-1].lower() if "." in nombre_archivo else ""
+    mime_map = {
+        "pdf":  "application/pdf",
+        "doc":  "application/msword",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }
+    content_type = mime_map.get(ext, "application/octet-stream")
+    file_path = f"{real_folder_path}/Ticket_{ticket_num}_{nombre_archivo}"
+
+    uploader = upload_large_file if len(contenido) > 4 * 1024 * 1024 else upload_bytes
+    result = _upload_with_retry(uploader, contenido, file_path, content_type)
+    web_url = result.get("webUrl", "")
+    item_id = result.get("id", "")
+    logger.info(f"[OneDrive] Reporte de ticket subido: {file_path} (id={item_id})")
+    return {"webUrl": web_url, "item_id": item_id}
+
+
 def sync_video_evidencia(unit_number: str, nombre_archivo: str, contenido: bytes, unit_meta: dict = None) -> dict:
     """
     Sube un VIDEO de evidencia a OneDrive y devuelve {'webUrl', 'item_id'}.

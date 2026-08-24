@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from db import execute_read, execute_write
 from auth import verify_token
 from pydantic import BaseModel
@@ -7,6 +7,16 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import asyncio
 TZ = ZoneInfo("America/Tijuana")
+
+# ── Importación opcional de OneDrive ────────────────────────────────────────
+try:
+    from onedrive_service import sync_reporte_ticket
+    ONEDRIVE_ENABLED = True
+except ImportError:
+    ONEDRIVE_ENABLED = False
+
+EXTENSIONES_REPORTE_PERMITIDAS = {"pdf", "doc", "docx"}
+MAX_REPORTE_BYTES = 20 * 1024 * 1024  # 20 MB
 
 def _notify(event: str, payload: dict = None):
     """Emite evento WebSocket+Push desde endpoint síncrono."""
@@ -32,9 +42,6 @@ class TicketCreate(BaseModel):
     vin_number: Optional[str] = ""
     descripcion: str
     tecnico: str
-
-class TicketReport(BaseModel):
-    reporte: str
 
 # ── LISTAR ─────────────────────────────────────────────────────────────────
 @router.get("/")
@@ -118,19 +125,52 @@ def atender_ticket(ticket_id: int, current_user=Depends(verify_token)):
 
 # ── ENVIAR REPORTE ─────────────────────────────────────────────────────────
 @router.put("/{ticket_id}/report")
-def enviar_reporte(ticket_id: int, report: TicketReport, current_user=Depends(verify_token)):
-    if not report.reporte.strip():
+async def enviar_reporte(
+    ticket_id: int,
+    reporte: str = Form(...),
+    archivo: Optional[UploadFile] = File(None),
+    current_user=Depends(verify_token),
+):
+    if not reporte.strip():
         raise HTTPException(status_code=400, detail="El reporte no puede estar vacío")
     ahora = datetime.now(TZ)
 
-    # 1. Guardar texto del reporte y marcar ticket como completado
+    # ── Archivo opcional (Word/PDF) — exclusivo de tickets ──────────────
+    archivo_nombre = archivo_url = archivo_item_id = None
+    if archivo is not None and archivo.filename:
+        ext = archivo.filename.rsplit(".", 1)[-1].lower() if "." in archivo.filename else ""
+        if ext not in EXTENSIONES_REPORTE_PERMITIDAS:
+            raise HTTPException(status_code=400, detail="El reporte solo admite archivos PDF o Word (.pdf, .doc, .docx)")
+        contenido = await archivo.read()
+        if len(contenido) > MAX_REPORTE_BYTES:
+            raise HTTPException(status_code=400, detail="El archivo no debe superar 20 MB")
+        if not ONEDRIVE_ENABLED:
+            raise HTTPException(status_code=503, detail="La subida de archivos no está disponible en este momento")
+
+        rows = execute_read("SELECT ticket_num FROM tickets WHERE id=%s", (ticket_id,))
+        if not rows:
+            raise HTTPException(status_code=404, detail="Ticket no encontrado")
+        ticket_num = rows[0]["ticket_num"]
+
+        try:
+            resultado = await asyncio.to_thread(sync_reporte_ticket, ticket_num, archivo.filename, contenido)
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"No se pudo subir el archivo a OneDrive: {e}")
+        archivo_nombre  = archivo.filename
+        archivo_url     = resultado.get("webUrl", "")
+        archivo_item_id = resultado.get("item_id", "")
+
+    # 1. Guardar texto del reporte (y archivo, si vino) y marcar ticket como completado
     execute_write(
         """UPDATE tickets
-           SET reporte_enviado = TRUE,
-               reporte_texto   = %s,
-               fecha_reporte   = %s
+           SET reporte_enviado         = TRUE,
+               reporte_texto           = %s,
+               fecha_reporte           = %s,
+               reporte_archivo_nombre  = COALESCE(%s, reporte_archivo_nombre),
+               reporte_archivo_url     = COALESCE(%s, reporte_archivo_url),
+               reporte_archivo_item_id = COALESCE(%s, reporte_archivo_item_id)
            WHERE id = %s""",
-        (report.reporte.strip(), ahora, ticket_id)
+        (reporte.strip(), ahora, archivo_nombre, archivo_url, archivo_item_id, ticket_id)
     )
 
     # 2. Cerrar la asignación vinculada (estado → completada, comentario = reporte)
@@ -140,7 +180,7 @@ def enviar_reporte(ticket_id: int, report: TicketReport, current_user=Depends(ve
                comentario = %s,
                fecha_fin  = %s
            WHERE ticket_id = %s AND estado != 'completada'""",
-        (report.reporte.strip(), ahora, ticket_id)
+        (reporte.strip(), ahora, ticket_id)
     )
 
     return {"mensaje": "Reporte enviado, ticket y actividad completados"}
