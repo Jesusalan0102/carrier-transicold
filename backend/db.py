@@ -628,6 +628,23 @@ def _run_migrations():
                 conn.commit()
                 print("✅ Migración: tablas de PDI (lotes_config, pdi_inspecciones, pdi_datos) verificadas")
 
+            # ── system_settings: pares clave/valor de configuración interna ───
+            # Uso actual: recordar en qué semana ISO (ej. "2026-W35") se mandó
+            # el último reporte semanal automático, para no duplicarlo si
+            # Clever Cloud reinicia el proceso el mismo día.
+            try:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS system_settings (
+                        clave      VARCHAR(100) PRIMARY KEY,
+                        valor      VARCHAR(255) DEFAULT NULL,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+                """)
+                conn.commit()
+                print("✅ Migración: tabla system_settings verificada")
+            except Exception as e_ss:
+                print(f"⚠️  Migración (system_settings) omitida: {e_ss}")
+
             # ── tickets: archivo de reporte (Word/PDF) subido por el técnico ──
             # Bloque aislado en su propio try/except (ver nota arriba) para que
             # un fallo aquí no tumbe migraciones futuras.

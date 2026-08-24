@@ -138,15 +138,19 @@ def get_corriendo_tracking(current_user: dict = Depends(verify_token)):
     return corriendo_tracking.obtener_todos()
 
 # ── DESCARGAR REPORTE EXCEL (+ auto-sync a OneDrive) ──────────────────────
-@router.get("/reporte-excel")
-def reporte_excel(current_user: dict = Depends(verify_token)):
+def _generar_excel_maestro_bytes() -> bytes:
+    """
+    Construye el Excel maestro completo (KPIs, unidades, actividades,
+    tickets) y devuelve los bytes .xlsx. Separado del endpoint para
+    poder reutilizarlo tanto en la descarga manual (/reporte-excel)
+    como en el envío automático del reporte semanal.
+    """
     try:
         import openpyxl
         from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
         from openpyxl.utils import get_column_letter
     except ImportError:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=500, detail="openpyxl no instalado. Agrega 'openpyxl' a requirements.txt")
+        raise RuntimeError("openpyxl no instalado. Agrega 'openpyxl' a requirements.txt")
 
     wb = openpyxl.Workbook()
 
@@ -389,6 +393,12 @@ def reporte_excel(current_user: dict = Depends(verify_token)):
     wb.save(buf)
     buf.seek(0)
     excel_bytes = buf.getvalue()
+    return excel_bytes
+
+
+@router.get("/reporte-excel")
+def reporte_excel(current_user: dict = Depends(verify_token)):
+    excel_bytes = _generar_excel_maestro_bytes()
 
     fecha = datetime.now(TZ).strftime("%Y-%m-%d")
 
@@ -504,3 +514,20 @@ def get_kpis_tecnico(dias: int = 30, current_user: dict = Depends(verify_token))
             reverse=True,
         ),
     }
+
+
+# ── REPORTE SEMANAL AUTOMÁTICO (envío manual / prueba) ─────────────────────
+# El envío automático corre solo (ver reportes_semanales.programador_
+# reporte_semanal, disparado desde main.py). Este endpoint es para que un
+# admin pueda probar la configuración (destinatarios, permiso Mail.Send de
+# Graph, etc.) sin tener que esperar al día/hora programados.
+@router.post("/reporte-semanal/enviar-ahora")
+def enviar_reporte_semanal_ahora(current_user: dict = Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+
+    from reportes_semanales import enviar_reporte_semanal
+    resultado = enviar_reporte_semanal(forzar=True)
+    if not resultado["enviado"]:
+        raise HTTPException(status_code=400, detail=resultado["motivo"])
+    return resultado

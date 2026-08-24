@@ -797,3 +797,52 @@ def fusionar_carpeta_duplicada(
     }
 
 
+def enviar_correo(destinatarios: list[str], asunto: str, cuerpo_html: str,
+                   adjunto_nombre: str = None, adjunto_bytes: bytes = None) -> dict:
+    """
+    Envía un correo usando el mismo buzón autenticado por Graph (Mail.Send)
+    que ya se usa para OneDrive.
+
+    IMPORTANTE — requiere configuración adicional que NO viene gratis con
+    lo que ya está montado para OneDrive:
+      1. En el App Registration de Azure (portal.azure.com), agregar el
+         permiso delegado "Mail.Send" (API permissions → Add a permission
+         → Microsoft Graph → Delegated → Mail.Send) y darle "Grant admin
+         consent" si aplica.
+      2. El MS_REFRESH_TOKEN actual fue emitido solo con el scope de
+         OneDrive (Files.ReadWrite, User.Read) — un scope que el usuario
+         nunca consintió no se puede "agregar" después. Hay que volver a
+         hacer el flujo de OAuth (login interactivo una vez) para obtener
+         un refresh token nuevo que sí incluya Mail.Send, y reemplazar
+         MS_REFRESH_TOKEN en Clever Cloud con ese valor.
+
+    Sin ese paso, esta función lanzará un error 403 de Graph — por eso
+    quien la llama (enviar_reporte_semanal) lo captura y loggea en vez de
+    tronar el proceso.
+    """
+    mensaje = {
+        "message": {
+            "subject": asunto,
+            "body": {"contentType": "HTML", "content": cuerpo_html},
+            "toRecipients": [{"emailAddress": {"address": d}} for d in destinatarios],
+        },
+        "saveToSentItems": "true",
+    }
+
+    if adjunto_bytes is not None and adjunto_nombre:
+        import base64
+        mensaje["message"]["attachments"] = [{
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": adjunto_nombre,
+            "contentBytes": base64.b64encode(adjunto_bytes).decode("ascii"),
+        }]
+
+    resp = requests.post(
+        f"{GRAPH_BASE}/me/sendMail",
+        headers={"Authorization": f"Bearer {_get_token()}", "Content-Type": "application/json"},
+        json=mensaje,
+        timeout=30,
+    )
+    if resp.status_code not in (200, 202):
+        raise Exception(f"Graph sendMail falló: {resp.status_code} {resp.text[:300]}")
+    return {"enviado": True, "destinatarios": destinatarios}
