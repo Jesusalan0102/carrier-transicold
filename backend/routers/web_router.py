@@ -966,6 +966,7 @@ async def dashboard():
     <div class="browser-tabs">
         <div class="browser-tab active" id="tabBtnDashboard" onclick="cambiarTabDashboard('dashboard')">📊 Dashboard</div>
         <div class="browser-tab" id="tabBtnSchedule" onclick="cambiarTabDashboard('schedule')">🗓️ Schedule</div>
+        <div class="browser-tab admin-only" id="tabBtnKpiTecnico" onclick="cambiarTabDashboard('kpitecnico')">👷 KPIs Técnico</div>
     </div>
     <div class="tab-panels-wrap">
     <div class="tab-panel active" id="tabPanelDashboard">
@@ -1040,6 +1041,20 @@ async def dashboard():
         </div>
       </div>
     </div><!-- /tabPanelSchedule -->
+
+    <div class="tab-panel" id="tabPanelKpiTecnico">
+        <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:20px;">
+            <label style="margin:0; font-size:0.85rem; color:var(--text-secondary);">Ventana de tiempo:</label>
+            <select id="kpiTecnicoDias" style="width:auto; margin-bottom:0;" onchange="cargarKpisTecnico()">
+                <option value="7">Últimos 7 días</option>
+                <option value="30" selected>Últimos 30 días</option>
+                <option value="90">Últimos 90 días</option>
+            </select>
+        </div>
+        <div id="kpiTecnicoTabla" style="overflow-x:auto;">
+            <p style="color:var(--text-secondary);">Cargando…</p>
+        </div>
+    </div><!-- /tabPanelKpiTecnico -->
 
     <!-- Modal: Generar reporte de unidades seleccionadas -->
     <div id="sched-reporte-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;align-items:center;justify-content:center;">
@@ -1341,11 +1356,62 @@ async def dashboard():
         function cambiarTabDashboard(tab) {
             document.getElementById('tabBtnDashboard').classList.toggle('active', tab === 'dashboard');
             document.getElementById('tabBtnSchedule').classList.toggle('active', tab === 'schedule');
+            document.getElementById('tabBtnKpiTecnico').classList.toggle('active', tab === 'kpitecnico');
             document.getElementById('tabPanelDashboard').classList.toggle('active', tab === 'dashboard');
             document.getElementById('tabPanelSchedule').classList.toggle('active', tab === 'schedule');
+            document.getElementById('tabPanelKpiTecnico').classList.toggle('active', tab === 'kpitecnico');
             if (tab === 'schedule' && !schedCargado) {
                 schedCargado = true;
                 initSchedule();
+            }
+            if (tab === 'kpitecnico') {
+                cargarKpisTecnico();
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        // ── KPIs por técnico (tickets + asistencia) ──────────────────────
+        // ══════════════════════════════════════════════════════════════════
+        async function cargarKpisTecnico() {
+            const cont = document.getElementById('kpiTecnicoTabla');
+            const dias = document.getElementById('kpiTecnicoDias').value;
+            cont.innerHTML = '<p style="color:var(--text-secondary);">Cargando…</p>';
+            try {
+                const res = await window.fetchAuth('/api/dashboard/kpis_tecnico?dias=' + dias);
+                if (res.status === 403) {
+                    cont.innerHTML = '<p style="color:var(--text-secondary);">Solo administradores y líderes pueden ver esta vista.</p>';
+                    return;
+                }
+                if (!res.ok) { cont.innerHTML = '<p style="color:var(--carrier-danger);">Error al cargar los KPIs.</p>'; return; }
+                const data = await res.json();
+                if (!data.tecnicos.length) {
+                    cont.innerHTML = '<p style="color:var(--text-secondary);">Sin datos en esta ventana de tiempo.</p>';
+                    return;
+                }
+                let html = '<table class="status-tbl"><thead><tr>' +
+                    '<th>Técnico</th><th>Tickets cerrados</th><th>Con reporte</th><th>Sin reporte</th>' +
+                    '<th>Hrs. promedio resolución</th><th>Días con check-in</th><th>Días con tardanza</th>' +
+                    '<th>% tardanza</th></tr></thead><tbody>';
+                data.tecnicos.forEach(t => {
+                    const pctTardanza = t.pct_tardanza;
+                    const colorPct = pctTardanza === null ? '' :
+                        (pctTardanza >= 30 ? 'color:var(--carrier-danger);font-weight:700;' :
+                         pctTardanza >= 10 ? 'color:var(--carrier-warn);font-weight:700;' : 'color:var(--carrier-success);font-weight:700;');
+                    html += `<tr>
+                        <td style="text-align:left;font-weight:700;">${t.tecnico_display}</td>
+                        <td>${t.tickets_cerrados}</td>
+                        <td>${t.con_reporte_adjunto ?? '—'}</td>
+                        <td>${t.sin_reporte_adjunto ?? '—'}</td>
+                        <td>${t.horas_promedio_resolucion !== null ? t.horas_promedio_resolucion + 'h' : '—'}</td>
+                        <td>${t.dias_con_checkin ?? '—'}</td>
+                        <td>${t.dias_con_tardanza ?? '—'}</td>
+                        <td style="${colorPct}">${pctTardanza !== null ? pctTardanza + '%' : '—'}</td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+                cont.innerHTML = html;
+            } catch (e) {
+                cont.innerHTML = '<p style="color:var(--carrier-danger);">Error al cargar los KPIs.</p>';
             }
         }
 
