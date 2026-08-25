@@ -55,6 +55,24 @@ def test_layout_compartido_renderiza_sin_errores():
     assert "/api/search/global" in html
 
 
+def test_dashboard_renderiza_con_kpis_personalizados():
+    """
+    /app/dashboard incluye la pestaña de KPIs por técnico + la sección de
+    métricas personalizadas (modal para crear métricas, tabla editable de
+    valores). Protege ese bloque de HTML/JS contra errores de sintaxis.
+    """
+    import asyncio
+    from routers.web_router import dashboard
+
+    html = asyncio.get_event_loop().run_until_complete(dashboard())
+    body = html.body.decode()
+    for needle in (
+        "kpiCustomTabla", "modalNuevaMetrica", "guardarNuevaMetrica",
+        "guardarValorCustom", "kpis_custom/valores", "kpis_custom/metricas",
+    ):
+        assert needle in body, f"Falta '{needle}' en el HTML de /app/dashboard"
+
+
 def test_todos_los_routers_quedaron_registrados():
     """
     Verifica que la app tenga rutas registradas de cada módulo de negocio

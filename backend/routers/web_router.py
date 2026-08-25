@@ -1054,7 +1054,42 @@ async def dashboard():
         <div id="kpiTecnicoTabla" style="overflow-x:auto;">
             <p style="color:var(--text-secondary);">Cargando…</p>
         </div>
+
+        <!-- ── Métricas personalizadas (definidas por el admin) ────────── -->
+        <div style="margin-top:36px; padding-top:24px; border-top:2px solid var(--border-color);">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+                <h3 style="margin:0;">📌 Métricas personalizadas</h3>
+                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <label style="margin:0; font-size:0.85rem; color:var(--text-secondary);">Periodo:</label>
+                    <input id="kpiCustomPeriodo" type="text" style="width:110px; margin-bottom:0;"
+                           placeholder="2026-08" oninput="_debounceCargarKpiCustom()">
+                    <button class="btn-primary" style="width:auto; padding:10px 16px;" onclick="abrirModalNuevaMetrica()" id="btnNuevaMetrica">+ Nueva métrica</button>
+                </div>
+            </div>
+            <p style="color:var(--text-secondary); font-size:0.82rem; margin-top:-8px;">
+                El periodo es un texto libre para agrupar valores — usa "2026-08" para un mes,
+                "2026-W35" para una semana ISO, o el criterio que prefieras.
+            </p>
+            <div id="kpiCustomTabla" style="overflow-x:auto; margin-top:14px;">
+                <p style="color:var(--text-secondary);">Cargando…</p>
+            </div>
+        </div>
     </div><!-- /tabPanelKpiTecnico -->
+
+    <!-- ── Modal: nueva métrica personalizada ──────────────────────────── -->
+    <div id="modalNuevaMetrica" class="modal" style="display:none;" onclick="if(event.target===this) cerrarModalNuevaMetrica()">
+        <div class="modal-content" style="max-width:420px;">
+            <h3 style="margin-top:0;">📌 Nueva métrica personalizada</h3>
+            <label style="font-size:0.85rem; color:var(--text-secondary);">Nombre *</label>
+            <input id="nmNombre" type="text" placeholder="Ej. Satisfacción de cliente">
+            <label style="font-size:0.85rem; color:var(--text-secondary);">Unidad (opcional)</label>
+            <input id="nmUnidad" type="text" placeholder="Ej. %, hrs, unidades">
+            <label style="font-size:0.85rem; color:var(--text-secondary);">Descripción (opcional)</label>
+            <input id="nmDescripcion" type="text" placeholder="¿Qué mide y cómo se calcula?">
+            <button class="btn-primary" onclick="guardarNuevaMetrica()">💾 Guardar métrica</button>
+            <button class="btn-danger" onclick="cerrarModalNuevaMetrica()">Cancelar</button>
+        </div>
+    </div>
 
     <!-- Modal: Generar reporte de unidades seleccionadas -->
     <div id="sched-reporte-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;align-items:center;justify-content:center;">
@@ -1366,6 +1401,12 @@ async def dashboard():
             }
             if (tab === 'kpitecnico') {
                 cargarKpisTecnico();
+                if (!document.getElementById('kpiCustomPeriodo').value) {
+                    const hoy = new Date();
+                    document.getElementById('kpiCustomPeriodo').value =
+                        hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0');
+                }
+                cargarKpiCustom();
             }
         }
 
@@ -1412,6 +1453,126 @@ async def dashboard():
                 cont.innerHTML = html;
             } catch (e) {
                 cont.innerHTML = '<p style="color:var(--carrier-danger);">Error al cargar los KPIs.</p>';
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        // ── Métricas personalizadas (definidas por el admin) ────────────
+        // ══════════════════════════════════════════════════════════════════
+        let _kpiCustomDebounce = null;
+        function _debounceCargarKpiCustom() {
+            clearTimeout(_kpiCustomDebounce);
+            _kpiCustomDebounce = setTimeout(cargarKpiCustom, 400);
+        }
+
+        async function cargarKpiCustom() {
+            const cont = document.getElementById('kpiCustomTabla');
+            const periodo = document.getElementById('kpiCustomPeriodo').value.trim();
+            if (!periodo) { cont.innerHTML = '<p style="color:var(--text-secondary);">Indica un periodo.</p>'; return; }
+            cont.innerHTML = '<p style="color:var(--text-secondary);">Cargando…</p>';
+            try {
+                const res = await window.fetchAuth('/api/dashboard/kpis_custom/valores?periodo=' + encodeURIComponent(periodo));
+                if (res.status === 403) {
+                    cont.innerHTML = '<p style="color:var(--text-secondary);">Solo administradores y líderes pueden ver esto.</p>';
+                    return;
+                }
+                if (!res.ok) { cont.innerHTML = '<p style="color:var(--carrier-danger);">Error al cargar.</p>'; return; }
+                const data = await res.json();
+
+                if (!data.metricas.length) {
+                    cont.innerHTML = '<p style="color:var(--text-secondary);">Todavía no has creado ninguna métrica personalizada — usa el botón "+ Nueva métrica".</p>';
+                    return;
+                }
+                if (!data.tecnicos.length) {
+                    cont.innerHTML = '<p style="color:var(--text-secondary);">No hay técnicos registrados.</p>';
+                    return;
+                }
+
+                const valorMap = {};
+                data.valores.forEach(v => { valorMap[v.metrica_id + '_' + v.tecnico] = v.valor; });
+
+                let html = '<table class="status-tbl"><thead><tr><th>Técnico</th>';
+                data.metricas.forEach(m => {
+                    const suf = m.unidad ? ' (' + m.unidad + ')' : '';
+                    html += `<th title="${(m.descripcion || '').replace(/"/g, '&quot;')}">${m.nombre}${suf}
+                        <br><a href="#" onclick="eliminarMetricaCustom(${m.id}, '${m.nombre.replace(/'/g, "\\'")}'); return false;"
+                           style="font-size:0.7rem; color:var(--carrier-danger); text-decoration:none;">quitar</a></th>`;
+                });
+                html += '</tr></thead><tbody>';
+                data.tecnicos.forEach(t => {
+                    html += `<tr><td style="text-align:left; font-weight:700;">${t.nombre_display}</td>`;
+                    data.metricas.forEach(m => {
+                        const key = m.id + '_' + t.username;
+                        const val = valorMap[key];
+                        html += `<td><input type="number" step="0.01" value="${val ?? ''}"
+                            style="width:90px; margin-bottom:0; text-align:center;"
+                            onchange="guardarValorCustom(${m.id}, '${t.username}', this.value)"></td>`;
+                    });
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+                cont.innerHTML = html;
+            } catch (e) {
+                cont.innerHTML = '<p style="color:var(--carrier-danger);">Error al cargar.</p>';
+            }
+        }
+
+        async function guardarValorCustom(metricaId, tecnico, valorStr) {
+            const periodo = document.getElementById('kpiCustomPeriodo').value.trim();
+            const valor = valorStr === '' ? null : parseFloat(valorStr);
+            try {
+                const res = await window.fetchAuth('/api/dashboard/kpis_custom/valores', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ metrica_id: metricaId, tecnico, periodo, valor })
+                });
+                if (!res.ok) { alert('No se pudo guardar el valor.'); }
+            } catch (e) {
+                alert('Error de red al guardar el valor.');
+            }
+        }
+
+        function abrirModalNuevaMetrica() {
+            document.getElementById('nmNombre').value = '';
+            document.getElementById('nmUnidad').value = '';
+            document.getElementById('nmDescripcion').value = '';
+            document.getElementById('modalNuevaMetrica').style.display = 'flex';
+        }
+        function cerrarModalNuevaMetrica() {
+            document.getElementById('modalNuevaMetrica').style.display = 'none';
+        }
+
+        async function guardarNuevaMetrica() {
+            const nombre = document.getElementById('nmNombre').value.trim();
+            if (!nombre) { alert('El nombre es obligatorio.'); return; }
+            const unidad = document.getElementById('nmUnidad').value.trim();
+            const descripcion = document.getElementById('nmDescripcion').value.trim();
+            try {
+                const res = await window.fetchAuth('/api/dashboard/kpis_custom/metricas', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nombre, unidad, descripcion })
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    alert(err.detail || 'No se pudo crear la métrica.');
+                    return;
+                }
+                cerrarModalNuevaMetrica();
+                cargarKpiCustom();
+            } catch (e) {
+                alert('Error de red al crear la métrica.');
+            }
+        }
+
+        async function eliminarMetricaCustom(id, nombre) {
+            if (!confirm(`¿Quitar la métrica "${nombre}"? Los valores ya capturados no se borran, solo deja de mostrarse.`)) return;
+            try {
+                const res = await window.fetchAuth('/api/dashboard/kpis_custom/metricas/' + id, { method: 'DELETE' });
+                if (!res.ok) { alert('No se pudo quitar la métrica.'); return; }
+                cargarKpiCustom();
+            } catch (e) {
+                alert('Error de red.');
             }
         }
 

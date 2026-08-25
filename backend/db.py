@@ -645,6 +645,43 @@ def _run_migrations():
             except Exception as e_ss:
                 print(f"⚠️  Migración (system_settings) omitida: {e_ss}")
 
+            # ── kpis_custom_metricas / kpis_custom_valores ─────────────────────
+            # Permite que un admin defina SUS PROPIAS métricas (ej. "Satisfacción
+            # de cliente", "Unidades PDI completadas") además de las que ya
+            # calculamos automáticamente (tickets, asistencia). El valor se
+            # captura a mano por técnico y por periodo (ej. "2026-08").
+            try:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS kpis_custom_metricas (
+                        id            INT AUTO_INCREMENT PRIMARY KEY,
+                        nombre        VARCHAR(120) NOT NULL,
+                        unidad        VARCHAR(30)  DEFAULT '',
+                        descripcion   VARCHAR(255) DEFAULT '',
+                        activo        TINYINT(1)   NOT NULL DEFAULT 1,
+                        creado_por    VARCHAR(80)  DEFAULT NULL,
+                        created_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+                    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS kpis_custom_valores (
+                        id            INT AUTO_INCREMENT PRIMARY KEY,
+                        metrica_id    INT NOT NULL,
+                        tecnico       VARCHAR(80) NOT NULL,
+                        periodo       VARCHAR(20) NOT NULL,
+                        valor         DECIMAL(12,2) DEFAULT NULL,
+                        registrado_por VARCHAR(80) DEFAULT NULL,
+                        updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        UNIQUE KEY uniq_metrica_tecnico_periodo (metrica_id, tecnico, periodo),
+                        INDEX idx_periodo (periodo),
+                        CONSTRAINT fk_kpicustom_metrica FOREIGN KEY (metrica_id)
+                            REFERENCES kpis_custom_metricas(id) ON DELETE CASCADE
+                    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+                """)
+                conn.commit()
+                print("✅ Migración: tablas kpis_custom_metricas / kpis_custom_valores verificadas")
+            except Exception as e_kpi:
+                print(f"⚠️  Migración (kpis_custom) omitida: {e_kpi}")
+
             # ── tickets: archivo de reporte (Word/PDF) subido por el técnico ──
             # Bloque aislado en su propio try/except (ver nota arriba) para que
             # un fallo aquí no tumbe migraciones futuras.

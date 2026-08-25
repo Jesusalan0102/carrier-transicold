@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from db import execute_read, execute_write
+from db import execute_read, execute_write, execute_write_with_id
 from auth import verify_token
 from pydantic import BaseModel
 from datetime import datetime
@@ -531,3 +531,119 @@ def enviar_reporte_semanal_ahora(current_user: dict = Depends(verify_token)):
     if not resultado["enviado"]:
         raise HTTPException(status_code=400, detail=resultado["motivo"])
     return resultado
+
+
+# ── KPIs PERSONALIZADOS (definidos por el admin) ────────────────────────────
+# Complementa /kpis_tecnico: además de lo que el sistema ya calcula solo
+# (tickets, asistencia), un admin puede definir sus propias métricas
+# ("Satisfacción de cliente", "Unidades PDI completadas", lo que sea) y
+# capturar el valor a mano por técnico y por periodo.
+class KpiMetricaCreate(BaseModel):
+    nombre: str
+    unidad: str = ""
+    descripcion: str = ""
+
+
+class KpiValorUpsert(BaseModel):
+    metrica_id: int
+    tecnico: str
+    periodo: str  # texto libre, ej. "2026-08" (mes) o "2026-W35" (semana ISO)
+    valor: float | None = None
+
+
+@router.get("/kpis_custom/metricas")
+def listar_kpi_metricas(current_user: dict = Depends(verify_token)):
+    if current_user["role"] not in ("admin", "lider"):
+        raise HTTPException(status_code=403, detail="Solo administradores y líderes")
+    return execute_read(
+        "SELECT id, nombre, unidad, descripcion, activo FROM kpis_custom_metricas "
+        "WHERE activo = 1 ORDER BY nombre"
+    )
+
+
+@router.post("/kpis_custom/metricas")
+def crear_kpi_metrica(data: KpiMetricaCreate, current_user: dict = Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    nombre = data.nombre.strip()
+    if not nombre:
+        raise HTTPException(status_code=400, detail="El nombre de la métrica no puede estar vacío")
+
+    nuevo_id = execute_write_with_id(
+        "INSERT INTO kpis_custom_metricas (nombre, unidad, descripcion, creado_por) "
+        "VALUES (%s, %s, %s, %s)",
+        (nombre, data.unidad.strip(), data.descripcion.strip(), current_user["username"])
+    )
+    return {"id": nuevo_id, "nombre": nombre, "unidad": data.unidad, "descripcion": data.descripcion}
+
+
+@router.delete("/kpis_custom/metricas/{metrica_id}")
+def desactivar_kpi_metrica(metrica_id: int, current_user: dict = Depends(verify_token)):
+    """
+    Desactiva la métrica (no la borra) para no perder el histórico de
+    valores ya capturados — simplemente deja de aparecer en la tabla.
+    """
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    filas = execute_read("SELECT id FROM kpis_custom_metricas WHERE id = %s", (metrica_id,))
+    if not filas:
+        raise HTTPException(status_code=404, detail="Métrica no encontrada")
+    execute_write("UPDATE kpis_custom_metricas SET activo = 0 WHERE id = %s", (metrica_id,))
+    return {"ok": True}
+
+
+@router.get("/kpis_custom/valores")
+def listar_kpi_valores(periodo: str = Query(...), current_user: dict = Depends(verify_token)):
+    if current_user["role"] not in ("admin", "lider"):
+        raise HTTPException(status_code=403, detail="Solo administradores y líderes")
+
+    metricas = execute_read(
+        "SELECT id, nombre, unidad, descripcion FROM kpis_custom_metricas WHERE activo = 1 ORDER BY nombre"
+    )
+    tecnicos = execute_read(
+        "SELECT username, COALESCE(NULLIF(nombre_completo, ''), username) AS nombre_display "
+        "FROM users WHERE role = 'tecnico' ORDER BY nombre_display"
+    )
+    valores = execute_read(
+        "SELECT metrica_id, tecnico, valor FROM kpis_custom_valores WHERE periodo = %s",
+        (periodo,)
+    )
+    mapa_valores = {(v["metrica_id"], v["tecnico"]): v["valor"] for v in valores}
+
+    return {
+        "periodo": periodo,
+        "metricas": metricas,
+        "tecnicos": tecnicos,
+        "valores": [
+            {"metrica_id": m["id"], "tecnico": t["username"], "valor": mapa_valores.get((m["id"], t["username"]))}
+            for m in metricas
+            for t in tecnicos
+        ],
+    }
+
+
+@router.put("/kpis_custom/valores")
+def guardar_kpi_valor(data: KpiValorUpsert, current_user: dict = Depends(verify_token)):
+    if current_user["role"] not in ("admin", "lider"):
+        raise HTTPException(status_code=403, detail="Solo administradores y líderes")
+
+    periodo = data.periodo.strip()
+    if not periodo:
+        raise HTTPException(status_code=400, detail="El periodo no puede estar vacío")
+
+    metrica = execute_read(
+        "SELECT id FROM kpis_custom_metricas WHERE id = %s AND activo = 1", (data.metrica_id,)
+    )
+    if not metrica:
+        raise HTTPException(status_code=404, detail="Métrica no encontrada o desactivada")
+
+    execute_write(
+        """
+        INSERT INTO kpis_custom_valores (metrica_id, tecnico, periodo, valor, registrado_por)
+        VALUES (%s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE valor = %s, registrado_por = %s
+        """,
+        (data.metrica_id, data.tecnico, periodo, data.valor,
+         current_user["username"], data.valor, current_user["username"])
+    )
+    return {"ok": True}
