@@ -682,6 +682,62 @@ def _run_migrations():
             except Exception as e_kpi:
                 print(f"⚠️  Migración (kpis_custom) omitida: {e_kpi}")
 
+            # ── actividades_catalogo: tiempo estimado por tipo de actividad ────
+            # Antes ACTIVIDADES_CARRIER era una lista fija en Python (sin tiempo
+            # objetivo). Se vuelve tabla para que el admin le ponga a cada
+            # actividad cuánto debería tardar en completarse — insumo para
+            # medir SLA en los KPIs por técnico.
+            try:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS actividades_catalogo (
+                        id                    INT AUTO_INCREMENT PRIMARY KEY,
+                        nombre                VARCHAR(80) NOT NULL UNIQUE,
+                        tiempo_estimado_horas DECIMAL(6,2) DEFAULT NULL,
+                        activo                TINYINT(1) NOT NULL DEFAULT 1,
+                        created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+                """)
+                conn.commit()
+                actividades_default = [
+                    "Cableado", "Programación", "Soldadura", "Check de fugas",
+                    "Vacío", "Cerrado", "Pre-viaje", "Horas Corridas",
+                    "Standby", "GPS", "Corriendo", "Inspección",
+                    "Accesorios", "Toma de Valores", "Evidencia", "Toma de Series",
+                    "Extra Eléctrico", "Extra Soldador",
+                ]
+                for nombre in actividades_default:
+                    cur.execute(
+                        "INSERT IGNORE INTO actividades_catalogo (nombre) VALUES (%s)", (nombre,)
+                    )
+                conn.commit()
+                print("✅ Migración: tabla actividades_catalogo verificada/poblada")
+            except Exception as e_act:
+                print(f"⚠️  Migración (actividades_catalogo) omitida: {e_act}")
+
+            # ── asignaciones.tiempo_estimado_horas ──────────────────────────────
+            # Snapshot del tiempo objetivo (tomado de actividades_catalogo al
+            # momento de crear la asignación) — se guarda copiado, no como
+            # referencia viva, para que si luego cambias el objetivo de una
+            # actividad no se reescriba retroactivamente el SLA de asignaciones
+            # que ya estaban en curso o cerradas.
+            try:
+                cur.execute("""
+                    SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME   = 'asignaciones'
+                      AND COLUMN_NAME  = 'tiempo_estimado_horas'
+                """)
+                row = cur.fetchone()
+                count = row[0] if isinstance(row, tuple) else list(row.values())[0]
+                if count == 0:
+                    cur.execute(
+                        "ALTER TABLE asignaciones ADD COLUMN tiempo_estimado_horas DECIMAL(6,2) DEFAULT NULL"
+                    )
+                    conn.commit()
+                    print("✅ Migración: columna tiempo_estimado_horas añadida a asignaciones")
+            except Exception as e_te:
+                print(f"⚠️  Migración (asignaciones.tiempo_estimado_horas) omitida: {e_te}")
+
             # ── tickets: archivo de reporte (Word/PDF) subido por el técnico ──
             # Bloque aislado en su propio try/except (ver nota arriba) para que
             # un fallo aquí no tumbe migraciones futuras.

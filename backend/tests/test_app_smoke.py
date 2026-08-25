@@ -73,6 +73,21 @@ def test_dashboard_renderiza_con_kpis_personalizados():
         assert needle in body, f"Falta '{needle}' en el HTML de /app/dashboard"
 
 
+def test_panel_cluster_renderiza_con_tiempo_estimado():
+    """
+    /app/cluster (Asignación por Cluster) incluye ahora el input de tiempo
+    estimado por actividad (SLA), que se guarda vía PUT /api/cluster/
+    actividades/{id}/tiempo-estimado. Protege ese bloque de HTML/JS.
+    """
+    import asyncio
+    from routers.web_router import panel_cluster
+
+    html = asyncio.get_event_loop().run_until_complete(panel_cluster())
+    body = html.body.decode()
+    for needle in ("actividadItem", "guardarTiempoEstimadoActividad", "tiempo-estimado"):
+        assert needle in body, f"Falta '{needle}' en el HTML de /app/cluster"
+
+
 def test_todos_los_routers_quedaron_registrados():
     """
     Verifica que la app tenga rutas registradas de cada módulo de negocio

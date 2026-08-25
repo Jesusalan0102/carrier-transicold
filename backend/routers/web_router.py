@@ -6934,6 +6934,38 @@ async def panel_cluster():
             </label>`;
         }
 
+        function actividadItem(a) {
+            const valor = a.tiempo_estimado_horas ?? '';
+            return `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;border:0.5px solid var(--color-border-tertiary);font-size:13px;color:var(--color-text-primary);">
+                <label style="display:flex;align-items:center;gap:8px;flex:1;cursor:pointer;">
+                    <input type="checkbox" data-tipo="actividades" data-valor="${encodeURIComponent(a.nombre)}" onchange="actualizarContador()" style="width:15px;height:15px;cursor:pointer;">
+                    ${a.nombre}
+                </label>
+                <input type="number" step="0.5" min="0" value="${valor}" placeholder="hrs objetivo"
+                       title="Tiempo estimado para completar esta actividad (horas) — se usa como SLA para los KPIs"
+                       style="width:90px;margin-bottom:0;font-size:12px;padding:4px 6px;"
+                       onclick="event.stopPropagation()"
+                       onchange="guardarTiempoEstimadoActividad(${a.id}, this.value)">
+            </div>`;
+        }
+
+        async function guardarTiempoEstimadoActividad(actividadId, valorStr) {
+            const tiempo_estimado_horas = valorStr === '' ? null : parseFloat(valorStr);
+            try {
+                const res = await fetchAuth(`/api/cluster/actividades/${actividadId}/tiempo-estimado`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tiempo_estimado_horas })
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    alert(err.detail || 'No se pudo guardar el tiempo estimado.');
+                }
+            } catch (e) {
+                alert('Error de red al guardar el tiempo estimado.');
+            }
+        }
+
         function seleccionarTodos(tipo) {
             document.querySelectorAll(`input[data-tipo="${tipo}"]`).forEach(c => c.checked = true);
             actualizarContador();
@@ -6980,7 +7012,7 @@ async def panel_cluster():
             todasUnidades  = await resUni.json();
 
             document.getElementById('listaTecnicos').innerHTML = todosTecnicos.map(t => checkItem('tecnicos', t.username)).join('');
-            document.getElementById('listaActividades').innerHTML = todasActividades.map(a => checkItem('actividades', a.nombre)).join('');
+            document.getElementById('listaActividades').innerHTML = todasActividades.map(a => actividadItem(a)).join('');
 
             lotes = [...new Set(todasUnidades.map(u => u.id_lote).filter(Boolean))].sort();
             let filtroHtml = '<select onchange="filtrarPorLote(this.value)" style="width:100%;margin-bottom:6px;font-size:12px;padding:5px;"><option value="">— Todos los lotes —</option>';
@@ -9430,18 +9462,13 @@ async def guia_mantenimiento():
 # API: ASIGNACIÓN POR CLUSTER
 # (movido desde cluster_router.py para consolidar en web_router.py)
 # ------------------------------------------------------------
-ACTIVIDADES_CARRIER = [
-    "Cableado", "Programación", "Soldadura", "Check de fugas",
-    "Vacío", "Cerrado", "Pre-viaje", "Horas Corridas",
-    "Standby", "GPS", "Corriendo", "Inspección",
-    "Accesorios", "Toma de Valores", "Evidencia", "Toma de Series",
-    "Extra Eléctrico", "Extra Soldador",
-]
-
 class ClusterAsignacion(BaseModel):
     tecnicos: List[str]
     actividades: List[str]
     unidades: List[str]
+
+class ActividadTiempoEstimado(BaseModel):
+    tiempo_estimado_horas: float | None = None
 
 @router.get("/api/cluster/tecnicos", tags=["cluster"])
 def listar_tecnicos_cluster(current_user=Depends(verify_token)):
@@ -9460,7 +9487,32 @@ def listar_unidades_cluster(current_user=Depends(verify_token)):
 def listar_actividades_cluster(current_user=Depends(verify_token)):
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo administradores")
-    return [{"nombre": a} for a in ACTIVIDADES_CARRIER]
+    return execute_read(
+        "SELECT id, nombre, tiempo_estimado_horas FROM actividades_catalogo "
+        "WHERE activo = 1 ORDER BY nombre"
+    )
+
+@router.put("/api/cluster/actividades/{actividad_id}/tiempo-estimado", tags=["cluster"])
+def actualizar_tiempo_estimado_actividad(
+    actividad_id: int, data: ActividadTiempoEstimado, current_user=Depends(verify_token)
+):
+    """
+    Le pone (o quita, si mandas null) el tiempo estimado de finalización a
+    una actividad del catálogo. A partir de aquí, toda asignación NUEVA que
+    se cree con esa actividad hereda este valor como su SLA (snapshot —
+    ver comentario en la migración de asignaciones.tiempo_estimado_horas).
+    """
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    if not execute_read("SELECT id FROM actividades_catalogo WHERE id = %s", (actividad_id,)):
+        raise HTTPException(status_code=404, detail="Actividad no encontrada")
+    if data.tiempo_estimado_horas is not None and data.tiempo_estimado_horas <= 0:
+        raise HTTPException(status_code=400, detail="El tiempo estimado debe ser mayor a 0")
+    execute_write(
+        "UPDATE actividades_catalogo SET tiempo_estimado_horas = %s WHERE id = %s",
+        (data.tiempo_estimado_horas, actividad_id)
+    )
+    return {"ok": True, "id": actividad_id, "tiempo_estimado_horas": data.tiempo_estimado_horas}
 
 @router.post("/api/cluster/asignar", tags=["cluster"])
 def asignar_cluster(data: ClusterAsignacion, current_user=Depends(verify_token)):
@@ -9468,6 +9520,13 @@ def asignar_cluster(data: ClusterAsignacion, current_user=Depends(verify_token))
         raise HTTPException(status_code=403, detail="Solo administradores")
     if not data.tecnicos or not data.actividades or not data.unidades:
         raise HTTPException(status_code=400, detail="Debes seleccionar técnicos, actividades y unidades")
+
+    # Tiempo estimado por nombre de actividad, para copiarlo (snapshot) a
+    # cada asignación nueva que se cree con esa actividad.
+    filas_catalogo = execute_read(
+        "SELECT nombre, tiempo_estimado_horas FROM actividades_catalogo"
+    )
+    tiempo_por_actividad = {f["nombre"]: f["tiempo_estimado_horas"] for f in filas_catalogo}
 
     creadas = 0
     omitidas = 0
@@ -9483,8 +9542,9 @@ def asignar_cluster(data: ClusterAsignacion, current_user=Depends(verify_token))
                     omitidas += 1
                     continue
                 execute_write(
-                    "INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s,%s,%s,'pendiente')",
-                    (unidad, actividad, tecnico)
+                    "INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado, tiempo_estimado_horas) "
+                    "VALUES (%s,%s,%s,'pendiente',%s)",
+                    (unidad, actividad, tecnico, tiempo_por_actividad.get(actividad))
                 )
                 creadas += 1
 
