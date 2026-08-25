@@ -460,7 +460,7 @@ def get_kpis_tecnico(dias: int = 30, current_user: dict = Depends(verify_token))
     asistencia_por_tecnico = execute_read(
         """
         SELECT
-            username AS tecnico,
+            ra.username AS tecnico,
             COALESCE(NULLIF(usr.nombre_completo, ''), ra.username) AS tecnico_display,
             COUNT(*) AS dias_con_checkin,
             SUM(ra.retardo_min > 0) AS dias_con_tardanza,
