@@ -1,4 +1,5 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from fastapi.concurrency import run_in_threadpool
 import asyncio, json, logging
 from db import execute_read
 from datetime import datetime
@@ -91,6 +92,14 @@ async def notify(event: str, payload: dict = None):
 
 UMBRAL_HORAS_CORRIENDO = 6
 
+def _contar_sols_y_tickets():
+    """Síncrono a propósito: corre en threadpool desde websocket_endpoint
+    para no bloquear el event loop en cada poll de 30s (ver nota abajo)."""
+    sols    = len(execute_read("SELECT id FROM asignaciones WHERE estado='solicitado'"))
+    tickets = len(execute_read("SELECT id FROM tickets WHERE atendido=FALSE"))
+    return sols, tickets
+
+
 async def monitor_corriendo_6h():
     """
     Tarea en segundo plano (independiente de conexiones WebSocket activas).
@@ -102,9 +111,9 @@ async def monitor_corriendo_6h():
     import corriendo_tracking
     while True:
         try:
-            rows = corriendo_tracking.obtener_pendientes_de_alerta()
+            rows = await run_in_threadpool(corriendo_tracking.obtener_pendientes_de_alerta)
             for r in rows:
-                corriendo_tracking.marcar_alerta_enviada(r["unidad"])
+                await run_in_threadpool(corriendo_tracking.marcar_alerta_enviada, r["unidad"])
                 await notify("corriendo_6h", {
                     "unidad": r["unidad"],
                     "unit_number": r["unidad"],
@@ -133,8 +142,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(default=No
 
     await manager.connect(websocket)
     try:
-        sols    = len(execute_read("SELECT id FROM asignaciones WHERE estado='solicitado'"))
-        tickets = len(execute_read("SELECT id FROM tickets WHERE atendido=FALSE"))
+        sols, tickets = await run_in_threadpool(_contar_sols_y_tickets)
         await websocket.send_json({
             "type": "status",
             "sols": sols,
@@ -143,8 +151,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(default=No
         })
         while True:
             await asyncio.sleep(30)
-            sols    = len(execute_read("SELECT id FROM asignaciones WHERE estado='solicitado'"))
-            tickets = len(execute_read("SELECT id FROM tickets WHERE atendido=FALSE"))
+            sols, tickets = await run_in_threadpool(_contar_sols_y_tickets)
             await websocket.send_json({
                 "type": "status",
                 "sols": sols,
