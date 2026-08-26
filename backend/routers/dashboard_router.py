@@ -542,6 +542,18 @@ class KpiMetricaCreate(BaseModel):
     nombre: str
     unidad: str = ""
     descripcion: str = ""
+    tipo_evaluacion: str = "manual_directo"  # manual_directo | manual_rango | manual_rango_invertido
+    valor_min: float = 0
+    valor_max: float = 100
+    peso: float = 0
+
+
+class KpiMetricaConfig(BaseModel):
+    """Para editar una métrica ya creada (automática o manual)."""
+    tipo_evaluacion: str | None = None
+    valor_min: float | None = None
+    valor_max: float | None = None
+    peso: float
 
 
 class KpiValorUpsert(BaseModel):
@@ -551,13 +563,17 @@ class KpiValorUpsert(BaseModel):
     valor: float | None = None
 
 
+TIPOS_EVALUACION_VALIDOS = {"manual_directo", "manual_rango", "manual_rango_invertido"}
+
+
 @router.get("/kpis_custom/metricas")
 def listar_kpi_metricas(current_user: dict = Depends(verify_token)):
     if current_user["role"] not in ("admin", "lider"):
         raise HTTPException(status_code=403, detail="Solo administradores y líderes")
     return execute_read(
-        "SELECT id, nombre, unidad, descripcion, activo FROM kpis_custom_metricas "
-        "WHERE activo = 1 ORDER BY nombre"
+        "SELECT id, nombre, unidad, descripcion, activo, tipo_evaluacion, "
+        "valor_min, valor_max, peso, es_automatica, clave_automatica "
+        "FROM kpis_custom_metricas WHERE activo = 1 ORDER BY es_automatica DESC, nombre"
     )
 
 
@@ -568,13 +584,59 @@ def crear_kpi_metrica(data: KpiMetricaCreate, current_user: dict = Depends(verif
     nombre = data.nombre.strip()
     if not nombre:
         raise HTTPException(status_code=400, detail="El nombre de la métrica no puede estar vacío")
+    if data.tipo_evaluacion not in TIPOS_EVALUACION_VALIDOS:
+        raise HTTPException(status_code=400, detail=f"tipo_evaluacion debe ser uno de {TIPOS_EVALUACION_VALIDOS}")
+    if data.tipo_evaluacion != "manual_directo" and data.valor_max <= data.valor_min:
+        raise HTTPException(status_code=400, detail="valor_max debe ser mayor que valor_min")
+    if not (0 <= data.peso <= 100):
+        raise HTTPException(status_code=400, detail="El peso debe estar entre 0 y 100")
 
     nuevo_id = execute_write_with_id(
-        "INSERT INTO kpis_custom_metricas (nombre, unidad, descripcion, creado_por) "
-        "VALUES (%s, %s, %s, %s)",
-        (nombre, data.unidad.strip(), data.descripcion.strip(), current_user["username"])
+        "INSERT INTO kpis_custom_metricas "
+        "(nombre, unidad, descripcion, creado_por, tipo_evaluacion, valor_min, valor_max, peso) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+        (nombre, data.unidad.strip(), data.descripcion.strip(), current_user["username"],
+         data.tipo_evaluacion, data.valor_min, data.valor_max, data.peso)
     )
-    return {"id": nuevo_id, "nombre": nombre, "unidad": data.unidad, "descripcion": data.descripcion}
+    return {"id": nuevo_id, "nombre": nombre}
+
+
+@router.put("/kpis_custom/metricas/{metrica_id}/config")
+def configurar_kpi_metrica(metrica_id: int, data: KpiMetricaConfig, current_user: dict = Depends(verify_token)):
+    """
+    Ajusta el peso (y, para métricas manuales, el tipo de evaluación y sus
+    márgenes) de una métrica ya existente. Para las 3 métricas automáticas
+    (tiempo SLA, reporte, asistencia) su lógica de cálculo está fija en
+    código — aquí solo se les puede cambiar el peso.
+    """
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    if not (0 <= data.peso <= 100):
+        raise HTTPException(status_code=400, detail="El peso debe estar entre 0 y 100")
+
+    filas = execute_read(
+        "SELECT es_automatica FROM kpis_custom_metricas WHERE id = %s AND activo = 1", (metrica_id,)
+    )
+    if not filas:
+        raise HTTPException(status_code=404, detail="Métrica no encontrada")
+
+    if filas[0]["es_automatica"]:
+        execute_write("UPDATE kpis_custom_metricas SET peso = %s WHERE id = %s", (data.peso, metrica_id))
+        return {"ok": True}
+
+    tipo_evaluacion = data.tipo_evaluacion or "manual_directo"
+    valor_min = data.valor_min if data.valor_min is not None else 0
+    valor_max = data.valor_max if data.valor_max is not None else 100
+    if tipo_evaluacion not in TIPOS_EVALUACION_VALIDOS:
+        raise HTTPException(status_code=400, detail=f"tipo_evaluacion debe ser uno de {TIPOS_EVALUACION_VALIDOS}")
+    if tipo_evaluacion != "manual_directo" and valor_max <= valor_min:
+        raise HTTPException(status_code=400, detail="valor_max debe ser mayor que valor_min")
+
+    execute_write(
+        "UPDATE kpis_custom_metricas SET tipo_evaluacion=%s, valor_min=%s, valor_max=%s, peso=%s WHERE id=%s",
+        (tipo_evaluacion, valor_min, valor_max, data.peso, metrica_id)
+    )
+    return {"ok": True}
 
 
 @router.delete("/kpis_custom/metricas/{metrica_id}")
@@ -585,9 +647,16 @@ def desactivar_kpi_metrica(metrica_id: int, current_user: dict = Depends(verify_
     """
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo administradores")
-    filas = execute_read("SELECT id FROM kpis_custom_metricas WHERE id = %s", (metrica_id,))
+    filas = execute_read(
+        "SELECT id, es_automatica FROM kpis_custom_metricas WHERE id = %s", (metrica_id,)
+    )
     if not filas:
         raise HTTPException(status_code=404, detail="Métrica no encontrada")
+    if filas[0]["es_automatica"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Las métricas automáticas no se pueden quitar, solo ponerles peso 0 para que no cuenten"
+        )
     execute_write("UPDATE kpis_custom_metricas SET activo = 0 WHERE id = %s", (metrica_id,))
     return {"ok": True}
 
@@ -598,7 +667,9 @@ def listar_kpi_valores(periodo: str = Query(...), current_user: dict = Depends(v
         raise HTTPException(status_code=403, detail="Solo administradores y líderes")
 
     metricas = execute_read(
-        "SELECT id, nombre, unidad, descripcion FROM kpis_custom_metricas WHERE activo = 1 ORDER BY nombre"
+        "SELECT id, nombre, unidad, descripcion, tipo_evaluacion, valor_min, valor_max, peso, "
+        "es_automatica, clave_automatica FROM kpis_custom_metricas "
+        "WHERE activo = 1 ORDER BY es_automatica DESC, nombre"
     )
     tecnicos = execute_read(
         "SELECT username, COALESCE(NULLIF(nombre_completo, ''), username) AS nombre_display "
@@ -610,13 +681,17 @@ def listar_kpi_valores(periodo: str = Query(...), current_user: dict = Depends(v
     )
     mapa_valores = {(v["metrica_id"], v["tecnico"]): v["valor"] for v in valores}
 
+    # Las métricas automáticas no se editan a mano — se muestran en esta
+    # vista solo como referencia de que existen y cuánto peso tienen.
+    metricas_manuales = [m for m in metricas if not m["es_automatica"]]
+
     return {
         "periodo": periodo,
         "metricas": metricas,
         "tecnicos": tecnicos,
         "valores": [
             {"metrica_id": m["id"], "tecnico": t["username"], "valor": mapa_valores.get((m["id"], t["username"]))}
-            for m in metricas
+            for m in metricas_manuales
             for t in tecnicos
         ],
     }
@@ -647,3 +722,158 @@ def guardar_kpi_valor(data: KpiValorUpsert, current_user: dict = Depends(verify_
          current_user["username"], data.valor, current_user["username"])
     )
     return {"ok": True}
+
+
+# ── SCORE FINAL PONDERADO (0-100) ───────────────────────────────────────────
+def _score_manual(valor, tipo_evaluacion, valor_min, valor_max):
+    if valor is None:
+        return None
+    if tipo_evaluacion == "manual_directo":
+        return max(0.0, min(100.0, float(valor)))
+    rango = float(valor_max) - float(valor_min)
+    if rango <= 0:
+        return None
+    pct = (float(valor) - float(valor_min)) / rango * 100
+    if tipo_evaluacion == "manual_rango_invertido":
+        pct = 100 - pct
+    return max(0.0, min(100.0, pct))
+
+
+@router.get("/kpis_score")
+def kpi_score_final(dias: int = 30, periodo: str = Query(...), current_user: dict = Depends(verify_token)):
+    """
+    KPI final 0-100 por técnico: junta las 3 métricas automáticas (tiempo
+    SLA, reporte adjunto, asistencia — calculadas en vivo sobre `dias`) con
+    todas las métricas manuales que tengan un valor capturado en `periodo`,
+    y las pondera según el peso que el admin le puso a cada una.
+    """
+    if current_user["role"] not in ("admin", "lider"):
+        raise HTTPException(status_code=403, detail="Solo administradores y líderes")
+
+    metricas = execute_read(
+        "SELECT id, nombre, unidad, tipo_evaluacion, valor_min, valor_max, peso, "
+        "es_automatica, clave_automatica FROM kpis_custom_metricas WHERE activo = 1"
+    )
+    metricas_con_peso = [m for m in metricas if m["peso"] and m["peso"] > 0]
+    suma_pesos = round(sum(m["peso"] for m in metricas_con_peso), 2)
+
+    tecnicos = execute_read(
+        "SELECT username, COALESCE(NULLIF(nombre_completo, ''), username) AS nombre_display "
+        "FROM users WHERE role = 'tecnico' ORDER BY nombre_display"
+    )
+    if not tecnicos:
+        return {"periodo": periodo, "dias": dias, "suma_pesos": suma_pesos, "tecnicos": []}
+
+    # ── Valores crudos de las 3 métricas automáticas, por técnico ──────────
+    filas_sla = execute_read(
+        """
+        SELECT tecnico,
+               TIMESTAMPDIFF(MINUTE, fecha_asignacion, fecha_fin) / 60.0 AS horas_reales,
+               tiempo_estimado_horas
+        FROM asignaciones
+        WHERE estado = 'completada'
+          AND tiempo_estimado_horas IS NOT NULL
+          AND fecha_asignacion IS NOT NULL
+          AND fecha_fin >= DATE_SUB(NOW(), INTERVAL %s DAY)
+        """,
+        (dias,)
+    )
+    scores_sla_por_tecnico = {}
+    for f in filas_sla:
+        objetivo = float(f["tiempo_estimado_horas"])
+        real = float(f["horas_reales"])
+        if objetivo <= 0:
+            continue
+        score = 100.0 if real <= objetivo else max(0.0, 100 - (real - objetivo) / objetivo * 100)
+        scores_sla_por_tecnico.setdefault(f["tecnico"], []).append(score)
+    scores_sla_por_tecnico = {t: sum(v) / len(v) for t, v in scores_sla_por_tecnico.items()}
+
+    filas_reporte = execute_read(
+        """
+        SELECT a.tecnico,
+               SUM(t.reporte_archivo_nombre IS NOT NULL) * 100.0 / COUNT(*) AS pct
+        FROM tickets t
+        INNER JOIN asignaciones a ON a.ticket_id = t.id
+        WHERE t.reporte_enviado = TRUE
+          AND t.fecha_reporte >= DATE_SUB(NOW(), INTERVAL %s DAY)
+        GROUP BY a.tecnico
+        """,
+        (dias,)
+    )
+    scores_reporte_por_tecnico = {f["tecnico"]: float(f["pct"]) for f in filas_reporte}
+
+    filas_asistencia = execute_read(
+        """
+        SELECT ra.username AS tecnico,
+               100 - (SUM(ra.retardo_min > 0) * 100.0 / COUNT(*)) AS score
+        FROM registros_asistencia ra
+        WHERE ra.tipo = 'entrada'
+          AND ra.fecha >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
+        GROUP BY ra.username
+        """,
+        (dias,)
+    )
+    scores_asistencia_por_tecnico = {f["tecnico"]: float(f["score"]) for f in filas_asistencia}
+
+    # ── Valores manuales del periodo ────────────────────────────────────────
+    valores_manuales = execute_read(
+        "SELECT metrica_id, tecnico, valor FROM kpis_custom_valores WHERE periodo = %s", (periodo,)
+    )
+    mapa_manuales = {(v["metrica_id"], v["tecnico"]): v["valor"] for v in valores_manuales}
+
+    resultado_tecnicos = []
+    for t in tecnicos:
+        username = t["username"]
+        detalle = []
+        suma_ponderada = 0.0
+        peso_aplicado = 0.0
+
+        for m in metricas_con_peso:
+            if m["clave_automatica"] == "automatica_tiempo_sla":
+                valor_crudo = scores_sla_por_tecnico.get(username)
+                score = valor_crudo  # el score YA es 0-100 (se calculó por asignación)
+            elif m["clave_automatica"] == "automatica_reporte":
+                valor_crudo = scores_reporte_por_tecnico.get(username)
+                score = valor_crudo
+            elif m["clave_automatica"] == "automatica_asistencia":
+                valor_crudo = scores_asistencia_por_tecnico.get(username)
+                score = valor_crudo
+            else:
+                valor_crudo = mapa_manuales.get((m["id"], username))
+                score = _score_manual(valor_crudo, m["tipo_evaluacion"], m["valor_min"], m["valor_max"])
+
+            if score is None:
+                continue  # sin dato para este técnico en esta métrica — no cuenta, ni resta
+
+            aporte = score * float(m["peso"]) / 100
+            suma_ponderada += aporte
+            peso_aplicado += float(m["peso"])
+            detalle.append({
+                "metrica": m["nombre"], "unidad": m["unidad"], "peso": float(m["peso"]),
+                "valor_crudo": round(float(valor_crudo), 2), "score": round(float(score), 1),
+                "aporte": round(aporte, 2),
+            })
+
+        # Se re-normaliza sobre el peso que SÍ tuvo dato, para que a un
+        # técnico nuevo (sin historial en alguna métrica) no se le castigue
+        # con puntos en cero por falta de datos en vez de falta de desempeño.
+        score_final = round(suma_ponderada / peso_aplicado * 100, 1) if peso_aplicado > 0 else None
+
+        resultado_tecnicos.append({
+            "tecnico": username,
+            "tecnico_display": t["nombre_display"],
+            "score_final": score_final,
+            "peso_con_datos": round(peso_aplicado, 2),
+            "detalle": detalle,
+        })
+
+    resultado_tecnicos.sort(key=lambda x: (x["score_final"] is None, -(x["score_final"] or 0)))
+
+    return {
+        "periodo": periodo,
+        "dias": dias,
+        "suma_pesos": suma_pesos,
+        "advertencia": None if suma_pesos == 100 else
+            f"Los pesos de las métricas activas suman {suma_pesos}%, no 100% — el score se re-normaliza pero revisa tu configuración.",
+        "tecnicos": resultado_tecnicos,
+    }

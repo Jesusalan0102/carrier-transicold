@@ -58,8 +58,9 @@ def test_layout_compartido_renderiza_sin_errores():
 def test_dashboard_renderiza_con_kpis_personalizados():
     """
     /app/dashboard incluye la pestaña de KPIs por técnico + la sección de
-    métricas personalizadas (modal para crear métricas, tabla editable de
-    valores). Protege ese bloque de HTML/JS contra errores de sintaxis.
+    métricas personalizadas (modal para crear métricas, tabla de peso/tipo
+    de evaluación, captura de valores manuales, y el score final ponderado).
+    Protege ese bloque de HTML/JS contra errores de sintaxis.
     """
     import asyncio
     from routers.web_router import dashboard
@@ -69,8 +70,37 @@ def test_dashboard_renderiza_con_kpis_personalizados():
     for needle in (
         "kpiCustomTabla", "modalNuevaMetrica", "guardarNuevaMetrica",
         "guardarValorCustom", "kpis_custom/valores", "kpis_custom/metricas",
+        "kpiConfigTabla", "kpiScoreTabla", "cargarKpiScore", "kpis_score",
+        "nmTipoEvaluacion",
     ):
         assert needle in body, f"Falta '{needle}' en el HTML de /app/dashboard"
+
+
+def test_formula_score_manual():
+    """
+    _score_manual() es la fórmula que convierte un valor capturado a mano
+    en una nota de 0-100 según el tipo de evaluación de la métrica. Un
+    error de signo o de límites aquí desordena silenciosamente el score
+    final de todos los técnicos.
+    """
+    from routers.dashboard_router import _score_manual
+
+    # Directo: el valor ya es 0-100, solo se acota
+    assert _score_manual(87.5, "manual_directo", 0, 100) == 87.5
+    assert _score_manual(-10, "manual_directo", 0, 100) == 0.0
+    assert _score_manual(150, "manual_directo", 0, 100) == 100.0
+
+    # Rango (más es mejor): 4.6 en escala 1-5 -> 90
+    assert abs(_score_manual(4.6, "manual_rango", 1, 5) - 90.0) < 0.01
+
+    # Rango invertido (menos es mejor): 8% tardanza en 0-100 -> 92
+    assert abs(_score_manual(8, "manual_rango_invertido", 0, 100) - 92.0) < 0.01
+
+    # Sin dato no cuenta ni castiga
+    assert _score_manual(None, "manual_directo", 0, 100) is None
+
+    # Rango inválido (max<=min) no truena, regresa None
+    assert _score_manual(50, "manual_rango", 10, 10) is None
 
 
 def test_panel_cluster_renderiza_con_tiempo_estimado():

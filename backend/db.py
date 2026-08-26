@@ -738,6 +738,69 @@ def _run_migrations():
             except Exception as e_te:
                 print(f"⚠️  Migración (asignaciones.tiempo_estimado_horas) omitida: {e_te}")
 
+            # ── kpis_custom_metricas: ponderación (motor de KPI final 0-100) ───
+            # Agrega lo necesario para convertir cada métrica (automática o
+            # manual) en una nota de 0-100 y ponderarla:
+            #   tipo_evaluacion:
+            #     - 'automatica_tiempo_sla'  → tiempo real vs. tiempo_estimado_horas
+            #       de asignaciones (calculado en vivo, sin valor guardado)
+            #     - 'automatica_reporte'     → % tickets cerrados con reporte
+            #     - 'automatica_asistencia'  → 100 - % de tardanza
+            #     - 'manual_directo'         → el valor capturado YA es 0-100
+            #     - 'manual_rango'           → (valor-min)/(max-min)*100, más=mejor
+            #     - 'manual_rango_invertido' → igual pero menos=mejor
+            #   valor_min / valor_max solo aplican a los tipos 'manual_rango*'
+            #   peso: % que aporta esta métrica al KPI final (deben sumar 100
+            #   entre las métricas activas — se valida en el endpoint, no aquí)
+            try:
+                columnas_nuevas = [
+                    ("tipo_evaluacion", "VARCHAR(30) NOT NULL DEFAULT 'manual_directo'"),
+                    ("valor_min",       "DECIMAL(10,2) DEFAULT 0"),
+                    ("valor_max",       "DECIMAL(10,2) DEFAULT 100"),
+                    ("peso",            "DECIMAL(5,2) NOT NULL DEFAULT 0"),
+                    ("es_automatica",   "TINYINT(1) NOT NULL DEFAULT 0"),
+                    ("clave_automatica","VARCHAR(30) DEFAULT NULL"),
+                ]
+                for col, ddl in columnas_nuevas:
+                    cur.execute("""
+                        SELECT COUNT(*) FROM information_schema.COLUMNS
+                        WHERE TABLE_SCHEMA = DATABASE()
+                          AND TABLE_NAME   = 'kpis_custom_metricas'
+                          AND COLUMN_NAME  = %s
+                    """, (col,))
+                    row = cur.fetchone()
+                    count = row[0] if isinstance(row, tuple) else list(row.values())[0]
+                    if count == 0:
+                        cur.execute(f"ALTER TABLE kpis_custom_metricas ADD COLUMN {col} {ddl}")
+                        conn.commit()
+                        print(f"✅ Migración: columna {col} añadida a kpis_custom_metricas")
+
+                # Siembra las 3 métricas automáticas una sola vez (peso=0 por
+                # defecto — no afectan nada hasta que un admin les asigne peso).
+                metricas_automaticas = [
+                    ("Tiempo de resolución (SLA)", "hrs", "automatica_tiempo_sla",
+                     "Compara el tiempo real de cada actividad completada contra su tiempo estimado."),
+                    ("Tickets con reporte adjunto", "%", "automatica_reporte",
+                     "% de tickets cerrados que traen reporte adjunto."),
+                    ("Puntualidad / asistencia", "%", "automatica_asistencia",
+                     "100 menos el % de check-ins con tardanza."),
+                ]
+                for nombre, unidad, clave, descripcion in metricas_automaticas:
+                    cur.execute(
+                        "SELECT id FROM kpis_custom_metricas WHERE clave_automatica = %s", (clave,)
+                    )
+                    if not cur.fetchone():
+                        cur.execute(
+                            "INSERT INTO kpis_custom_metricas "
+                            "(nombre, unidad, descripcion, tipo_evaluacion, peso, es_automatica, clave_automatica) "
+                            "VALUES (%s, %s, %s, %s, 0, 1, %s)",
+                            (nombre, unidad, descripcion, clave, clave)
+                        )
+                conn.commit()
+                print("✅ Migración: columnas de ponderación + métricas automáticas verificadas")
+            except Exception as e_pond:
+                print(f"⚠️  Migración (ponderación kpis_custom_metricas) omitida: {e_pond}")
+
             # ── tickets: archivo de reporte (Word/PDF) subido por el técnico ──
             # Bloque aislado en su propio try/except (ver nota arriba) para que
             # un fallo aquí no tumbe migraciones futuras.

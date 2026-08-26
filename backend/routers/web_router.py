@@ -1045,7 +1045,7 @@ async def dashboard():
     <div class="tab-panel" id="tabPanelKpiTecnico">
         <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:20px;">
             <label style="margin:0; font-size:0.85rem; color:var(--text-secondary);">Ventana de tiempo:</label>
-            <select id="kpiTecnicoDias" style="width:auto; margin-bottom:0;" onchange="cargarKpisTecnico()">
+            <select id="kpiTecnicoDias" style="width:auto; margin-bottom:0;" onchange="cargarKpisTecnico(); cargarKpiScore();">
                 <option value="7">Últimos 7 días</option>
                 <option value="30" selected>Últimos 30 días</option>
                 <option value="90">Últimos 90 días</option>
@@ -1070,7 +1070,22 @@ async def dashboard():
                 El periodo es un texto libre para agrupar valores — usa "2026-08" para un mes,
                 "2026-W35" para una semana ISO, o el criterio que prefieras.
             </p>
-            <div id="kpiCustomTabla" style="overflow-x:auto; margin-top:14px;">
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:18px;">
+                <h4 style="margin:0; font-size:0.95rem;">⚖️ Peso y tipo de evaluación</h4>
+                <span id="kpiSumaPesos" style="font-size:0.82rem; font-weight:700;"></span>
+            </div>
+            <div id="kpiConfigTabla" style="overflow-x:auto; margin-top:8px;">
+                <p style="color:var(--text-secondary);">Cargando…</p>
+            </div>
+
+            <h4 style="margin:22px 0 8px; font-size:0.95rem;">✍️ Captura de valores manuales</h4>
+            <div id="kpiCustomTabla" style="overflow-x:auto;">
+                <p style="color:var(--text-secondary);">Cargando…</p>
+            </div>
+
+            <h4 style="margin:22px 0 8px; font-size:0.95rem;">🏆 Score final ponderado (0-100)</h4>
+            <div id="kpiScoreTabla" style="overflow-x:auto;">
                 <p style="color:var(--text-secondary);">Cargando…</p>
             </div>
         </div>
@@ -1086,6 +1101,28 @@ async def dashboard():
             <input id="nmUnidad" type="text" placeholder="Ej. %, hrs, unidades">
             <label style="font-size:0.85rem; color:var(--text-secondary);">Descripción (opcional)</label>
             <input id="nmDescripcion" type="text" placeholder="¿Qué mide y cómo se calcula?">
+
+            <label style="font-size:0.85rem; color:var(--text-secondary);">Tipo de evaluación</label>
+            <select id="nmTipoEvaluacion" onchange="_toggleNmRango()">
+                <option value="manual_directo">Directo (el valor ya es de 0 a 100, ej. %)</option>
+                <option value="manual_rango">Rango — más alto es mejor (ej. calificación 1-5)</option>
+                <option value="manual_rango_invertido">Rango invertido — más bajo es mejor (ej. quejas)</option>
+            </select>
+            <div id="nmRangoWrap" style="display:none; gap:10px;">
+                <div style="flex:1;">
+                    <label style="font-size:0.85rem; color:var(--text-secondary);">Valor mínimo</label>
+                    <input id="nmValorMin" type="number" step="0.01" value="0">
+                </div>
+                <div style="flex:1;">
+                    <label style="font-size:0.85rem; color:var(--text-secondary);">Valor máximo</label>
+                    <input id="nmValorMax" type="number" step="0.01" value="100">
+                </div>
+            </div>
+
+            <label style="font-size:0.85rem; color:var(--text-secondary);">Peso en el KPI final (%)</label>
+            <input id="nmPeso" type="number" step="0.1" min="0" max="100" value="0"
+                   title="Puedes dejarlo en 0 ahora y ajustarlo después junto con las demás métricas">
+
             <button class="btn-primary" onclick="guardarNuevaMetrica()">💾 Guardar métrica</button>
             <button class="btn-danger" onclick="cerrarModalNuevaMetrica()">Cancelar</button>
         </div>
@@ -1406,7 +1443,9 @@ async def dashboard():
                     document.getElementById('kpiCustomPeriodo').value =
                         hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0');
                 }
+                cargarKpiConfig();
                 cargarKpiCustom();
+                cargarKpiScore();
             }
         }
 
@@ -1457,12 +1496,78 @@ async def dashboard():
         }
 
         // ══════════════════════════════════════════════════════════════════
+        // ══════════════════════════════════════════════════════════════════
         // ── Métricas personalizadas (definidas por el admin) ────────────
         // ══════════════════════════════════════════════════════════════════
         let _kpiCustomDebounce = null;
         function _debounceCargarKpiCustom() {
             clearTimeout(_kpiCustomDebounce);
-            _kpiCustomDebounce = setTimeout(cargarKpiCustom, 400);
+            _kpiCustomDebounce = setTimeout(() => { cargarKpiCustom(); cargarKpiScore(); }, 400);
+        }
+
+        const NOMBRES_TIPO_EVAL = {
+            manual_directo: 'Directo (0-100)',
+            manual_rango: 'Rango (más=mejor)',
+            manual_rango_invertido: 'Rango (menos=mejor)',
+        };
+
+        async function cargarKpiConfig() {
+            const cont = document.getElementById('kpiConfigTabla');
+            const sumaEl = document.getElementById('kpiSumaPesos');
+            cont.innerHTML = '<p style="color:var(--text-secondary);">Cargando…</p>';
+            try {
+                const res = await window.fetchAuth('/api/dashboard/kpis_custom/metricas');
+                if (!res.ok) { cont.innerHTML = '<p style="color:var(--carrier-danger);">Error al cargar.</p>'; return; }
+                const metricas = await res.json();
+
+                let suma = 0;
+                let html = '<table class="status-tbl"><thead><tr>' +
+                    '<th>Métrica</th><th>Tipo</th><th>Rango</th><th>Peso %</th></tr></thead><tbody>';
+                metricas.forEach(m => {
+                    suma += Number(m.peso) || 0;
+                    const badge = m.es_automatica ? ' 🤖' : '';
+                    const rangoTxt = m.tipo_evaluacion === 'manual_directo'
+                        ? '—' : `${m.valor_min} – ${m.valor_max}`;
+                    const tipoTxt = m.es_automatica
+                        ? (m.clave_automatica === 'automatica_tiempo_sla' ? 'Tiempo vs. SLA'
+                           : m.clave_automatica === 'automatica_reporte' ? 'Reporte adjunto'
+                           : 'Asistencia')
+                        : NOMBRES_TIPO_EVAL[m.tipo_evaluacion] || m.tipo_evaluacion;
+                    html += `<tr>
+                        <td style="text-align:left;">${m.nombre}${badge}</td>
+                        <td>${tipoTxt}</td>
+                        <td>${rangoTxt}</td>
+                        <td><input type="number" step="0.1" min="0" max="100" value="${m.peso}"
+                            style="width:70px; margin-bottom:0; text-align:center;"
+                            onchange="guardarPesoMetrica(${m.id}, ${!!m.es_automatica}, this.value)"></td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+                cont.innerHTML = html;
+
+                suma = Math.round(suma * 10) / 10;
+                sumaEl.textContent = `Suma de pesos: ${suma}%`;
+                sumaEl.style.color = suma === 100 ? 'var(--carrier-success)' : 'var(--carrier-warn)';
+            } catch (e) {
+                cont.innerHTML = '<p style="color:var(--carrier-danger);">Error al cargar.</p>';
+            }
+        }
+
+        async function guardarPesoMetrica(metricaId, esAutomatica, pesoStr) {
+            const peso = parseFloat(pesoStr) || 0;
+            const body = { peso };
+            try {
+                const res = await window.fetchAuth(`/api/dashboard/kpis_custom/metricas/${metricaId}/config`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                if (!res.ok) { alert('No se pudo guardar el peso.'); return; }
+                cargarKpiConfig();
+                cargarKpiScore();
+            } catch (e) {
+                alert('Error de red al guardar el peso.');
+            }
         }
 
         async function cargarKpiCustom() {
@@ -1479,8 +1584,9 @@ async def dashboard():
                 if (!res.ok) { cont.innerHTML = '<p style="color:var(--carrier-danger);">Error al cargar.</p>'; return; }
                 const data = await res.json();
 
-                if (!data.metricas.length) {
-                    cont.innerHTML = '<p style="color:var(--text-secondary);">Todavía no has creado ninguna métrica personalizada — usa el botón "+ Nueva métrica".</p>';
+                const metricasManuales = data.metricas.filter(m => !m.es_automatica);
+                if (!metricasManuales.length) {
+                    cont.innerHTML = '<p style="color:var(--text-secondary);">Todavía no has creado ninguna métrica manual — usa el botón "+ Nueva métrica". (Las 3 automáticas no necesitan captura, ya se calculan solas.)</p>';
                     return;
                 }
                 if (!data.tecnicos.length) {
@@ -1492,7 +1598,7 @@ async def dashboard():
                 data.valores.forEach(v => { valorMap[v.metrica_id + '_' + v.tecnico] = v.valor; });
 
                 let html = '<table class="status-tbl"><thead><tr><th>Técnico</th>';
-                data.metricas.forEach(m => {
+                metricasManuales.forEach(m => {
                     const suf = m.unidad ? ' (' + m.unidad + ')' : '';
                     html += `<th title="${(m.descripcion || '').replace(/"/g, '&quot;')}">${m.nombre}${suf}
                         <br><a href="#" onclick="eliminarMetricaCustom(${m.id}, '${m.nombre.replace(/'/g, "\\'")}'); return false;"
@@ -1501,7 +1607,7 @@ async def dashboard():
                 html += '</tr></thead><tbody>';
                 data.tecnicos.forEach(t => {
                     html += `<tr><td style="text-align:left; font-weight:700;">${t.nombre_display}</td>`;
-                    data.metricas.forEach(m => {
+                    metricasManuales.forEach(m => {
                         const key = m.id + '_' + t.username;
                         const val = valorMap[key];
                         html += `<td><input type="number" step="0.01" value="${val ?? ''}"
@@ -1526,16 +1632,70 @@ async def dashboard():
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ metrica_id: metricaId, tecnico, periodo, valor })
                 });
-                if (!res.ok) { alert('No se pudo guardar el valor.'); }
+                if (!res.ok) { alert('No se pudo guardar el valor.'); return; }
+                cargarKpiScore();
             } catch (e) {
                 alert('Error de red al guardar el valor.');
             }
+        }
+
+        async function cargarKpiScore() {
+            const cont = document.getElementById('kpiScoreTabla');
+            const periodo = document.getElementById('kpiCustomPeriodo').value.trim();
+            const dias = document.getElementById('kpiTecnicoDias').value;
+            if (!periodo) { cont.innerHTML = ''; return; }
+            cont.innerHTML = '<p style="color:var(--text-secondary);">Calculando…</p>';
+            try {
+                const res = await window.fetchAuth(
+                    `/api/dashboard/kpis_score?dias=${dias}&periodo=${encodeURIComponent(periodo)}`);
+                if (!res.ok) { cont.innerHTML = '<p style="color:var(--carrier-danger);">Error al calcular el score.</p>'; return; }
+                const data = await res.json();
+
+                let aviso = '';
+                if (data.advertencia) {
+                    aviso = `<p style="color:var(--carrier-warn); font-size:0.85rem;">⚠️ ${data.advertencia}</p>`;
+                }
+                if (!data.tecnicos.length) {
+                    cont.innerHTML = aviso + '<p style="color:var(--text-secondary);">Sin técnicos para calcular.</p>';
+                    return;
+                }
+
+                let html = aviso + '<table class="status-tbl"><thead><tr><th>Técnico</th><th>Score final</th><th>Desglose</th></tr></thead><tbody>';
+                data.tecnicos.forEach(t => {
+                    const score = t.score_final;
+                    const color = score === null ? 'var(--text-secondary)'
+                        : score >= 90 ? 'var(--carrier-success)'
+                        : score >= 70 ? 'var(--carrier-warn)' : 'var(--carrier-danger)';
+                    const detalleTxt = t.detalle.map(d =>
+                        `${d.metrica}: ${d.valor_crudo}${d.unidad ? d.unidad : ''} → ${d.score}pts × ${d.peso}%`
+                    ).join(' · ') || 'Sin datos en este periodo/ventana';
+                    html += `<tr>
+                        <td style="text-align:left; font-weight:700;">${t.tecnico_display}</td>
+                        <td style="font-weight:800; font-size:1.1rem; color:${color};">${score ?? '—'}</td>
+                        <td style="text-align:left; font-size:0.75rem; color:var(--text-secondary);">${detalleTxt}</td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+                cont.innerHTML = html;
+            } catch (e) {
+                cont.innerHTML = '<p style="color:var(--carrier-danger);">Error al calcular el score.</p>';
+            }
+        }
+
+        function _toggleNmRango() {
+            const tipo = document.getElementById('nmTipoEvaluacion').value;
+            document.getElementById('nmRangoWrap').style.display = tipo === 'manual_directo' ? 'none' : 'flex';
         }
 
         function abrirModalNuevaMetrica() {
             document.getElementById('nmNombre').value = '';
             document.getElementById('nmUnidad').value = '';
             document.getElementById('nmDescripcion').value = '';
+            document.getElementById('nmTipoEvaluacion').value = 'manual_directo';
+            document.getElementById('nmValorMin').value = 0;
+            document.getElementById('nmValorMax').value = 100;
+            document.getElementById('nmPeso').value = 0;
+            _toggleNmRango();
             document.getElementById('modalNuevaMetrica').style.display = 'flex';
         }
         function cerrarModalNuevaMetrica() {
@@ -1547,11 +1707,15 @@ async def dashboard():
             if (!nombre) { alert('El nombre es obligatorio.'); return; }
             const unidad = document.getElementById('nmUnidad').value.trim();
             const descripcion = document.getElementById('nmDescripcion').value.trim();
+            const tipo_evaluacion = document.getElementById('nmTipoEvaluacion').value;
+            const valor_min = parseFloat(document.getElementById('nmValorMin').value) || 0;
+            const valor_max = parseFloat(document.getElementById('nmValorMax').value) || 100;
+            const peso = parseFloat(document.getElementById('nmPeso').value) || 0;
             try {
                 const res = await window.fetchAuth('/api/dashboard/kpis_custom/metricas', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ nombre, unidad, descripcion })
+                    body: JSON.stringify({ nombre, unidad, descripcion, tipo_evaluacion, valor_min, valor_max, peso })
                 });
                 if (!res.ok) {
                     const err = await res.json().catch(() => ({}));
@@ -1559,7 +1723,9 @@ async def dashboard():
                     return;
                 }
                 cerrarModalNuevaMetrica();
+                cargarKpiConfig();
                 cargarKpiCustom();
+                cargarKpiScore();
             } catch (e) {
                 alert('Error de red al crear la métrica.');
             }
@@ -1569,8 +1735,14 @@ async def dashboard():
             if (!confirm(`¿Quitar la métrica "${nombre}"? Los valores ya capturados no se borran, solo deja de mostrarse.`)) return;
             try {
                 const res = await window.fetchAuth('/api/dashboard/kpis_custom/metricas/' + id, { method: 'DELETE' });
-                if (!res.ok) { alert('No se pudo quitar la métrica.'); return; }
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    alert(err.detail || 'No se pudo quitar la métrica.');
+                    return;
+                }
+                cargarKpiConfig();
                 cargarKpiCustom();
+                cargarKpiScore();
             } catch (e) {
                 alert('Error de red.');
             }
