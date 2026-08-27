@@ -180,6 +180,31 @@ def pausar(asig_id: int, current_user=Depends(verify_token)):
     _notify("actividad_pausada", {"asignacion_id": asig_id, "unidad": row["unidad"]})
     return {"mensaje": "Actividad pausada; tiempo acumulado guardado"}
 
+# ── PAUSAR TODAS (técnico: pausa de una vez todas sus actividades en proceso,
+#    pensado para el receso/hora de comida) ─────────────────────────────────
+@router.patch("/pausar-todas")
+def pausar_todas(current_user=Depends(verify_token)):
+    rows = execute_read(
+        "SELECT id, unidad, actividad_id FROM asignaciones WHERE tecnico=%s AND estado='en_proceso'",
+        (current_user["username"],)
+    )
+    if not rows:
+        return {"mensaje": "No tienes actividades en proceso para pausar", "pausadas": 0}
+
+    ids = [r["id"] for r in rows]
+    execute_write(
+        f"UPDATE asignaciones SET estado='pendiente', fecha_inicio=NULL "
+        f"WHERE id IN ({','.join(['%s'] * len(ids))})",
+        tuple(ids)
+    )
+    for r in rows:
+        if r["actividad_id"] == "Corriendo":
+            # Guarda el tiempo transcurrido en el acumulado de cada unidad afectada
+            corriendo_tracking.pausar(r["unidad"])
+        _notify("actividad_pausada", {"asignacion_id": r["id"], "unidad": r["unidad"]})
+
+    return {"mensaje": f"{len(ids)} actividad(es) pausada(s) por receso", "pausadas": len(ids)}
+
 # ── FINALIZAR (técnico, comentario obligatorio) ────────────────────────────
 @router.patch("/{asig_id}/finalizar")
 def finalizar(asig_id: int, data: dict, current_user=Depends(verify_token)):

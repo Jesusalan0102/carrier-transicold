@@ -4748,10 +4748,12 @@ async def admin():
 async def mis_tareas():
     contenido = """
     <script> if (window.role === 'visor') { window.location.href = '/app/dashboard'; } </script>
+    <div id="pausarTodasBar" style="display:none; margin-bottom:14px;">
+        <button class="btn-primary" onclick="pausarTodas()">☕ Pausar todas mis actividades (receso)</button>
+    </div>
     <div id="tareasList"></div>
     <script>
         const fetchAuth = window.fetchAuth, username = window.username;
-
         function mostrarModal(html) {
             const modal = document.createElement('div');
             modal.className = 'modal';
@@ -4770,6 +4772,8 @@ async def mis_tareas():
             if (!res.ok) { document.getElementById('tareasList').innerHTML = '<p style="color:red;">Error al cargar tareas.</p>'; return; }
             const tareas = await res.json();
             const activas = Array.isArray(tareas) ? tareas.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso') : [];
+            const hayEnProceso = activas.some(t => t.estado === 'en_proceso');
+            document.getElementById('pausarTodasBar').style.display = hayEnProceso ? 'block' : 'none';
             let html = '';
             if (activas.length === 0) {
                 html = '<p>✅ No tienes tareas activas.</p>';
@@ -4794,6 +4798,18 @@ async def mis_tareas():
             const res = await fetchAuth('/api/asignaciones/' + id + '/pausar', { method: 'PATCH' });
             if (res.ok) cargarTareas();
             else { const d = await res.json().catch(()=>({})); alert(d.detail || 'Error al pausar la tarea'); }
+        }
+        async function pausarTodas() {
+            if (!confirm('¿Pausar todas tus actividades en proceso? Se guarda el tiempo acumulado de cada una.')) return;
+            const res = await fetchAuth('/api/asignaciones/pausar-todas', { method: 'PATCH' });
+            if (res.ok) {
+                const d = await res.json();
+                cargarTareas();
+                alert(d.mensaje);
+            } else {
+                const d = await res.json().catch(()=>({}));
+                alert(d.detail || 'Error al pausar las actividades');
+            }
         }
         // Comprime una imagen con Canvas API (max 1200px, calidad 0.75 JPEG) — compartida
         async function _comprimirImagenCanvas(file) {
