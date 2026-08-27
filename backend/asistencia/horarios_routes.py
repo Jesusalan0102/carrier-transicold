@@ -1022,6 +1022,14 @@ def exportar_resumen_semanal_excel(
 
     fechas = [(lunes + timedelta(days=i)).isoformat() for i in range(6)]
 
+    # ── username → nombre_completo (nombre real del técnico) ──────────────────
+    # Igual patrón usado en reporte_router.py / dashboard_router.py: si el técnico
+    # no tiene nombre_completo capturado, cae de vuelta a su username.
+    filas_nombres = execute_read("SELECT username, nombre_completo FROM users") or []
+    nombres_map = {
+        r["username"]: (r["nombre_completo"] or r["username"]) for r in filas_nombres
+    }
+
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Resumen Semanal"
@@ -1058,7 +1066,10 @@ def exportar_resumen_semanal_excel(
     ws.freeze_panes = "A2"
 
     # ── Datos ────────────────────────────────────────────────────────────────
-    tecnicos = sorted({r["username"] for r in resumen})
+    tecnicos = sorted(
+        {r["username"] for r in resumen},
+        key=lambda u: nombres_map.get(u, u).lower()
+    )
     row_idx = 2
     for tec in tecnicos:
         filas = [r for r in resumen if r["username"] == tec]
@@ -1072,7 +1083,7 @@ def exportar_resumen_semanal_excel(
                     min_retardos += r["retardo_min"]
 
         col = 1
-        c = ws.cell(row=row_idx, column=col, value=tec)
+        c = ws.cell(row=row_idx, column=col, value=nombres_map.get(tec, tec))
         c.border = border
         c.alignment = left
         c.font = Font(bold=True)
