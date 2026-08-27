@@ -1001,7 +1001,7 @@ async def dashboard():
     <!-- Modal: Gestionar columnas ocultas del dashboard -->
     <div id="columnas-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;align-items:center;justify-content:center;">
         <div style="background:white;border-radius:12px;max-width:420px;width:92%;max-height:80vh;overflow-y:auto;padding:24px;">
-            <h3 style="margin-top:0;color:var(--carrier-blue);">⚙️ Columnas del dashboard</h3>
+            <h3 style="margin-top:0;color:var(--carrier-blue);"><i class="ti ti-settings" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Columnas del dashboard</h3>
             <p style="color:var(--text-secondary);font-size:.85rem;">Desmarca una actividad para ocultarla de la tabla. Puedes volver a mostrarla cuando quieras.</p>
             <div id="columnas-modal-body" style="display:flex;flex-direction:column;gap:8px;margin:16px 0;"></div>
             <button class="btn-primary" style="width:100%;" onclick="document.getElementById('columnas-modal').style.display='none'">Cerrar</button>
@@ -1101,7 +1101,7 @@ async def dashboard():
     <!-- ── Modal: nueva métrica personalizada ──────────────────────────── -->
     <div id="modalNuevaMetrica" class="modal" style="display:none;" onclick="if(event.target===this) cerrarModalNuevaMetrica()">
         <div class="modal-content" style="max-width:420px;">
-            <h3 style="margin-top:0;">📌 Nueva métrica personalizada</h3>
+            <h3 style="margin-top:0;"><i class="ti ti-adjustments" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Nueva métrica personalizada</h3>
             <label style="font-size:0.85rem; color:var(--text-secondary);">Nombre *</label>
             <input id="nmNombre" type="text" placeholder="Ej. Satisfacción de cliente">
             <label style="font-size:0.85rem; color:var(--text-secondary);">Unidad (opcional)</label>
@@ -1138,7 +1138,7 @@ async def dashboard():
     <!-- Modal: Generar reporte de unidades seleccionadas -->
     <div id="sched-reporte-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;align-items:center;justify-content:center;">
         <div style="background:white;border-radius:12px;max-width:640px;width:92%;max-height:80vh;overflow-y:auto;padding:24px;">
-            <h3 style="margin-top:0;">🖨️ Generar reporte de series</h3>
+            <h3 style="margin-top:0;"><i class="ti ti-printer" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Generar reporte de series</h3>
             <p style="color:var(--text-secondary);font-size:.88rem;">Selecciona qué unidades incluir en el Excel. Por defecto están todas marcadas.</p>
             <div id="sched-reporte-modal-body"></div>
             <div style="display:flex;gap:10px;margin-top:16px;">
@@ -2402,12 +2402,12 @@ async def inventario():
     <div class="inv-info-bar" id="infoBar"></div>
     <div style="display:flex; gap:12px; margin-bottom:16px;">
         <button class="btn-primary" onclick="agregarFila()">➕ Agregar Fila</button>
-        <button class="btn-warning" onclick="guardarInventario()">💾 Guardar Cambios</button>
-        <button class="btn-primary" onclick="mostrarConfigColumnas()">⚙️ Configurar Columnas</button>
+        <button class="btn-warning" onclick="guardarInventario()"><i class="ti ti-device-floppy" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Guardar cambios</button>
+        <button class="btn-primary" onclick="mostrarConfigColumnas()"><i class="ti ti-settings" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Configurar columnas</button>
     </div>
     <div id="inventarioTable" style="overflow-x:auto;"></div>
     <div id="modalColumnas" class="modal" style="display:none;">
-        <div class="modal-content"><h3>⚙️ Configurar Columnas</h3><input type="text" id="nuevaColumna" placeholder="Nuevo nombre de columna"><button class="btn-primary" onclick="agregarColumna()">➕ Agregar</button><div id="columnasList" style="margin-top:12px;"></div><button class="btn-danger" onclick="cerrarModal()">Cerrar</button></div>
+        <div class="modal-content"><h3><i class="ti ti-settings" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Configurar columnas</h3><input type="text" id="nuevaColumna" placeholder="Nuevo nombre de columna"><button class="btn-primary" onclick="agregarColumna()"><i class="ti ti-plus" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Agregar</button><div id="columnasList" style="margin-top:12px;"></div><button class="btn-danger" onclick="cerrarModal()">Cerrar</button></div>
     </div>
     <script>
         const fetchAuth = window.fetchAuth; let columnas = [], datos = [];
@@ -2803,7 +2803,7 @@ async def pdi_form(unit_number: str):
             if (data.requiere_tipo) {{
                 document.getElementById('pdiRoot').innerHTML = `
                     <div style="background:#fef3c7; border:1px solid #d97706; border-radius:12px; padding:20px;">
-                        <h3 style="margin-top:0;">⚠️ Falta asignar el tipo de reefer</h3>
+                        <h3 style="margin-top:0;"><i class="ti ti-alert-triangle" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Falta asignar el tipo de reefer</h3>
                         <p>${{data.mensaje}}</p>
                         <button class="btn-primary" onclick="location.href='/app/pdi'">Ir a configurar el lote</button>
                     </div>`;
@@ -2820,10 +2820,10 @@ async def pdi_form(unit_number: str):
             html += `<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:16px;">
                 <div><span class="user-chip" style="background:#0057A8;">🧊 ${{TEMPLATE.nombre}}</span> &nbsp; <span style="color:var(--text-secondary);">Unidad ${{UNIT}}</span></div>
                 <div>
-                    <button class="btn-warning" onclick="guardar('borrador')">💾 Guardar borrador</button>
-                    <button class="btn-primary" onclick="guardar('completado')">✅ Marcar como completado</button>
-                    <button class="btn-primary" onclick="window.print()">🖨️ Imprimir</button>
-                    <button class="btn-primary" onclick="descargarPDF()" title="El PDF refleja el último guardado. Guarda antes de descargar si hiciste cambios.">📄 Descargar PDF</button>
+                    <button class="btn-warning" onclick="guardar('borrador')"><i class="ti ti-device-floppy" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Guardar borrador</button>
+                    <button class="btn-primary" onclick="guardar('completado')"><i class="ti ti-circle-check" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Marcar como completado</button>
+                    <button class="btn-primary" onclick="window.print()"><i class="ti ti-printer" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Imprimir</button>
+                    <button class="btn-primary" onclick="descargarPDF()" title="El PDF refleja el último guardado. Guarda antes de descargar si hiciste cambios."><i class="ti ti-file-download" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Descargar PDF</button>
                 </div>
             </div>`;
 
@@ -2832,14 +2832,14 @@ async def pdi_form(unit_number: str):
                     <strong>⚠️ Estas lecturas no existen todavía en Toma de Valores:</strong>
                     <ul style="margin:8px 0;">${{faltantes.map(f => `<li>${{f}}</li>`).join('')}}</ul>
                     ${{window.role === 'admin'
-                        ? `<button class="btn-primary" onclick='agregarFaltantes(${{JSON.stringify(faltantes)}})'>➕ Agregar a Toma de Valores</button>`
+                        ? `<button class="btn-primary" onclick='agregarFaltantes(${{JSON.stringify(faltantes)}})'><i class="ti ti-plus" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Agregar a Toma de Valores</button>`
                         : `<em>Pide a un administrador que los agregue a Toma de Valores para que se autocompleten aquí.</em>`}}
                 </div>`;
             }}
 
             // ── Encabezado ──────────────────────────────────────────────
             html += `<div class="card" style="background:var(--bg-surface); border-radius:14px; padding:18px 22px; margin-bottom:18px;">
-                <h3 style="margin-top:0;">🧾 Identificación</h3>
+                <h3 style="margin-top:0;"><i class="ti ti-id" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Identificación</h3>
                 <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(240px,1fr)); gap:12px;">
                     ${{TEMPLATE.header_fields.map(hf => `
                         <div>
@@ -2868,7 +2868,7 @@ async def pdi_form(unit_number: str):
             const gruposLecturas = {{}};
             TEMPLATE.lecturas.forEach(l => {{ (gruposLecturas[l.grupo] = gruposLecturas[l.grupo] || []).push(l); }});
             html += `<div class="card" style="background:var(--bg-surface); border-radius:14px; padding:18px 22px; margin-bottom:14px;">
-                <h3 style="margin-top:0;">📊 Lecturas del Run Test</h3>
+                <h3 style="margin-top:0;"><i class="ti ti-chart-line" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Lecturas del Run Test</h3>
                 <p style="color:var(--text-secondary); font-size:0.85rem;">Se pre-llenan automáticamente desde Toma de Valores cuando existe un campo equivalente.</p>`;
             Object.keys(gruposLecturas).forEach(grupo => {{
                 html += `<h4 style="margin:14px 0 6px; color:var(--text-secondary);">${{grupo}}</h4>
@@ -2897,7 +2897,7 @@ async def pdi_form(unit_number: str):
 
             // ── Firma / comentarios ─────────────────────────────────────
             html += `<div class="card" style="background:var(--bg-surface); border-radius:14px; padding:18px 22px; margin-bottom:18px;">
-                <h3 style="margin-top:0;">✍️ Cierre</h3>
+                <h3 style="margin-top:0;"><i class="ti ti-edit" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Cierre</h3>
                 <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(240px,1fr)); gap:12px;">
                     <div><label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin-bottom:4px;">Dealer / Distribuidor</label>
                         <input type="text" data-header="dealer_firma" value="${{esc(pdi.dealer_firma || '')}}" style="width:100%;"></div>
@@ -4642,13 +4642,13 @@ async def admin():
             if (!res.ok) {
                 const err = await res.json().catch(() => ({ detail: 'Error desconocido' }));
                 cerrarModal();
-                mostrarModal(`<div class="modal-content"><h3>⚠️ No encontrado</h3><p>${err.detail || 'No se pudo cargar la ficha.'}</p><button class="btn-danger" onclick="cerrarModal()">Cerrar</button></div>`);
+                mostrarModal(`<div class="modal-content"><h3><i class="ti ti-alert-triangle" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>No encontrado</h3><p>${err.detail || 'No se pudo cargar la ficha.'}</p><button class="btn-danger" onclick="cerrarModal()">Cerrar</button></div>`);
                 return;
             }
             data = await res.json();
         } catch (e) {
             cerrarModal();
-            mostrarModal(`<div class="modal-content"><h3>⚠️ Error de red</h3><p>${e.message}</p><button class="btn-danger" onclick="cerrarModal()">Cerrar</button></div>`);
+            mostrarModal(`<div class="modal-content"><h3><i class="ti ti-wifi-off" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Error de red</h3><p>${e.message}</p><button class="btn-danger" onclick="cerrarModal()">Cerrar</button></div>`);
             return;
         }
 
@@ -4660,7 +4660,7 @@ async def admin():
                 </button>`).join('');
             cerrarModal();
             mostrarModal(`<div class="modal-content" style="max-width:560px;max-height:80vh;overflow-y:auto;">
-                <h3 style="margin:0 0 8px;">🗂️ Varias unidades encontradas</h3>
+                <h3 style="margin:0 0 8px;"><i class="ti ti-folders" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Varias unidades encontradas</h3>
                 <p style="color:#6b7280;font-size:13px;margin:0 0 14px;">El criterio <code>${data.criterio}</code> coincide con ${data.unidades.length} unidades. Elige cuál ver:</p>
                 ${opciones}
                 <button class="btn-danger" onclick="cerrarModal()" style="margin-top:8px;">Cerrar</button>
@@ -4700,16 +4700,16 @@ async def admin():
         mostrarModal(`<div class="modal-content" style="max-width:760px;max-height:85vh;overflow-y:auto;padding:24px;">
             <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;">
                 <div>
-                    <h2 style="margin:0;font-size:22px;font-family:monospace;">📋 ${u.unit_number}</h2>
+                    <h2 style="margin:0;font-size:22px;font-family:monospace;"><i class="ti ti-clipboard" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>${u.unit_number}</h2>
                     <div style="margin-top:6px;">${lote}</div>
                 </div>
-                <button class="btn-danger" onclick="cerrarModal()" style="flex-shrink:0;">✕ Cerrar</button>
+                <button class="btn-danger" onclick="cerrarModal()" style="flex-shrink:0;"><i class="ti ti-x" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Cerrar</button>
             </div>
 
-            <h4 style="margin:0 0 8px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:6px;">🔢 Series registradas</h4>
+            <h4 style="margin:0 0 8px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:6px;"><i class="ti ti-hash" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Series registradas</h4>
             ${seriesRows ? `<table style="width:100%;margin-bottom:16px;"><tbody>${seriesRows}</tbody></table>` : '<p style="color:#9ca3af;font-size:13px;margin-bottom:16px;">Sin series registradas.</p>'}
 
-            <h4 style="margin:0 0 8px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:6px;">🔧 Actividades / Asignaciones <span style="font-weight:400;color:#6b7280;font-size:13px;">(${data.asignaciones?.length||0} total)</span></h4>
+            <h4 style="margin:0 0 8px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:6px;"><i class="ti ti-tool" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Actividades / Asignaciones <span style="font-weight:400;color:#6b7280;font-size:13px;">(${data.asignaciones?.length||0} total)</span></h4>
             ${asnRows ? `<table style="width:100%;margin-bottom:16px;font-size:13px;">
                 <thead><tr style="color:#9ca3af;font-size:11px;text-transform:uppercase;">
                     <th style="text-align:left;padding:0 8px 6px 0;">ID</th><th style="text-align:left;padding:0 8px 6px;">Actividad</th>
@@ -4717,17 +4717,17 @@ async def admin():
                     <th style="text-align:left;padding:0 0 6px;">Fecha</th>
                 </tr></thead><tbody>${asnRows}</tbody></table>` : '<p style="color:#9ca3af;font-size:13px;margin-bottom:16px;">Sin actividades registradas.</p>'}
 
-            <h4 style="margin:0 0 8px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:6px;">🎫 Tickets <span style="font-weight:400;color:#6b7280;font-size:13px;">(${data.tickets?.length||0} total)</span></h4>
+            <h4 style="margin:0 0 8px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:6px;"><i class="ti ti-ticket" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Tickets <span style="font-weight:400;color:#6b7280;font-size:13px;">(${data.tickets?.length||0} total)</span></h4>
             ${tkRows ? `<table style="width:100%;margin-bottom:16px;font-size:13px;">
                 <thead><tr style="color:#9ca3af;font-size:11px;text-transform:uppercase;">
                     <th style="text-align:left;padding:0 8px 6px 0;">ID</th><th style="text-align:left;padding:0 8px 6px;">Tipo</th>
                     <th style="text-align:left;padding:0 8px 6px;">Descripción</th><th style="text-align:left;padding:0 0 6px;">Estado</th>
                 </tr></thead><tbody>${tkRows}</tbody></table>` : '<p style="color:#9ca3af;font-size:13px;margin-bottom:16px;">Sin tickets.</p>'}
 
-            <h4 style="margin:0 0 8px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:6px;">📸 Evidencias</h4>
+            <h4 style="margin:0 0 8px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:6px;"><i class="ti ti-camera" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Evidencias</h4>
             <p style="margin:0 0 16px;"><span style="font-size:22px;font-weight:700;color:#4f46e5;">${data.evidencias_total||0}</span> <span style="color:#6b7280;font-size:13px;">foto${data.evidencias_total!==1?'s':''} registrada${data.evidencias_total!==1?'s':''}</span></p>
 
-            ${data.toma_valores?.length ? `<h4 style="margin:0 0 8px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:6px;">📊 Toma de valores <span style="font-weight:400;color:#6b7280;font-size:13px;">(${data.toma_valores.length} registro${data.toma_valores.length!==1?'s':''})</span></h4>
+            ${data.toma_valores?.length ? `<h4 style="margin:0 0 8px;color:#374151;border-bottom:1px solid #e5e7eb;padding-bottom:6px;"><i class="ti ti-gauge" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Toma de valores <span style="font-weight:400;color:#6b7280;font-size:13px;">(${data.toma_valores.length} registro${data.toma_valores.length!==1?'s':''})</span></h4>
             <p style="color:#6b7280;font-size:12px;margin:0 0 16px;">Registros disponibles — ver en sección Actividades para detalle completo.</p>` : ''}
         </div>`);
     }
@@ -5026,7 +5026,7 @@ async def mis_tareas():
         async function tomarValores(tareaId) {
             const camposRes = await fetchAuth('/api/toma-valores/campos'); const campos = await camposRes.json();
             let camposHTML = campos.length ? campos.map((c,i) => `<input type="text" id="campo_${i}" placeholder="${c.campo_nombre}">`).join('') : '<p>No hay campos configurados.</p>';
-            const modal = mostrarModal(`<div class="modal-content"><h3>📊 Toma de Valores</h3><div id="camposValores">${camposHTML}</div><button class="btn-primary" id="btnGuardarValores">💾 Guardar Valores</button><button class="btn-danger" onclick="cerrarModal()">Cancelar</button></div>`);
+            const modal = mostrarModal(`<div class="modal-content"><h3><i class="ti ti-gauge" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Toma de Valores</h3><div id="camposValores">${camposHTML}</div><button class="btn-primary" id="btnGuardarValores"><i class="ti ti-device-floppy" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Guardar Valores</button><button class="btn-danger" onclick="cerrarModal()">Cancelar</button></div>`);
             document.getElementById('btnGuardarValores').onclick = async () => {
                 const valores = {}; campos.forEach((c,i) => valores[c.campo_nombre] = document.getElementById('campo_'+i).value);
                 await fetchAuth('/api/toma-valores/guardar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ asignacion_id: tareaId, valores }) }); alert('Valores guardados'); cerrarModal();
@@ -5058,7 +5058,7 @@ async def mis_tareas():
                    </div>`
                 : `<input type="text" id="serie_${i}" placeholder="${c.label}"><input type="hidden" id="serie_key_${i}" value="${c.key}">`
             ).join('');
-            const modal = mostrarModal(`<div class="modal-content"><h3>🔢 Toma de Series</h3><div id="camposSeries">${inputs}</div><button class="btn-primary" id="btnGuardarSeries">💾 Guardar Series</button><button class="btn-danger" onclick="cerrarModal()">Cancelar</button></div>`);
+            const modal = mostrarModal(`<div class="modal-content"><h3><i class="ti ti-hash" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Toma de Series</h3><div id="camposSeries">${inputs}</div><button class="btn-primary" id="btnGuardarSeries"><i class="ti ti-device-floppy" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Guardar Series</button><button class="btn-danger" onclick="cerrarModal()">Cancelar</button></div>`);
             document.getElementById('btnGuardarSeries').onclick = async () => {
                 const tareasRes = await fetchAuth('/api/asignaciones/?tecnico=' + username + '&estado=en_proceso'); const tareas = await tareasRes.json();
                 const tarea = Array.isArray(tareas) ? tareas.find(t => t.id == tareaId) : null; if (!tarea) return alert('Tarea no encontrada');
@@ -7347,7 +7347,7 @@ async def asistencia_admin():
     <div id="modalImportacion" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:9999; overflow-y:auto;">
       <div style="background:white; margin:30px auto; max-width:960px; border-radius:16px; padding:32px; box-shadow:0 8px 40px rgba(0,43,91,0.18);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-          <h2 style="margin:0; font-size:1.2rem; color:#002B5B;">📂 Importar Horarios desde Excel</h2>
+          <h2 style="margin:0; font-size:1.2rem; color:#002B5B;"><i class="ti ti-file-import" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Importar Horarios desde Excel</h2>
           <button onclick="cerrarModalImportacion()" style="background:none; border:none; font-size:1.5rem; cursor:pointer; color:#6b7280;">✕</button>
         </div>
 
@@ -9014,7 +9014,7 @@ async def alarmas():
                     <h2 style="margin:10px 0 4px;color:var(--carrier-blue);font-size:1.25rem;">${a.titulo}</h2>
                     ${relacionadas.length ? '<p style="font-size:.82rem;color:#6b7280;">También cubre: ' + relacionadas.join(', ') + '</p>' : ''}
                 </div>
-                <button class="alarm-modal-close" onclick="cerrarModal()">✕ Cerrar</button>
+                <button class="alarm-modal-close" onclick="cerrarModal()"><i class="ti ti-x" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Cerrar</button>
             </div>`;
 
             if (ref && ref.codigo) {
