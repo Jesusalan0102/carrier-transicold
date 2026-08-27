@@ -44,8 +44,11 @@ BASE_STYLE = """
         --shadow-soft: rgba(0,0,0,0.4);
         --carrier-light: #1a2b45;
     }
-    * { box-sizing: border-box; font-family: 'Inter', sans-serif; }
+    * { box-sizing: border-box; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
     body {
+        -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility;
+        line-height: 1.5;
         background: linear-gradient(135deg, var(--bg-page) 0%, var(--bg-page-2) 60%, var(--bg-page-3) 100%);
         margin: 0; padding: 0; transition: background 0.25s ease;
     }
@@ -61,7 +64,7 @@ BASE_STYLE = """
     .main-content { margin-left: 21rem; padding: 2rem; padding-left: calc(2rem + 58px); min-height: 100vh; transition: margin-left 0.3s ease, padding-left 0.3s ease; }
     body.sidebar-hidden .main-content { padding-left: 2rem; }
     .main-header {
-        font-size: 1.75rem; font-weight: 800; color: var(--carrier-blue);
+        font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; color: var(--carrier-blue);
         border-bottom: 3px solid var(--carrier-accent); padding-bottom: 12px; margin-bottom: 24px;
         display: flex; align-items: center; gap: 12px;
     }
@@ -799,9 +802,10 @@ async def login():
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Carrier Transicold – Login</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
         <style>
             * { box-sizing: border-box; font-family: 'Inter', system-ui, sans-serif; }
-            body { background: linear-gradient(135deg, #EEF2F9 0%, #F5F7FB 60%, #EAF0FB 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; margin: 0; padding: 20px; }
+            body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; background: linear-gradient(135deg, #EEF2F9 0%, #F5F7FB 60%, #EAF0FB 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; margin: 0; padding: 20px; }
             .login-card { background: white; padding: 40px 32px; border-radius: 20px; box-shadow: 0 12px 40px rgba(0,43,91,0.18); max-width: 400px; width: 100%; text-align: center; }
             .login-card img { width: 280px; max-width: 100%; border-radius: 12px; margin-bottom: 20px; }
             .login-card h2 { color: #002B5B; font-weight: 800; font-size: 1.5rem; margin-bottom: 4px; }
@@ -9089,7 +9093,7 @@ PUBLIC_STYLE = """
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
     * { box-sizing: border-box; font-family: 'Inter', sans-serif; margin:0; padding:0; }
-    body { background:#f7f9fc; color:#1f2937; line-height:1.7; }
+    body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; background:#f7f9fc; color:#1f2937; line-height:1.7; }
     header.pub-header {
         background: linear-gradient(135deg,#002B5B 0%,#0057A8 100%);
         color:white; padding: 20px 24px; display:flex; align-items:center;
