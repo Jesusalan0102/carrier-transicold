@@ -380,6 +380,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/mis-tareas', icon: 'circle-check', label: 'Mis tareas asignadas' }},
                     {{ href: '/app/tickets', icon: 'ticket', label: 'Tickets' }},
                     {{ href: '/app/admin', icon: 'camera', label: 'Evidencias' }},
+                    {{ href: '/app/cluster', icon: 'bolt', label: 'Asignación por cluster' }},
                     {{ href: '/app/checkin', icon: 'map-pin', label: 'Registrar asistencia' }},
                     {{ href: '/app/juegos', icon: 'device-gamepad-2', label: 'Juegos' }},
                 ];
@@ -9649,21 +9650,21 @@ class ActividadTiempoEstimado(BaseModel):
 
 @router.get("/api/cluster/tecnicos", tags=["cluster"])
 def listar_tecnicos_cluster(current_user=Depends(verify_token)):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores")
-    return execute_read("SELECT username FROM users WHERE role='tecnico' ORDER BY username")
+    if current_user["role"] not in ("admin", "lider"):
+        raise HTTPException(status_code=403, detail="Solo administradores o líderes")
+    return execute_read("SELECT username FROM users WHERE role IN ('tecnico','lider') ORDER BY username")
 
 @router.get("/api/cluster/unidades", tags=["cluster"])
 def listar_unidades_cluster(current_user=Depends(verify_token)):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if current_user["role"] not in ("admin", "lider"):
+        raise HTTPException(status_code=403, detail="Solo administradores o líderes")
     # Excluye unidades de lotes ocultos, igual que el dashboard
     return execute_read("SELECT unit_number, id_lote FROM unidades WHERE oculto=0 ORDER BY id_lote, unit_number")
 
 @router.get("/api/cluster/actividades", tags=["cluster"])
 def listar_actividades_cluster(current_user=Depends(verify_token)):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if current_user["role"] not in ("admin", "lider"):
+        raise HTTPException(status_code=403, detail="Solo administradores o líderes")
     return execute_read(
         "SELECT id, nombre, tiempo_estimado_horas FROM actividades_catalogo "
         "WHERE activo = 1 ORDER BY nombre"
@@ -9679,8 +9680,8 @@ def actualizar_tiempo_estimado_actividad(
     se cree con esa actividad hereda este valor como su SLA (snapshot —
     ver comentario en la migración de asignaciones.tiempo_estimado_horas).
     """
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if current_user["role"] not in ("admin", "lider"):
+        raise HTTPException(status_code=403, detail="Solo administradores o líderes")
     if not execute_read("SELECT id FROM actividades_catalogo WHERE id = %s", (actividad_id,)):
         raise HTTPException(status_code=404, detail="Actividad no encontrada")
     if data.tiempo_estimado_horas is not None and data.tiempo_estimado_horas <= 0:
@@ -9693,8 +9694,8 @@ def actualizar_tiempo_estimado_actividad(
 
 @router.post("/api/cluster/asignar", tags=["cluster"])
 def asignar_cluster(data: ClusterAsignacion, current_user=Depends(verify_token)):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if current_user["role"] not in ("admin", "lider"):
+        raise HTTPException(status_code=403, detail="Solo administradores o líderes")
     if not data.tecnicos or not data.actividades or not data.unidades:
         raise HTTPException(status_code=400, detail="Debes seleccionar técnicos, actividades y unidades")
 
