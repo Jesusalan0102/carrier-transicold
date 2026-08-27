@@ -118,6 +118,24 @@ def test_panel_cluster_renderiza_con_tiempo_estimado():
         assert needle in body, f"Falta '{needle}' en el HTML de /app/cluster"
 
 
+def test_menu_lateral_usa_iconos_no_emoji():
+    """
+    El menú de navegación (sidebar) reemplazó los emojis por iconos Tabler
+    (ver conversación sobre profesionalizar la interfaz). Verifica que cada
+    rol tenga su campo 'icon' y que el layout compartido cargue el webfont
+    de Tabler — sin esto, los <i class="ti ti-..."> se renderían vacíos.
+    """
+    from routers.web_router import pagina_con_menu
+
+    html = pagina_con_menu("Prueba", "<p>contenido</p>", "dashboard")
+    assert "tabler-icons.min.css" in html
+    assert 'class="ti ti-${item.icon}"' in html
+    for icono in ("chart-bar", "target-arrow", "ticket", "package", "camera",
+                  "users", "bolt", "map-pin", "clock", "bell",
+                  "device-gamepad-2", "settings"):
+        assert f"icon: '{icono}'" in html, f"Falta el icono '{icono}' en el menú"
+
+
 def test_todos_los_routers_quedaron_registrados():
     """
     Verifica que la app tenga rutas registradas de cada módulo de negocio

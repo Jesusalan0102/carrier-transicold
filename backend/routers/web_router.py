@@ -12,6 +12,7 @@ router = APIRouter()
 # ------------------------------------------------------------
 BASE_STYLE = """
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <style>
     :root {
         --carrier-blue: #002B5B;
@@ -94,7 +95,8 @@ BASE_STYLE = """
     .kpi-wrap.red    .kpi-num { color: var(--carrier-danger); }
     .kpi-wrap.purple .kpi-num { color: #7c3aed; }
     .kpi-lbl { font-size: 0.73rem; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; margin-top: 6px; }
-    .nav-item { display: block; padding: 12px 16px; border-radius: 8px; color: #e0eaff; font-weight: 600; margin-bottom: 6px; text-decoration: none; transition: background 0.2s; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 8px; color: #e0eaff; font-weight: 500; margin-bottom: 4px; text-decoration: none; transition: background 0.2s; }
+    .nav-item i { font-size: 18px; flex-shrink: 0; }
     .nav-item:hover, .nav-item.active { background: rgba(255,255,255,0.15); color: white; }
     .btn-primary { background: linear-gradient(135deg, var(--carrier-blue) 0%, var(--carrier-accent) 100%); color: white; border: none; border-radius: 10px; padding: 14px 20px; font-weight: 600; font-size: 1rem; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; width: 100%; text-align: center; }
     .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,43,91,0.3); }
@@ -211,7 +213,8 @@ BASE_STYLE = """
 # ------------------------------------------------------------
 # FUNCIÓN AUXILIAR CON SIDEBAR, MENÚ Y CIERRE DE SESIÓN SIEMPRE VISIBLE
 # ------------------------------------------------------------
-def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_scripts: str = "") -> str:
+def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_scripts: str = "", icono: str = "") -> str:
+    icono_html = f'<i class="ti ti-{icono}" aria-hidden="true"></i>' if icono else ''
     return f"""
     <!DOCTYPE html>
     <html lang="es">
@@ -289,7 +292,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
 
         <div class="main-content">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; flex-wrap:wrap; gap:12px;">
-                <h1 class="main-header">{titulo}</h1>
+                <h1 class="main-header">{icono_html}{titulo}</h1>
                 <div style="display:flex; align-items:center; gap:10px;">
                     <button id="globalSearchBtn" onclick="abrirBusquedaGlobal()" class="global-search-trigger" title="Buscar en todo el sistema">
                         🔍 <span class="global-search-trigger-label">Buscar</span>
@@ -339,46 +342,46 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 }})();
 
                 const adminMenu = [
-                    {{ href: '/app/dashboard', label: '📊 Dashboard Ejecutivo' }},
-                    {{ href: '/app/asignaciones', label: '🎯 Control de Asignaciones' }},
-                    {{ href: '/app/tickets', label: '🎫 Tickets' }},
-                    {{ href: '/app/inventario', label: '📦 Inventarios' }},
-                    {{ href: '/app/unidades', label: '📸 Registro de Unidades' }},
-                    {{ href: '/app/pdi', label: '📋 PDI Pre-Entrega' }},
-                    {{ href: '/app/usuarios', label: '👥 Gestión de Usuarios' }},
-                    {{ href: '/app/cluster', label: '⚡ Asignación por Cluster' }},
-                    {{ href: '/app/asistencia', label: '📍 Control de Asistencia' }},
-                    {{ href: '/app/checkin', label: '🕐 Registrar Mi Asistencia' }},
-                    {{ href: '/app/alarmas', label: '🔔 Alarm Troubleshooting' }},
-                    {{ href: '/app/juegos', label: '🎮 Juegos' }},
-                    {{ href: '/app/admin', label: '🛠 Panel de Administración' }},
+                    {{ href: '/app/dashboard', icon: 'chart-bar', label: 'Dashboard ejecutivo' }},
+                    {{ href: '/app/asignaciones', icon: 'target-arrow', label: 'Control de asignaciones' }},
+                    {{ href: '/app/tickets', icon: 'ticket', label: 'Tickets' }},
+                    {{ href: '/app/inventario', icon: 'package', label: 'Inventarios' }},
+                    {{ href: '/app/unidades', icon: 'camera', label: 'Registro de unidades' }},
+                    {{ href: '/app/pdi', icon: 'clipboard-check', label: 'PDI pre-entrega' }},
+                    {{ href: '/app/usuarios', icon: 'users', label: 'Gestión de usuarios' }},
+                    {{ href: '/app/cluster', icon: 'bolt', label: 'Asignación por cluster' }},
+                    {{ href: '/app/asistencia', icon: 'map-pin', label: 'Control de asistencia' }},
+                    {{ href: '/app/checkin', icon: 'clock', label: 'Registrar mi asistencia' }},
+                    {{ href: '/app/alarmas', icon: 'bell', label: 'Alarm troubleshooting' }},
+                    {{ href: '/app/juegos', icon: 'device-gamepad-2', label: 'Juegos' }},
+                    {{ href: '/app/admin', icon: 'settings', label: 'Panel de administración' }},
                 ];
                 const visorMenu = [
-                    {{ href: '/app/dashboard', label: '📊 Dashboard Ejecutivo' }},
-                    {{ href: '/app/asignaciones', label: '🎯 Control de Asignaciones' }},
-                    {{ href: '/app/tickets', label: '🎫 Tickets' }},
-                    {{ href: '/app/inventario', label: '📦 Inventarios' }},
-                    {{ href: '/app/unidades', label: '📸 Registro de Unidades' }},
-                    {{ href: '/app/usuarios', label: '👥 Gestión de Usuarios' }},
-                    {{ href: '/app/asistencia', label: '📍 Control de Asistencia' }},
-                    {{ href: '/app/alarmas', label: '🔔 Alarm Troubleshooting' }},
-                    {{ href: '/app/juegos', label: '🎮 Juegos' }},
+                    {{ href: '/app/dashboard', icon: 'chart-bar', label: 'Dashboard ejecutivo' }},
+                    {{ href: '/app/asignaciones', icon: 'target-arrow', label: 'Control de asignaciones' }},
+                    {{ href: '/app/tickets', icon: 'ticket', label: 'Tickets' }},
+                    {{ href: '/app/inventario', icon: 'package', label: 'Inventarios' }},
+                    {{ href: '/app/unidades', icon: 'camera', label: 'Registro de unidades' }},
+                    {{ href: '/app/usuarios', icon: 'users', label: 'Gestión de usuarios' }},
+                    {{ href: '/app/asistencia', icon: 'map-pin', label: 'Control de asistencia' }},
+                    {{ href: '/app/alarmas', icon: 'bell', label: 'Alarm troubleshooting' }},
+                    {{ href: '/app/juegos', icon: 'device-gamepad-2', label: 'Juegos' }},
                 ];
                 const techMenu = [
-                    {{ href: '/app/mis-tareas', label: '🎯 Mis Tareas' }},
-                    {{ href: '/app/solicitud', label: '🔔 Nueva Solicitud' }},
-                    {{ href: '/app/mis-tickets', label: '🎫 Mis Tickets' }},
-                    {{ href: '/app/checkin', label: '📍 Registrar Asistencia' }},
-                    {{ href: '/app/juegos', label: '🎮 Juegos' }},
+                    {{ href: '/app/mis-tareas', icon: 'target-arrow', label: 'Mis tareas' }},
+                    {{ href: '/app/solicitud', icon: 'bell-plus', label: 'Nueva solicitud' }},
+                    {{ href: '/app/mis-tickets', icon: 'ticket', label: 'Mis tickets' }},
+                    {{ href: '/app/checkin', icon: 'map-pin', label: 'Registrar asistencia' }},
+                    {{ href: '/app/juegos', icon: 'device-gamepad-2', label: 'Juegos' }},
                 ];
                 const liderMenu = [
-                    {{ href: '/app/dashboard', label: '📊 Dashboard Ejecutivo' }},
-                    {{ href: '/app/asignaciones', label: '🎯 Control de Asignaciones' }},
-                    {{ href: '/app/mis-tareas', label: '✅ Mis Tareas Asignadas' }},
-                    {{ href: '/app/tickets', label: '🎫 Tickets' }},
-                    {{ href: '/app/admin', label: '📸 Evidencias' }},
-                    {{ href: '/app/checkin', label: '📍 Registrar Asistencia' }},
-                    {{ href: '/app/juegos', label: '🎮 Juegos' }},
+                    {{ href: '/app/dashboard', icon: 'chart-bar', label: 'Dashboard ejecutivo' }},
+                    {{ href: '/app/asignaciones', icon: 'target-arrow', label: 'Control de asignaciones' }},
+                    {{ href: '/app/mis-tareas', icon: 'circle-check', label: 'Mis tareas asignadas' }},
+                    {{ href: '/app/tickets', icon: 'ticket', label: 'Tickets' }},
+                    {{ href: '/app/admin', icon: 'camera', label: 'Evidencias' }},
+                    {{ href: '/app/checkin', icon: 'map-pin', label: 'Registrar asistencia' }},
+                    {{ href: '/app/juegos', icon: 'device-gamepad-2', label: 'Juegos' }},
                 ];
                 const menu = window.role === 'admin' ? adminMenu
                     : (window.role === 'visor' ? visorMenu
@@ -386,7 +389,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 let navHtml = '';
                 menu.forEach(item => {{
                     const active = item.href === '/app/{pagina_activa}' ? ' active' : '';
-                    navHtml += `<a href="${{item.href}}" class="nav-item${{active}}" onclick="if(window.innerWidth<=900)toggleSidebar()">${{item.label}}</a>`;
+                    navHtml += `<a href="${{item.href}}" class="nav-item${{active}}" onclick="if(window.innerWidth<=900)toggleSidebar()"><i class="ti ti-${{item.icon}}" aria-hidden="true"></i><span>${{item.label}}</span></a>`;
                 }});
                 document.getElementById('navMenu').innerHTML = navHtml;
             }});
@@ -968,9 +971,9 @@ async def dashboard():
     </style>
 
     <div class="browser-tabs">
-        <div class="browser-tab active" id="tabBtnDashboard" onclick="cambiarTabDashboard('dashboard')">📊 Dashboard</div>
-        <div class="browser-tab" id="tabBtnSchedule" onclick="cambiarTabDashboard('schedule')">🗓️ Schedule</div>
-        <div class="browser-tab admin-only" id="tabBtnKpiTecnico" onclick="cambiarTabDashboard('kpitecnico')">👷 KPIs Técnico</div>
+        <div class="browser-tab active" id="tabBtnDashboard" onclick="cambiarTabDashboard('dashboard')"><i class="ti ti-chart-bar" aria-hidden="true" style="vertical-align:-3px;margin-right:6px;"></i>Dashboard</div>
+        <div class="browser-tab" id="tabBtnSchedule" onclick="cambiarTabDashboard('schedule')"><i class="ti ti-calendar" aria-hidden="true" style="vertical-align:-3px;margin-right:6px;"></i>Schedule</div>
+        <div class="browser-tab admin-only" id="tabBtnKpiTecnico" onclick="cambiarTabDashboard('kpitecnico')"><i class="ti ti-report" aria-hidden="true" style="vertical-align:-3px;margin-right:6px;"></i>KPIs técnico</div>
     </div>
     <div class="tab-panels-wrap">
     <div class="tab-panel active" id="tabPanelDashboard">
@@ -1062,7 +1065,7 @@ async def dashboard():
         <!-- ── Métricas personalizadas (definidas por el admin) ────────── -->
         <div style="margin-top:36px; padding-top:24px; border-top:2px solid var(--border-color);">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
-                <h3 style="margin:0;">📌 Métricas personalizadas</h3>
+                <h3 style="margin:0;"><i class="ti ti-adjustments" aria-hidden="true" style="vertical-align:-3px;margin-right:6px;"></i>Métricas personalizadas</h3>
                 <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                     <label style="margin:0; font-size:0.85rem; color:var(--text-secondary);">Periodo:</label>
                     <input id="kpiCustomPeriodo" type="text" style="width:110px; margin-bottom:0;"
@@ -1076,19 +1079,19 @@ async def dashboard():
             </p>
 
             <div style="display:flex; justify-content:space-between; align-items:center; margin-top:18px;">
-                <h4 style="margin:0; font-size:0.95rem;">⚖️ Peso y tipo de evaluación</h4>
+                <h4 style="margin:0; font-size:0.95rem;"><i class="ti ti-scale" aria-hidden="true" style="vertical-align:-3px;margin-right:6px;"></i>Peso y tipo de evaluación</h4>
                 <span id="kpiSumaPesos" style="font-size:0.82rem; font-weight:700;"></span>
             </div>
             <div id="kpiConfigTabla" style="overflow-x:auto; margin-top:8px;">
                 <p style="color:var(--text-secondary);">Cargando…</p>
             </div>
 
-            <h4 style="margin:22px 0 8px; font-size:0.95rem;">✍️ Captura de valores manuales</h4>
+            <h4 style="margin:22px 0 8px; font-size:0.95rem;"><i class="ti ti-edit" aria-hidden="true" style="vertical-align:-3px;margin-right:6px;"></i>Captura de valores manuales</h4>
             <div id="kpiCustomTabla" style="overflow-x:auto;">
                 <p style="color:var(--text-secondary);">Cargando…</p>
             </div>
 
-            <h4 style="margin:22px 0 8px; font-size:0.95rem;">🏆 Score final ponderado (0-100)</h4>
+            <h4 style="margin:22px 0 8px; font-size:0.95rem;"><i class="ti ti-trophy" aria-hidden="true" style="vertical-align:-3px;margin-right:6px;"></i>Score final ponderado (0-100)</h4>
             <div id="kpiScoreTabla" style="overflow-x:auto;">
                 <p style="color:var(--text-secondary);">Cargando…</p>
             </div>
@@ -2246,7 +2249,7 @@ async def dashboard():
         cargarDashboard();
     </script>
     """
-    return HTMLResponse(content=pagina_con_menu("📊 Panel de Rendimiento Operativo", contenido, "dashboard"))
+    return HTMLResponse(content=pagina_con_menu("Panel de Rendimiento Operativo", contenido, "dashboard", icono="chart-bar"))
 
 @router.get("/app/asignaciones", response_class=HTMLResponse)
 async def asignaciones():
@@ -2338,7 +2341,7 @@ async def asignaciones():
         cargarSolicitudes();
     </script>
     """
-    return HTMLResponse(content=pagina_con_menu("🎯 Control de Asignaciones", contenido, "asignaciones"))
+    return HTMLResponse(content=pagina_con_menu("Control de Asignaciones", contenido, "asignaciones", icono="target-arrow"))
 
 # ------------------------------------------------------------
 # TICKETS (admin)
@@ -2387,7 +2390,7 @@ async def tickets():
         cargarTickets();
     </script>
     """
-    return HTMLResponse(content=pagina_con_menu("🎫 Gestión de Tickets", contenido, "tickets"))
+    return HTMLResponse(content=pagina_con_menu("Gestión de Tickets", contenido, "tickets", icono="ticket"))
 
 # ------------------------------------------------------------
 # INVENTARIO (admin)
@@ -2429,7 +2432,7 @@ async def inventario():
         cargarInventario();
     </script>
     """
-    return HTMLResponse(content=pagina_con_menu("📦 Gestión de Inventarios", contenido, "inventario"))
+    return HTMLResponse(content=pagina_con_menu("Gestión de Inventarios", contenido, "inventario", icono="package"))
 
 # ------------------------------------------------------------
 # REGISTRO DE UNIDADES (admin)
@@ -2678,7 +2681,7 @@ async def unidades():
         cargarUnidades();
     </script>
     """
-    return HTMLResponse(content=pagina_con_menu("📸 Registro de Unidades", contenido, "unidades"))
+    return HTMLResponse(content=pagina_con_menu("Registro de Unidades", contenido, "unidades", icono="camera"))
 
 # ------------------------------------------------------------
 # PDI — PRE-DELIVERY INSPECTION (Inspección Pre-Entrega)
@@ -2775,7 +2778,7 @@ async def pdi_lista():
         cargarLotes();
     </script>
     """
-    return HTMLResponse(content=pagina_con_menu("📋 PDI — Inspección Pre-Entrega", contenido, "pdi"))
+    return HTMLResponse(content=pagina_con_menu("PDI — Inspección Pre-Entrega", contenido, "pdi", icono="clipboard-check"))
 
 
 @router.get("/app/pdi/{unit_number}", response_class=HTMLResponse)
@@ -3297,7 +3300,7 @@ async def usuarios():
         cargarUsuarios();
     </script>
     """
-    return HTMLResponse(content=pagina_con_menu("👥 Gestión de Usuarios", contenido, "usuarios"))
+    return HTMLResponse(content=pagina_con_menu("Gestión de Usuarios", contenido, "usuarios", icono="users"))
 
 # ------------------------------------------------------------
 # PANEL DE ADMINISTRACIÓN (admin) — CRUD interactivo
@@ -3306,9 +3309,6 @@ async def usuarios():
 async def admin():
     contenido = """
     <script> if (window.role !== 'admin' && window.role !== 'lider') { window.location.href = '/app/mis-tareas'; } </script>
-
-    <!-- Tabler Icons CDN -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
     <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -4738,7 +4738,7 @@ async def admin():
     recargarUnidades();
     </script>
     """
-    return HTMLResponse(content=pagina_con_menu("🛠 Panel de Administración", contenido, "admin"))
+    return HTMLResponse(content=pagina_con_menu("Panel de Administración", contenido, "admin", icono="settings"))
 
 # ------------------------------------------------------------
 # MIS TAREAS (modales con botones grandes y scroll)
@@ -5072,7 +5072,7 @@ async def mis_tareas():
         cargarTareas();
     </script>
     """
-    return HTMLResponse(content=pagina_con_menu("🎯 Mis Tareas", contenido, "mis-tareas"))
+    return HTMLResponse(content=pagina_con_menu("Mis Tareas", contenido, "mis-tareas", icono="target-arrow"))
 
 # ------------------------------------------------------------
 # NUEVA SOLICITUD
@@ -5116,7 +5116,7 @@ async def solicitud():
         cargarOpciones();
     </script>
     """
-    return HTMLResponse(content=pagina_con_menu("🔔 Nueva Solicitud", contenido, "solicitud"))
+    return HTMLResponse(content=pagina_con_menu("Nueva Solicitud", contenido, "solicitud", icono="bell-plus"))
 
 # ------------------------------------------------------------
 # MIS TICKETS
@@ -5248,7 +5248,7 @@ async def mis_tickets():
         cargarTickets();
     </script>
     """
-    return HTMLResponse(content=pagina_con_menu("🎫 Mis Tickets", contenido, "mis-tickets"))
+    return HTMLResponse(content=pagina_con_menu("Mis Tickets", contenido, "mis-tickets", icono="ticket"))
 
 # ------------------------------------------------------------
 # JUEGOS (sección de descanso para técnicos: memoria, 2048, trivia)
@@ -7056,7 +7056,7 @@ async def pagina_juegos():
         cambiarJuego('memoria');
     </script>
     """
-    return HTMLResponse(content=pagina_con_menu("🎮 Juegos", contenido, "juegos", extra_scripts='<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>'))
+    return HTMLResponse(content=pagina_con_menu("Juegos", contenido, "juegos", extra_scripts='<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>', icono="device-gamepad-2"))
 
 # ------------------------------------------------------------
 # PANEL DE ASIGNACIÓN POR CLUSTER (CORREGIDO, SIN DEPENDENCIAS)
@@ -7246,7 +7246,7 @@ async def panel_cluster():
         cargarDatos();
     </script>
     """
-    return HTMLResponse(content=pagina_con_menu("⚡ Asignación por Cluster", contenido, "cluster"))
+    return HTMLResponse(content=pagina_con_menu("Asignación por Cluster", contenido, "cluster", icono="bolt"))
 
 
 # ------------------------------------------------------------
@@ -7972,7 +7972,7 @@ async def asistencia_admin():
         }
     </script>
     """
-    return HTMLResponse(content=pagina_con_menu("📍 Control de Asistencia", contenido, "asistencia"))
+    return HTMLResponse(content=pagina_con_menu("Control de Asistencia", contenido, "asistencia", icono="map-pin"))
 
 
 @router.get("/app/checkin", response_class=HTMLResponse)
@@ -8810,7 +8810,7 @@ async def checkin_tecnico():
     }
     </script>
     """
-    return HTMLResponse(content=pagina_con_menu("📍 Registrar Asistencia", contenido, "checkin"))
+    return HTMLResponse(content=pagina_con_menu("Registrar Asistencia", contenido, "checkin", icono="map-pin"))
 
 # ------------------------------------------------------------
 # ALARM TROUBLESHOOTING (admin, visor, tecnico)
@@ -9073,7 +9073,7 @@ async def alarmas():
         });
     </script>
     """
-    return HTMLResponse(content=pagina_con_menu("🔔 Alarm Troubleshooting", contenido, "alarmas"))
+    return HTMLResponse(content=pagina_con_menu("Alarm Troubleshooting", contenido, "alarmas", icono="bell"))
 
 # ============================================================
 # PÁGINAS PÚBLICAS (sin login) — para solicitar Google AdSense
@@ -9091,6 +9091,7 @@ async def alarmas():
 
 PUBLIC_STYLE = """
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <style>
     * { box-sizing: border-box; font-family: 'Inter', sans-serif; margin:0; padding:0; }
     body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; background:#f7f9fc; color:#1f2937; line-height:1.7; }
