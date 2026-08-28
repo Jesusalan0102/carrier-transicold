@@ -142,6 +142,20 @@ def _generar_zip_backup_lote(id_lote: str) -> bytes:
                                 nombres_vistos[key] = 0
                             zf.writestr(f"evidencias/{m['unit_number']}/{nombre}", contenido)
 
+                # Reportes de trabajo/problemas capturados por líderes para este lote
+                cur.execute(
+                    "SELECT unit_number, tipo, detalle, username_lider, fecha, created_at "
+                    "FROM reportes_unidad WHERE id_lote=%s ORDER BY unit_number, created_at",
+                    (id_lote,)
+                )
+                reportes = cur.fetchall()
+                if reportes:
+                    columnas_r = list(reportes[0].keys())
+                    lineas_r = [",".join(columnas_r)]
+                    for r in reportes:
+                        lineas_r.append(",".join(str(r.get(c, "") or "") for c in columnas_r))
+                    zf.writestr(f"reportes_lote_{id_lote}.csv", "\n".join(lineas_r))
+
             buf.seek(0)
             return buf.getvalue()
     finally:

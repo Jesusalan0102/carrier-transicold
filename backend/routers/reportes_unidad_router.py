@@ -10,7 +10,7 @@ import io
 import threading
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -200,9 +200,15 @@ def enviar_reporte_lote(data: EnviarLoteIn, current_user=Depends(verify_token)):
 def listar_envios(current_user=Depends(verify_token)):
     _requiere_lider_o_admin(current_user)
     if current_user["role"] == "admin":
-        filas = execute_read(
-            "SELECT * FROM reportes_lote_envios ORDER BY created_at DESC LIMIT 200"
-        ) or []
+        # Los reportes de un lote que el admin ocultó dejan de listarse aquí
+        # (siguen respaldados en OneDrive junto con el resto del lote).
+        filas = execute_read("""
+            SELECT e.* FROM reportes_lote_envios e
+            WHERE COALESCE(
+                (SELECT MAX(oculto) FROM unidades WHERE id_lote = e.id_lote), 0
+            ) = 0
+            ORDER BY e.created_at DESC LIMIT 200
+        """) or []
     else:
         filas = execute_read(
             "SELECT * FROM reportes_lote_envios WHERE username_lider=%s ORDER BY created_at DESC LIMIT 200",
@@ -242,6 +248,95 @@ def ver_envio(envio_id: int, current_user=Depends(verify_token)):
     _requiere_lider_o_admin(current_user)
     envio, entradas = _detalle_envio(envio_id, current_user)
     return {"envio": envio, "entradas": entradas}
+
+
+# ── Listar TODOS los reportes de un lote (cualquier fecha) para eliminación ─
+@router.get("/lote/{id_lote}/reportes")
+def listar_reportes_lote(id_lote: str, current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+
+    filas = execute_read(
+        "SELECT id, unit_number, tipo, detalle, username_lider, fecha, enviado, created_at "
+        "FROM reportes_unidad WHERE id_lote=%s ORDER BY unit_number, created_at",
+        (id_lote,)
+    ) or []
+    if not filas:
+        raise HTTPException(status_code=404, detail=f"No hay reportes capturados para el lote '{id_lote}'")
+
+    nombres = execute_read("SELECT username, nombre_completo FROM users") or []
+    mapa = {n["username"]: (n["nombre_completo"] or n["username"]) for n in nombres}
+
+    por_unidad = {}
+    for f in filas:
+        f["nombre_lider"] = mapa.get(f["username_lider"], f["username_lider"])
+        por_unidad.setdefault(f["unit_number"], []).append(f)
+
+    return {
+        "id_lote": id_lote,
+        "unidades": [{"unit_number": u, "entradas": e} for u, e in por_unidad.items()],
+    }
+
+
+def _recalcular_envios(envio_ids):
+    """Tras borrar entradas sueltas, recalcula (o borra) los envíos afectados."""
+    for envio_id in {e for e in envio_ids if e}:
+        restantes = execute_read(
+            "SELECT unit_number, tipo FROM reportes_unidad WHERE envio_id=%s", (envio_id,)
+        ) or []
+        if not restantes:
+            execute_write("DELETE FROM reportes_lote_envios WHERE id=%s", (envio_id,))
+        else:
+            total_unidades = len({r["unit_number"] for r in restantes})
+            total_problemas = sum(1 for r in restantes if r["tipo"] == "problema")
+            execute_write(
+                "UPDATE reportes_lote_envios SET total_unidades=%s, total_problemas=%s WHERE id=%s",
+                (total_unidades, total_problemas, envio_id)
+            )
+
+
+class EliminarUnidadesIn(BaseModel):
+    id_lote: str
+    unit_numbers: List[str]
+
+
+# ── Eliminar reportes de unidades específicas dentro de un lote ────────────
+@router.post("/eliminar-unidades")
+def eliminar_reportes_unidades(data: EliminarUnidadesIn, current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    if not data.unit_numbers:
+        raise HTTPException(status_code=400, detail="Selecciona al menos una unidad")
+
+    ph = ",".join(["%s"] * len(data.unit_numbers))
+    afectados = execute_read(
+        f"SELECT id, envio_id FROM reportes_unidad WHERE id_lote=%s AND unit_number IN ({ph})",
+        tuple([data.id_lote] + data.unit_numbers)
+    ) or []
+    if not afectados:
+        raise HTTPException(status_code=404, detail="No hay reportes para esas unidades")
+
+    ids = [a["id"] for a in afectados]
+    envio_ids_afectados = [a["envio_id"] for a in afectados]
+    execute_write(
+        f"DELETE FROM reportes_unidad WHERE id IN ({','.join(['%s'] * len(ids))})",
+        tuple(ids)
+    )
+    _recalcular_envios(envio_ids_afectados)
+    return {"mensaje": f"Se eliminaron {len(ids)} entrada(s) de {len(data.unit_numbers)} unidad(es)", "eliminadas": len(ids)}
+
+
+# ── Eliminar TODOS los reportes de un lote completo ─────────────────────────
+@router.delete("/lote/{id_lote}")
+def eliminar_reportes_lote(id_lote: str, current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    existentes = execute_read("SELECT id FROM reportes_unidad WHERE id_lote=%s", (id_lote,))
+    if not existentes:
+        raise HTTPException(status_code=404, detail=f"No hay reportes capturados para el lote '{id_lote}'")
+    execute_write("DELETE FROM reportes_unidad WHERE id_lote=%s", (id_lote,))
+    execute_write("DELETE FROM reportes_lote_envios WHERE id_lote=%s", (id_lote,))
+    return {"mensaje": f"Se eliminaron todos los reportes del lote '{id_lote}'", "eliminadas": len(existentes)}
 
 
 # ── Exportar un envío a Excel (para compartir, ej. en WhatsApp) ────────────

@@ -7300,6 +7300,21 @@ async def panel_reporte_lote():
     <div id="vistaAdmin" style="display:none;">
         <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">📬 Reportes recibidos de los líderes</div>
         <div id="listaEnvios" style="display:flex; flex-direction:column; gap:8px;"></div>
+
+        <div style="margin-top:28px; padding-top:20px; border-top:0.5px solid var(--color-border-tertiary);">
+            <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">🗑️ Eliminar reportes</div>
+            <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+                <label style="font-weight:500; color:var(--color-text-primary);">Lote:</label>
+                <select id="selectLoteEliminar" style="min-width:220px;" onchange="cargarReportesParaEliminar()">
+                    <option value="">Selecciona un lote…</option>
+                </select>
+                <button onclick="eliminarLoteCompleto()" style="padding:8px 16px; font-size:13px; background:#c0392b; color:white; border:none; border-radius:8px; cursor:pointer;">🗑️ Eliminar TODOS los reportes de este lote</button>
+            </div>
+            <div id="listaUnidadesEliminar" style="display:flex; flex-direction:column; gap:8px; margin-top:12px;"></div>
+            <div id="barraEliminarSeleccion" style="display:none; margin-top:12px;">
+                <button onclick="eliminarUnidadesSeleccionadas()" style="padding:10px 20px; font-weight:600; background:#c0392b; color:white; border:none; border-radius:8px; cursor:pointer;">🗑️ Eliminar reportes de las unidades seleccionadas</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -7480,9 +7495,86 @@ async def panel_reporte_lote():
         if (esAdmin) {
             document.getElementById('vistaAdmin').style.display = 'block';
             cargarEnvios();
+            cargarLotesParaEliminar();
         } else {
             document.getElementById('vistaLider').style.display = 'block';
             cargarLotes();
+        }
+
+        // ── ELIMINAR REPORTES (admin) ───────────────────────────────
+        async function cargarLotesParaEliminar() {
+            const res = await fetchAuth('/api/unidades/lotes');
+            if (!res.ok) return;
+            const lotes = await res.json();
+            const sel = document.getElementById('selectLoteEliminar');
+            lotes.forEach(l => {
+                const opt = document.createElement('option');
+                opt.value = l.id_lote;
+                opt.textContent = `${l.id_lote} (${l.total_unidades} unidades${l.oculto ? ' · oculto' : ''})`;
+                sel.appendChild(opt);
+            });
+        }
+
+        async function cargarReportesParaEliminar() {
+            const id_lote = document.getElementById('selectLoteEliminar').value;
+            const cont = document.getElementById('listaUnidadesEliminar');
+            document.getElementById('barraEliminarSeleccion').style.display = 'none';
+            if (!id_lote) { cont.innerHTML = ''; return; }
+            const res = await fetchAuth('/api/reportes-unidad/lote/' + encodeURIComponent(id_lote) + '/reportes');
+            if (!res.ok) {
+                cont.innerHTML = '<div style="color:var(--color-text-secondary); font-size:13px;">Este lote no tiene reportes capturados.</div>';
+                return;
+            }
+            const data = await res.json();
+            cont.innerHTML = data.unidades.map(u => `
+                <label style="display:flex; gap:10px; align-items:flex-start; background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:12px; cursor:pointer;">
+                    <input type="checkbox" class="chk-unidad-eliminar" value="${escapeHtml(u.unit_number)}" style="margin-top:3px;" onchange="actualizarBarraEliminar()">
+                    <div>
+                        <div style="font-weight:600; color:var(--color-text-primary);">🚛 ${escapeHtml(u.unit_number)} <span style="font-weight:400; color:var(--color-text-secondary); font-size:12px;">(${u.entradas.length} entrada${u.entradas.length===1?'':'s'})</span></div>
+                        ${u.entradas.map(entradaDetalleHtml).join('')}
+                    </div>
+                </label>
+            `).join('');
+        }
+
+        function actualizarBarraEliminar() {
+            const marcadas = document.querySelectorAll('.chk-unidad-eliminar:checked');
+            document.getElementById('barraEliminarSeleccion').style.display = marcadas.length ? 'block' : 'none';
+        }
+
+        async function eliminarUnidadesSeleccionadas() {
+            const id_lote = document.getElementById('selectLoteEliminar').value;
+            const unit_numbers = Array.from(document.querySelectorAll('.chk-unidad-eliminar:checked')).map(c => c.value);
+            if (!unit_numbers.length) return;
+            if (!confirm(`¿Eliminar los reportes de ${unit_numbers.length} unidad(es)? Esta acción no se puede deshacer.`)) return;
+            const res = await fetchAuth('/api/reportes-unidad/eliminar-unidades', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id_lote, unit_numbers })
+            });
+            const d = await res.json().catch(()=>({}));
+            if (res.ok) {
+                cargarReportesParaEliminar();
+                cargarEnvios();
+            } else {
+                alert(d.detail || 'No se pudieron eliminar los reportes');
+            }
+        }
+
+        async function eliminarLoteCompleto() {
+            const id_lote = document.getElementById('selectLoteEliminar').value;
+            if (!id_lote) { alert('Selecciona un lote primero.'); return; }
+            if (!confirm(`¿Eliminar TODOS los reportes del lote ${id_lote}? Esta acción no se puede deshacer.`)) return;
+            const res = await fetchAuth('/api/reportes-unidad/lote/' + encodeURIComponent(id_lote), { method: 'DELETE' });
+            const d = await res.json().catch(()=>({}));
+            if (res.ok) {
+                document.getElementById('listaUnidadesEliminar').innerHTML = '';
+                document.getElementById('barraEliminarSeleccion').style.display = 'none';
+                cargarEnvios();
+                alert(d.mensaje);
+            } else {
+                alert(d.detail || 'No se pudo eliminar el reporte del lote');
+            }
         }
     </script>
     """
