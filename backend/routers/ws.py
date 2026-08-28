@@ -51,6 +51,7 @@ _PUSH_LABELS = {
     "ticket_nuevo":         ("🎫 Nuevo ticket",             "Se creó un nuevo ticket de servicio"),
     "corriendo_6h":         ("⏱️ 6 horas corriendo",        "Una unidad lleva 6 horas corriendo"),
     "horario_actualizado":  ("📅 Horario actualizado",      "Tu horario semanal fue actualizado"),
+    "reporte_lote_enviado": ("📦 Reporte de lote recibido",  "Un líder envió el reporte de un lote"),
 }
 
 
@@ -77,6 +78,8 @@ async def notify(event: str, payload: dict = None):
         if p.get("unidad"):      parts.append(f"Unidad {p['unidad']}")
         if p.get("unit_number"): parts.append(f"Unidad {p['unit_number']}")
         if p.get("semana"):      parts.append(f"Semana del {p['semana']}")
+        if p.get("id_lote"):     parts.append(f"Lote {p['id_lote']}")
+        if p.get("lider") and event == "reporte_lote_enviado": parts.append(f"por {p['lider']}")
         body = " · ".join(parts) if parts else base_body
 
         loop = asyncio.get_event_loop()

@@ -825,6 +825,44 @@ def _run_migrations():
             except Exception as e_tra:
                 print(f"⚠️  Migración (tickets.reporte_archivo_*) omitida: {e_tra}")
 
+            # ── reportes_unidad / reportes_lote_envios: bitácora de trabajo/  ──
+            # ── problemas por unidad que los líderes capturan agrupada por    ──
+            # ── lote, y que se envía como reporte al administrador.          ──
+            try:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS reportes_unidad (
+                        id              INT AUTO_INCREMENT PRIMARY KEY,
+                        id_lote         VARCHAR(50)  NOT NULL,
+                        unit_number     VARCHAR(50)  NOT NULL,
+                        username_lider  VARCHAR(80)  NOT NULL,
+                        tipo            ENUM('trabajo','problema') NOT NULL DEFAULT 'trabajo',
+                        detalle         TEXT NOT NULL,
+                        fecha           DATE NOT NULL,
+                        enviado         TINYINT(1) NOT NULL DEFAULT 0,
+                        envio_id        INT DEFAULT NULL,
+                        created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        INDEX idx_lote_fecha (id_lote, fecha),
+                        INDEX idx_envio (envio_id)
+                    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+                """)
+                conn.commit()
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS reportes_lote_envios (
+                        id              INT AUTO_INCREMENT PRIMARY KEY,
+                        id_lote         VARCHAR(50)  NOT NULL,
+                        username_lider  VARCHAR(80)  NOT NULL,
+                        fecha           DATE NOT NULL,
+                        total_unidades  INT NOT NULL DEFAULT 0,
+                        total_problemas INT NOT NULL DEFAULT 0,
+                        created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        INDEX idx_fecha (fecha)
+                    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+                """)
+                conn.commit()
+                print("✅ Migración: tablas reportes_unidad / reportes_lote_envios verificadas")
+            except Exception as e_ru:
+                print(f"⚠️  Migración (reportes_unidad) omitida: {e_ru}")
+
     except Exception as e:
         print(f"⚠️  Migración omitida: {e}")
     finally:

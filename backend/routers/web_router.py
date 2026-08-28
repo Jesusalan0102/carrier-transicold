@@ -350,6 +350,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/pdi', icon: 'clipboard-check', label: 'PDI pre-entrega' }},
                     {{ href: '/app/usuarios', icon: 'users', label: 'Gestión de usuarios' }},
                     {{ href: '/app/cluster', icon: 'bolt', label: 'Asignación por cluster' }},
+                    {{ href: '/app/reporte-lote', icon: 'clipboard-list', label: 'Reportes de lote' }},
                     {{ href: '/app/asistencia', icon: 'map-pin', label: 'Control de asistencia' }},
                     {{ href: '/app/checkin', icon: 'clock', label: 'Registrar mi asistencia' }},
                     {{ href: '/app/alarmas', icon: 'bell', label: 'Alarm troubleshooting' }},
@@ -381,6 +382,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/tickets', icon: 'ticket', label: 'Tickets' }},
                     {{ href: '/app/admin', icon: 'settings', label: 'Panel de administración' }},
                     {{ href: '/app/cluster', icon: 'bolt', label: 'Asignación por cluster' }},
+                    {{ href: '/app/reporte-lote', icon: 'clipboard-list', label: 'Reporte de lote' }},
                     {{ href: '/app/checkin', icon: 'map-pin', label: 'Registrar asistencia' }},
                     {{ href: '/app/juegos', icon: 'device-gamepad-2', label: 'Juegos' }},
                 ];
@@ -7263,6 +7265,202 @@ async def panel_cluster():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("Asignación por Cluster", contenido, "cluster", icono="bolt"))
+
+
+# ------------------------------------------------------------
+# REPORTE DE LOTE – bitácora de trabajo/problemas por unidad,
+# agrupada por lote, con envío al administrador y exportación a Excel.
+# ------------------------------------------------------------
+@router.get("/app/reporte-lote", response_class=HTMLResponse)
+async def panel_reporte_lote():
+    contenido = """
+    <script> if (window.role !== 'admin' && window.role !== 'lider') { window.location.href = '/app/mis-tareas'; } </script>
+    <div id="vistaLider" style="display:none;">
+        <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:16px; margin-bottom:16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+            <label style="font-weight:500; color:var(--color-text-primary);">📦 Lote:</label>
+            <select id="selectLote" style="min-width:220px;" onchange="cargarUnidadesLote()">
+                <option value="">Selecciona un lote…</option>
+            </select>
+            <span id="loteInfo" style="font-size:12px; color:var(--color-text-secondary);"></span>
+        </div>
+
+        <div id="listaUnidadesLote" style="display:flex; flex-direction:column; gap:10px;"></div>
+
+        <div id="barraEnviar" style="display:none; margin-top:20px; background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+            <div id="resumenBorrador" style="font-size:13px; color:var(--color-text-secondary);"></div>
+            <button onclick="enviarReporteLote()" style="padding:12px 28px; font-size:0.95rem; font-weight:600; background:linear-gradient(135deg,var(--carrier-blue),var(--carrier-accent)); color:white; border:none; border-radius:10px; cursor:pointer;">📤 Enviar reporte al administrador</button>
+        </div>
+
+        <div id="confirmacionEnvio" style="display:none; margin-top:20px; background:var(--color-background-secondary); border-radius:var(--border-radius-lg); padding:20px; text-align:center;">
+            <div style="font-size:16px; font-weight:600; color:var(--color-text-primary); margin-bottom:12px;">✅ Reporte enviado al administrador</div>
+            <button id="btnExportarUltimo" style="padding:10px 24px; font-weight:600; background:var(--carrier-blue); color:white; border:none; border-radius:8px; cursor:pointer;">📊 Exportar a Excel (para compartir por WhatsApp)</button>
+        </div>
+    </div>
+
+    <div id="vistaAdmin" style="display:none;">
+        <div style="font-weight:500; margin-bottom:12px; color:var(--color-text-primary);">📬 Reportes recibidos de los líderes</div>
+        <div id="listaEnvios" style="display:flex; flex-direction:column; gap:8px;"></div>
+    </div>
+
+    <script>
+        const fetchAuth = window.fetchAuth;
+        const esAdmin = window.role === 'admin';
+        let ultimoEnvioId = null;
+
+        function escapeHtml(s) {
+            const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML;
+        }
+
+        // ── VISTA LÍDER ──────────────────────────────────────────────
+        async function cargarLotes() {
+            const res = await fetchAuth('/api/reportes-unidad/lotes');
+            if (!res.ok) return;
+            const lotes = await res.json();
+            const sel = document.getElementById('selectLote');
+            lotes.forEach(l => {
+                const opt = document.createElement('option');
+                opt.value = l.id_lote;
+                opt.textContent = `${l.id_lote} (${l.total_unidades} unidades)`;
+                sel.appendChild(opt);
+            });
+        }
+
+        function entradaHtml(e) {
+            const icono = e.tipo === 'problema' ? '⚠️' : '✅';
+            const color = e.tipo === 'problema' ? '#c0392b' : '#1a7a4a';
+            const hora = e.created_at ? new Date(e.created_at).toLocaleString('es-MX', {hour:'2-digit', minute:'2-digit', day:'2-digit', month:'2-digit'}) : '';
+            return `<div style="border-left:3px solid ${color}; padding:6px 10px; font-size:13px; background:var(--color-background-secondary); border-radius:6px; margin-bottom:6px;">
+                <b>${icono} ${e.tipo === 'problema' ? 'Problema' : 'Trabajo realizado'}</b> — ${escapeHtml(e.detalle)}
+                <div style="font-size:11px; color:var(--color-text-secondary); margin-top:2px;">${hora}${e.enviado ? ' · enviado' : ' · borrador'}</div>
+            </div>`;
+        }
+
+        function unidadCardHtml(u) {
+            const entradas = (u.entradas || []).map(entradaHtml).join('');
+            return `<div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:14px;">
+                <div style="font-weight:600; color:var(--color-text-primary); margin-bottom:8px;">🚛 ${escapeHtml(u.unit_number)} ${u.reefer_model ? '· ' + escapeHtml(u.reefer_model) : ''}</div>
+                <div id="entradas-${escapeHtml(u.unit_number)}">${entradas}</div>
+                <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; align-items:flex-start;">
+                    <select id="tipo-${escapeHtml(u.unit_number)}" style="width:150px; margin-bottom:0;">
+                        <option value="trabajo">✅ Trabajo realizado</option>
+                        <option value="problema">⚠️ Problema</option>
+                    </select>
+                    <textarea id="detalle-${escapeHtml(u.unit_number)}" placeholder="Describe lo que se hizo o el problema encontrado…" style="flex:1; min-width:220px; min-height:38px; margin-bottom:0; resize:vertical;"></textarea>
+                    <button onclick="agregarEntrada('${escapeHtml(u.unit_number)}')" style="padding:8px 16px; font-size:13px;">Agregar</button>
+                </div>
+            </div>`;
+        }
+
+        async function cargarUnidadesLote() {
+            const id_lote = document.getElementById('selectLote').value;
+            document.getElementById('confirmacionEnvio').style.display = 'none';
+            if (!id_lote) {
+                document.getElementById('listaUnidadesLote').innerHTML = '';
+                document.getElementById('barraEnviar').style.display = 'none';
+                return;
+            }
+            const res = await fetchAuth('/api/reportes-unidad/lote/' + encodeURIComponent(id_lote) + '/unidades');
+            if (!res.ok) {
+                const err = await res.json().catch(()=>({}));
+                document.getElementById('listaUnidadesLote').innerHTML = `<div style="color:#c0392b;">${err.detail || 'No se pudo cargar el lote'}</div>`;
+                document.getElementById('barraEnviar').style.display = 'none';
+                return;
+            }
+            const data = await res.json();
+            document.getElementById('listaUnidadesLote').innerHTML = data.unidades.map(unidadCardHtml).join('');
+            actualizarResumenBorrador(data.unidades);
+        }
+
+        function actualizarResumenBorrador(unidades) {
+            let totalBorrador = 0, totalProblemas = 0;
+            unidades.forEach(u => (u.entradas || []).forEach(e => { if (!e.enviado) { totalBorrador++; if (e.tipo === 'problema') totalProblemas++; } }));
+            document.getElementById('barraEnviar').style.display = totalBorrador > 0 ? 'flex' : 'none';
+            document.getElementById('resumenBorrador').textContent = `${totalBorrador} entrada(s) sin enviar · ${totalProblemas} problema(s)`;
+        }
+
+        async function agregarEntrada(unit_number) {
+            const id_lote = document.getElementById('selectLote').value;
+            const tipo = document.getElementById('tipo-' + unit_number).value;
+            const detalle = document.getElementById('detalle-' + unit_number).value.trim();
+            if (!detalle) { alert('Escribe el detalle antes de agregar.'); return; }
+            const res = await fetchAuth('/api/reportes-unidad/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id_lote, unit_number, tipo, detalle })
+            });
+            if (res.ok) {
+                cargarUnidadesLote();
+            } else {
+                const err = await res.json().catch(()=>({}));
+                alert(err.detail || 'No se pudo guardar la entrada');
+            }
+        }
+
+        async function enviarReporteLote() {
+            const id_lote = document.getElementById('selectLote').value;
+            if (!confirm('¿Enviar el reporte de este lote al administrador?')) return;
+            const res = await fetchAuth('/api/reportes-unidad/enviar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id_lote })
+            });
+            if (res.ok) {
+                const d = await res.json();
+                ultimoEnvioId = d.envio_id;
+                document.getElementById('confirmacionEnvio').style.display = 'block';
+                document.getElementById('barraEnviar').style.display = 'none';
+                cargarUnidadesLote();
+            } else {
+                const err = await res.json().catch(()=>({}));
+                alert(err.detail || 'No se pudo enviar el reporte');
+            }
+        }
+
+        document.getElementById('btnExportarUltimo')?.addEventListener('click', () => exportarEnvio(() => ultimoEnvioId));
+
+        async function exportarEnvio(getId) {
+            const id = typeof getId === 'function' ? getId() : getId;
+            if (!id) return;
+            const res = await fetchAuth('/api/reportes-unidad/envio/' + id + '/excel');
+            if (!res.ok) { alert('No se pudo generar el Excel'); return; }
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `reporte_lote_${id}.xlsx`; a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // ── VISTA ADMIN ──────────────────────────────────────────────
+        async function cargarEnvios() {
+            const res = await fetchAuth('/api/reportes-unidad/envios');
+            if (!res.ok) return;
+            const envios = await res.json();
+            const cont = document.getElementById('listaEnvios');
+            if (!envios.length) {
+                cont.innerHTML = '<div style="color:var(--color-text-secondary);">Aún no hay reportes enviados.</div>';
+                return;
+            }
+            cont.innerHTML = envios.map(e => `
+                <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                    <div>
+                        <div style="font-weight:600; color:var(--color-text-primary);">📦 Lote ${escapeHtml(e.id_lote)} — ${escapeHtml(e.nombre_lider)}</div>
+                        <div style="font-size:12px; color:var(--color-text-secondary);">${e.fecha} · ${e.total_unidades} unidad(es) · ${e.total_problemas} problema(s)</div>
+                    </div>
+                    <button onclick="exportarEnvio(${e.id})" style="padding:8px 16px; font-size:13px; background:var(--carrier-blue); color:white; border:none; border-radius:8px; cursor:pointer;">📊 Descargar Excel</button>
+                </div>
+            `).join('');
+        }
+
+        if (esAdmin) {
+            document.getElementById('vistaAdmin').style.display = 'block';
+            cargarEnvios();
+        } else {
+            document.getElementById('vistaLider').style.display = 'block';
+            cargarLotes();
+        }
+    </script>
+    """
+    return HTMLResponse(content=pagina_con_menu("Reporte de Lote", contenido, "reporte-lote", icono="clipboard-list"))
 
 
 # ------------------------------------------------------------
