@@ -7431,6 +7431,29 @@ async def panel_reporte_lote():
         }
 
         // ── VISTA ADMIN ──────────────────────────────────────────────
+        function entradaDetalleHtml(e) {
+            const icono = e.tipo === 'problema' ? '⚠️' : '✅';
+            const color = e.tipo === 'problema' ? '#c0392b' : '#1a7a4a';
+            const hora = e.created_at ? new Date(e.created_at).toLocaleString('es-MX', {hour:'2-digit', minute:'2-digit', day:'2-digit', month:'2-digit'}) : '';
+            return `<div style="border-left:3px solid ${color}; padding:6px 10px; font-size:13px; background:var(--color-background-secondary); border-radius:6px; margin-bottom:6px;">
+                <b>🚛 ${escapeHtml(e.unit_number)}</b> — ${icono} ${e.tipo === 'problema' ? 'Problema' : 'Trabajo realizado'}: ${escapeHtml(e.detalle)}
+                <div style="font-size:11px; color:var(--color-text-secondary); margin-top:2px;">${hora}</div>
+            </div>`;
+        }
+
+        async function verDetalleEnvio(envioId, contenedorId) {
+            const cont = document.getElementById(contenedorId);
+            if (cont.dataset.cargado === '1') return;
+            cont.innerHTML = '<div style="font-size:12px; color:var(--color-text-secondary);">Cargando…</div>';
+            const res = await fetchAuth('/api/reportes-unidad/envio/' + envioId);
+            if (!res.ok) { cont.innerHTML = '<div style="color:#c0392b;">No se pudo cargar el detalle</div>'; return; }
+            const data = await res.json();
+            cont.innerHTML = data.entradas.length
+                ? data.entradas.map(entradaDetalleHtml).join('')
+                : '<div style="color:var(--color-text-secondary);">Sin entradas</div>';
+            cont.dataset.cargado = '1';
+        }
+
         async function cargarEnvios() {
             const res = await fetchAuth('/api/reportes-unidad/envios');
             if (!res.ok) return;
@@ -7441,13 +7464,16 @@ async def panel_reporte_lote():
                 return;
             }
             cont.innerHTML = envios.map(e => `
-                <div style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-                    <div>
-                        <div style="font-weight:600; color:var(--color-text-primary);">📦 Lote ${escapeHtml(e.id_lote)} — ${escapeHtml(e.nombre_lider)}</div>
-                        <div style="font-size:12px; color:var(--color-text-secondary);">${e.fecha} · ${e.total_unidades} unidad(es) · ${e.total_problemas} problema(s)</div>
-                    </div>
-                    <button onclick="exportarEnvio(${e.id})" style="padding:8px 16px; font-size:13px; background:var(--carrier-blue); color:white; border:none; border-radius:8px; cursor:pointer;">📊 Descargar Excel</button>
-                </div>
+                <details style="background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:14px;" ontoggle="if(this.open) verDetalleEnvio(${e.id}, 'detalle-envio-${e.id}')">
+                    <summary style="cursor:pointer; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; list-style:none;">
+                        <div>
+                            <div style="font-weight:600; color:var(--color-text-primary);">📦 Lote ${escapeHtml(e.id_lote)} — ${escapeHtml(e.nombre_lider)}</div>
+                            <div style="font-size:12px; color:var(--color-text-secondary);">${e.fecha} · ${e.total_unidades} unidad(es) · ${e.total_problemas} problema(s)</div>
+                        </div>
+                        <button onclick="event.preventDefault(); event.stopPropagation(); exportarEnvio(${e.id})" style="padding:8px 16px; font-size:13px; background:var(--carrier-blue); color:white; border:none; border-radius:8px; cursor:pointer;">📊 Descargar Excel</button>
+                    </summary>
+                    <div id="detalle-envio-${e.id}" style="margin-top:12px; padding-top:12px; border-top:0.5px solid var(--color-border-tertiary);"></div>
+                </details>
             `).join('');
         }
 
