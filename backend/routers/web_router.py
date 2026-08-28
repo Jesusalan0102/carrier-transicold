@@ -379,7 +379,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/asignaciones', icon: 'target-arrow', label: 'Control de asignaciones' }},
                     {{ href: '/app/mis-tareas', icon: 'circle-check', label: 'Mis tareas asignadas' }},
                     {{ href: '/app/tickets', icon: 'ticket', label: 'Tickets' }},
-                    {{ href: '/app/admin', icon: 'camera', label: 'Evidencias' }},
+                    {{ href: '/app/admin', icon: 'settings', label: 'Panel de administración' }},
                     {{ href: '/app/cluster', icon: 'bolt', label: 'Asignación por cluster' }},
                     {{ href: '/app/checkin', icon: 'map-pin', label: 'Registrar asistencia' }},
                     {{ href: '/app/juegos', icon: 'device-gamepad-2', label: 'Juegos' }},
@@ -3534,14 +3534,13 @@ async def admin():
       </div>
 
       <script>
-        // Los líderes solo pueden ver la galería de evidencias en este panel;
-        // el resto de pestañas (usuarios, unidades, SQL, lotes) sigue siendo admin-only.
+        // Los líderes pueden ver Actividades, Unidades y Evidencias en este panel;
+        // Usuarios, SQL Directo y Lotes siguen siendo admin-only.
         if (window.role === 'lider') {
-          ['usuarios', 'unidades', 'sql', 'lotes'].forEach(s => {
+          ['usuarios', 'sql', 'lotes'].forEach(s => {
             const tabBtn = document.getElementById('tab-' + s);
             if (tabBtn) tabBtn.style.display = 'none';
           });
-          document.addEventListener('DOMContentLoaded', () => { if (typeof showTab === 'function') showTab('evidencias'); });
         }
       </script>
 

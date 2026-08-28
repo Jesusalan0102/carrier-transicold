@@ -668,8 +668,8 @@ def actualizar_series(data: SeriesUpdate, current_user=Depends(verify_token)):
 # PUT /api/unidades/{unidad_id}
 @router.put("/{unidad_id}")
 def editar_unidad(unidad_id: int, unidad: UnidadCreate, current_user=Depends(verify_token)):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if current_user["role"] not in ("admin", "lider"):
+        raise HTTPException(status_code=403, detail="Solo administradores o líderes")
 
     actual = execute_read("SELECT unit_number FROM unidades WHERE id=%s", (unidad_id,))
     if not actual:
@@ -753,8 +753,8 @@ def homologar_unidad(numero_anterior: str, numero_correcto: str, current_user=De
 # DELETE /api/unidades/{unidad_id}
 @router.delete("/{unidad_id}")
 def eliminar_unidad(unidad_id: int, current_user=Depends(verify_token)):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if current_user["role"] not in ("admin", "lider"):
+        raise HTTPException(status_code=403, detail="Solo administradores o líderes")
     unidad = execute_read("SELECT unit_number FROM unidades WHERE id=%s", (unidad_id,))
     if not unidad:
         raise HTTPException(status_code=404, detail="Unidad no encontrada")
