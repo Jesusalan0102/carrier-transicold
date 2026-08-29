@@ -1094,7 +1094,10 @@ async def dashboard():
                 <p style="color:var(--text-secondary);">Cargando…</p>
             </div>
 
-            <h4 style="margin:22px 0 8px; font-size:0.95rem;"><i class="ti ti-trophy" aria-hidden="true" style="vertical-align:-3px;margin-right:6px;"></i>Score final ponderado (0-100)</h4>
+            <h4 style="margin:22px 0 8px; font-size:0.95rem; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+                <span><i class="ti ti-trophy" aria-hidden="true" style="vertical-align:-3px;margin-right:6px;"></i>Score final ponderado (0-100)</span>
+                <button onclick="exportarKpiScore()" style="padding:8px 16px; font-size:13px; font-weight:600; background:var(--carrier-blue); color:white; border:none; border-radius:8px; cursor:pointer;">📊 Exportar reporte</button>
+            </h4>
             <div id="kpiScoreTabla" style="overflow-x:auto;">
                 <p style="color:var(--text-secondary);">Cargando…</p>
             </div>
@@ -1155,7 +1158,7 @@ async def dashboard():
     </div><!-- /tab-panels-wrap -->
 
     <script>
-        const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series','Extra Eléctrico','Extra Soldador'];
+        const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series','Extra Eléctrico','Extra Soldador','Retrabajo Eléctrico','Retrabajo Soldador'];
         const camposSeries = {vin_number:'VIN Number',reefer_serial:'Serie Reefer',reefer_model:'Modelo Reefer',evaporator_model_1:'Evap. 1 Modelo',evaporator_serial_mjs11:'Evap. 1 Serie',evaporator_model_2:'Evap. 2 Modelo',evaporator_serial_mjd22:'Evap. 2 Serie',engine_serial:'Motor',compressor_serial:'Compresor',generator_serial:'Generador',battery_charger_serial:'Cargador Bat.'};
 
         // ── Contador en vivo de horas 'Corriendo' (se refresca cada segundo) ──
@@ -1690,6 +1693,19 @@ async def dashboard():
             } catch (e) {
                 cont.innerHTML = '<p style="color:var(--carrier-danger);">Error al calcular el score.</p>';
             }
+        }
+
+        async function exportarKpiScore() {
+            const periodo = document.getElementById('kpiCustomPeriodo').value.trim();
+            const dias = document.getElementById('kpiTecnicoDias').value;
+            if (!periodo) { alert('Ingresa un periodo primero (ej. 2026-08).'); return; }
+            const res = await window.fetchAuth(`/api/dashboard/kpis_score/exportar?dias=${dias}&periodo=${encodeURIComponent(periodo)}`);
+            if (!res.ok) { alert('No se pudo generar el reporte.'); return; }
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `kpi_score_${periodo}.xlsx`; a.click();
+            URL.revokeObjectURL(url);
         }
 
         function _toggleNmRango() {
@@ -2275,7 +2291,7 @@ async def asignaciones():
     </form>
     <script>
         const fetchAuth = window.fetchAuth;
-        const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series','Extra Eléctrico','Extra Soldador'];
+        const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series','Extra Eléctrico','Extra Soldador','Retrabajo Eléctrico','Retrabajo Soldador'];
         document.getElementById('unidad').addEventListener('change', () => document.getElementById('msgAsignacion').innerHTML = '');
         document.getElementById('tecnico').addEventListener('change', () => document.getElementById('msgAsignacion').innerHTML = '');
         document.getElementById('actividad').addEventListener('change', () => document.getElementById('msgAsignacion').innerHTML = '');
@@ -5113,7 +5129,7 @@ async def solicitud():
         async function cargarOpciones() {
             const unidadesRes = await fetchAuth('/api/unidades/'); const unidades = await unidadesRes.json();
             document.getElementById('unidad').innerHTML = '<option value="">Unidad</option>' + (Array.isArray(unidades) ? unidades.map(u => `<option value="${u.unit_number}">${u.unit_number} (${u.id_lote})</option>`).join('') : '');
-            document.getElementById('actividad').innerHTML = '<option value="">Actividad</option>' + ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series','Extra Eléctrico','Extra Soldador'].map(a => `<option value="${a}">${a}</option>`).join('');
+            document.getElementById('actividad').innerHTML = '<option value="">Actividad</option>' + ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series','Extra Eléctrico','Extra Soldador','Retrabajo Eléctrico','Retrabajo Soldador'].map(a => `<option value="${a}">${a}</option>`).join('');
             const histRes = await fetchAuth('/api/asignaciones/?tecnico=' + username + '&limit=20'); const historial = await histRes.json();
             let hHtml = '';
             if (Array.isArray(historial)) historial.forEach(h => { const color = h.estado === 'solicitado' ? '#fef9c3' : h.estado === 'pendiente' ? '#fff7ed' : h.estado === 'en_proceso' ? '#eff6ff' : '#f0fdf4'; const borderColor = h.estado === 'solicitado' ? '#854d0e' : h.estado === 'pendiente' ? '#9a3412' : h.estado === 'en_proceso' ? '#1e40af' : '#166534'; hHtml += `<div style="background:${color};border-left:4px solid ${borderColor};padding:10px 16px;margin-bottom:6px;border-radius:8px;"><b>${h.actividad_id}</b> — Unidad: ${h.unidad} · ${h.estado}</div>`; });

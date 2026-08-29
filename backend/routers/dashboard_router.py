@@ -815,6 +815,64 @@ def kpi_score_final(dias: int = 30, periodo: str = Query(...), current_user: dic
     )
     scores_asistencia_por_tecnico = {f["tecnico"]: float(f["score"]) for f in filas_asistencia}
 
+    # ── Calidad / Retrabajos: penaliza a quien hizo el trabajo original ────
+    # de una unidad si después se completa un "Retrabajo Eléctrico" o
+    # "Retrabajo Soldador" sobre esa misma unidad. La ventana `dias` limita
+    # qué retrabajos cuentan y cuánto trabajo original reciente se usa como
+    # base de comparación; a quién se le atribuye el retrabajo se busca en
+    # todo el historial (el cableado pudo haberse hecho antes de la ventana).
+    ELECTRICO_ACTS = ("Cableado", "Programación", "Extra Eléctrico")
+    SOLDADOR_ACTS = ("Soldadura", "Check de fugas", "Extra Soldador")
+
+    def _unidades_trabajadas_por_tecnico(actividades):
+        ph = ",".join(["%s"] * len(actividades))
+        filas = execute_read(
+            f"SELECT tecnico, COUNT(DISTINCT unidad) AS c FROM asignaciones "
+            f"WHERE estado='completada' AND actividad_id IN ({ph}) "
+            f"AND fecha_fin >= DATE_SUB(NOW(), INTERVAL %s DAY) GROUP BY tecnico",
+            tuple(list(actividades) + [dias])
+        ) or []
+        return {f["tecnico"]: f["c"] for f in filas}
+
+    unidades_electrico_por_tecnico = _unidades_trabajadas_por_tecnico(ELECTRICO_ACTS)
+    unidades_soldador_por_tecnico = _unidades_trabajadas_por_tecnico(SOLDADOR_ACTS)
+
+    def _responsables_originales(unidad, actividades):
+        ph = ",".join(["%s"] * len(actividades))
+        filas = execute_read(
+            f"SELECT DISTINCT tecnico FROM asignaciones WHERE unidad=%s AND estado='completada' "
+            f"AND actividad_id IN ({ph})",
+            tuple([unidad] + list(actividades))
+        ) or []
+        return [f["tecnico"] for f in filas]
+
+    def _retrabajos_atribuidos(actividad_retrabajo, actividades_originales):
+        filas = execute_read(
+            "SELECT unidad FROM asignaciones WHERE estado='completada' AND actividad_id=%s "
+            "AND fecha_fin >= DATE_SUB(NOW(), INTERVAL %s DAY)",
+            (actividad_retrabajo, dias)
+        ) or []
+        atribuidos = {}
+        for f in filas:
+            for t in _responsables_originales(f["unidad"], actividades_originales):
+                atribuidos[t] = atribuidos.get(t, 0) + 1
+        return atribuidos
+
+    retrabajos_electrico_por_tecnico = _retrabajos_atribuidos("Retrabajo Eléctrico", ELECTRICO_ACTS)
+    retrabajos_soldador_por_tecnico = _retrabajos_atribuidos("Retrabajo Soldador", SOLDADOR_ACTS)
+
+    scores_calidad_por_tecnico = {}
+    valores_crudos_calidad = {}
+    for t in tecnicos:
+        u = t["username"]
+        unidades = unidades_electrico_por_tecnico.get(u, 0) + unidades_soldador_por_tecnico.get(u, 0)
+        retrabajos = retrabajos_electrico_por_tecnico.get(u, 0) + retrabajos_soldador_por_tecnico.get(u, 0)
+        if unidades == 0 and retrabajos == 0:
+            continue  # sin trabajo original ni retrabajos en la ventana — sin dato
+        base = max(unidades, 1)
+        scores_calidad_por_tecnico[u] = max(0.0, 100 - (retrabajos / base * 100))
+        valores_crudos_calidad[u] = retrabajos
+
     # ── Valores manuales del periodo ────────────────────────────────────────
     valores_manuales = execute_read(
         "SELECT metrica_id, tecnico, valor FROM kpis_custom_valores WHERE periodo = %s", (periodo,)
@@ -838,6 +896,9 @@ def kpi_score_final(dias: int = 30, periodo: str = Query(...), current_user: dic
             elif m["clave_automatica"] == "automatica_asistencia":
                 valor_crudo = scores_asistencia_por_tecnico.get(username)
                 score = valor_crudo
+            elif m["clave_automatica"] == "automatica_calidad_retrabajo":
+                valor_crudo = valores_crudos_calidad.get(username)
+                score = scores_calidad_por_tecnico.get(username)
             else:
                 valor_crudo = mapa_manuales.get((m["id"], username))
                 score = _score_manual(valor_crudo, m["tipo_evaluacion"], m["valor_min"], m["valor_max"])
@@ -877,3 +938,170 @@ def kpi_score_final(dias: int = 30, periodo: str = Query(...), current_user: dic
             f"Los pesos de las métricas activas suman {suma_pesos}%, no 100% — el score se re-normaliza pero revisa tu configuración.",
         "tecnicos": resultado_tecnicos,
     }
+
+
+# ── Exportar el score de KPIs a Excel, con el desglose de cómo se calculó ──
+@router.get("/kpis_score/exportar")
+def exportar_kpi_score(dias: int = 30, periodo: str = Query(...), current_user: dict = Depends(verify_token)):
+    if current_user["role"] not in ("admin", "lider"):
+        raise HTTPException(status_code=403, detail="Solo administradores y líderes")
+
+    data = kpi_score_final(dias=dias, periodo=periodo, current_user=current_user)
+
+    try:
+        import openpyxl
+        from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+    except ImportError:
+        raise RuntimeError("openpyxl no instalado. Agrega 'openpyxl' a requirements.txt")
+
+    THIN = Side(style="thin", color="BFBFBF")
+    BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
+    HDR_FILL = PatternFill("solid", start_color="1F4E79")
+    HDR_FONT = Font(bold=True, color="FFFFFF", name="Arial", size=10)
+    HDR_ALIGN = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    BODY_FONT = Font(name="Arial", size=9)
+    TITLE_FONT = Font(bold=True, color="FFFFFF", name="Arial", size=14)
+
+    wb = openpyxl.Workbook()
+
+    # ── Hoja 1: Resumen — score final por técnico ───────────────────────────
+    ws = wb.active
+    ws.title = "Resumen"
+    ws.merge_cells("A1:D1")
+    ws["A1"] = f"KPI SCORE — Periodo {data['periodo']}  ·  ventana automática: últimos {data['dias']} días"
+    ws["A1"].fill = HDR_FILL
+    ws["A1"].font = TITLE_FONT
+    ws["A1"].alignment = HDR_ALIGN
+    ws.row_dimensions[1].height = 28
+
+    if data.get("advertencia"):
+        ws.merge_cells("A2:D2")
+        ws["A2"] = f"⚠️ {data['advertencia']}"
+        ws["A2"].font = Font(italic=True, color="B45309", name="Arial", size=9)
+
+    fila = 4
+    encabezados = ["Técnico", "Score final (0-100)", "% de peso con datos", "Métricas evaluadas"]
+    for col, h in enumerate(encabezados, 1):
+        c = ws.cell(fila, col, h)
+        c.fill = HDR_FILL
+        c.font = HDR_FONT
+        c.alignment = HDR_ALIGN
+        c.border = BORDER
+    fila += 1
+    for t in data["tecnicos"]:
+        ws.cell(fila, 1, t["tecnico_display"]).font = BODY_FONT
+        cscore = ws.cell(fila, 2, t["score_final"] if t["score_final"] is not None else "Sin datos")
+        cscore.font = Font(bold=True, name="Arial", size=11, color=(
+            "1A7A4A" if (t["score_final"] or 0) >= 90 else
+            "B45309" if (t["score_final"] or 0) >= 70 else "C0392B"
+        ) if t["score_final"] is not None else "808080")
+        cscore.alignment = Alignment(horizontal="center")
+        ws.cell(fila, 3, f"{t['peso_con_datos']}%").alignment = Alignment(horizontal="center")
+        ws.cell(fila, 4, len(t["detalle"])).alignment = Alignment(horizontal="center")
+        for col in range(1, 5):
+            ws.cell(fila, col).border = BORDER
+        fila += 1
+    ws.column_dimensions["A"].width = 28
+    ws.column_dimensions["B"].width = 20
+    ws.column_dimensions["C"].width = 20
+    ws.column_dimensions["D"].width = 20
+
+    # ── Hoja 2: Desglose — cómo se calculó cada score, métrica por métrica ──
+    ws2 = wb.create_sheet("Desglose del cálculo")
+    ws2.merge_cells("A1:F1")
+    ws2["A1"] = "CÓMO SE OBTUVO CADA SCORE (métrica por métrica)"
+    ws2["A1"].fill = HDR_FILL
+    ws2["A1"].font = TITLE_FONT
+    ws2["A1"].alignment = HDR_ALIGN
+    ws2.row_dimensions[1].height = 26
+
+    fila2 = 3
+    encabezados2 = ["Técnico", "Métrica", "Valor crudo", "Unidad", "Score (0-100)", "Peso", "Aporte al score final"]
+    for col, h in enumerate(encabezados2, 1):
+        c = ws2.cell(fila2, col, h)
+        c.fill = HDR_FILL
+        c.font = HDR_FONT
+        c.alignment = HDR_ALIGN
+        c.border = BORDER
+    fila2 += 1
+    for t in data["tecnicos"]:
+        if not t["detalle"]:
+            ws2.cell(fila2, 1, t["tecnico_display"]).font = BODY_FONT
+            ws2.cell(fila2, 2, "Sin métricas con dato en este periodo/ventana").font = Font(italic=True, color="808080", name="Arial", size=9)
+            for col in range(1, 8):
+                ws2.cell(fila2, col).border = BORDER
+            fila2 += 1
+            continue
+        for d in t["detalle"]:
+            ws2.cell(fila2, 1, t["tecnico_display"]).font = BODY_FONT
+            ws2.cell(fila2, 2, d["metrica"]).font = BODY_FONT
+            ws2.cell(fila2, 3, d["valor_crudo"]).font = BODY_FONT
+            ws2.cell(fila2, 4, d["unidad"] or "").font = BODY_FONT
+            ws2.cell(fila2, 5, d["score"]).font = BODY_FONT
+            ws2.cell(fila2, 6, f"{d['peso']}%").font = BODY_FONT
+            ws2.cell(fila2, 7, d["aporte"]).font = BODY_FONT
+            for col in range(1, 8):
+                ws2.cell(fila2, col).border = BORDER
+                ws2.cell(fila2, col).alignment = Alignment(vertical="center")
+            fila2 += 1
+    for col, w in zip("ABCDEFG", [26, 26, 14, 12, 14, 10, 18]):
+        ws2.column_dimensions[col].width = w
+    ws2.freeze_panes = "A4"
+
+    # ── Hoja 3: Metodología — explicación de cómo se calcula cada métrica ──
+    ws3 = wb.create_sheet("Metodología")
+    ws3.merge_cells("A1:B1")
+    ws3["A1"] = "METODOLOGÍA DE CÁLCULO"
+    ws3["A1"].fill = HDR_FILL
+    ws3["A1"].font = TITLE_FONT
+    ws3["A1"].alignment = HDR_ALIGN
+    ws3.row_dimensions[1].height = 26
+
+    explicaciones = [
+        ("Tiempo / SLA (automática)",
+         f"Por cada actividad completada en los últimos {dias} días, se compara el tiempo real contra el tiempo "
+         "estimado. Si el técnico terminó a tiempo o antes, esa actividad vale 100 puntos; si se pasó, pierde "
+         "puntos proporcionalmente al porcentaje que se excedió. El score de la métrica es el promedio de todas "
+         "sus actividades en la ventana."),
+        ("Reporte adjunto (automática)",
+         f"De los tickets con reporte enviado en los últimos {dias} días, qué porcentaje además tiene un archivo "
+         "de reporte adjunto. 100% = siempre adjuntó archivo."),
+        ("Asistencia (automática)",
+         f"De los checados de entrada en los últimos {dias} días, qué porcentaje NO tuvo retardo. "
+         "100% = nunca llegó tarde."),
+        ("Calidad / Retrabajos (automática)",
+         f"Si en los últimos {dias} días se completa un 'Retrabajo Eléctrico' o 'Retrabajo Soldador' sobre una "
+         "unidad, se busca en todo el historial quién hizo el trabajo original de esa especialidad en esa "
+         "unidad (Cableado/Programación/Extra Eléctrico para eléctrico; Soldadura/Check de fugas/Extra "
+         "Soldador para soldador) y se le atribuye el retrabajo. El score es 100 menos el % de retrabajos "
+         "atribuidos sobre las unidades que ese técnico trabajó en la ventana (mínimo 1 unidad para no dividir "
+         "entre cero)."),
+        ("Métricas manuales",
+         "Capturadas a mano por el admin/líder para el periodo seleccionado. 'Directo' usa el valor tal cual "
+         "(0-100). 'Rango' convierte el valor a un porcentaje entre un mínimo y un máximo configurados. "
+         "'Rango invertido' hace lo mismo pero invertido (útil cuando un valor más bajo es mejor, ej. quejas)."),
+        ("Score final ponderado",
+         "Cada métrica aporta (score de la métrica × su peso%) / 100. Se suman los aportes de las métricas que "
+         "SÍ tuvieron dato para ese técnico, y se dividen entre la suma de esos pesos (no entre 100), para no "
+         "castigar a un técnico por falta de datos en una métrica en vez de por desempeño."),
+    ]
+    fila3 = 3
+    for titulo, texto in explicaciones:
+        ws3.cell(fila3, 1, titulo).font = Font(bold=True, name="Arial", size=10, color="1F4E79")
+        ws3.merge_cells(start_row=fila3, start_column=1, end_row=fila3, end_column=1)
+        ws3.cell(fila3 + 1, 1, texto).font = Font(name="Arial", size=9)
+        ws3.cell(fila3 + 1, 1).alignment = Alignment(wrap_text=True, vertical="top")
+        ws3.merge_cells(start_row=fila3 + 1, start_column=1, end_row=fila3 + 1, end_column=2)
+        ws3.row_dimensions[fila3 + 1].height = 60
+        fila3 += 3
+    ws3.column_dimensions["A"].width = 90
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    nombre_archivo = f"kpi_score_{data['periodo']}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{nombre_archivo}"'}
+    )

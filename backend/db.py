@@ -704,6 +704,7 @@ def _run_migrations():
                     "Standby", "GPS", "Corriendo", "Inspección",
                     "Accesorios", "Toma de Valores", "Evidencia", "Toma de Series",
                     "Extra Eléctrico", "Extra Soldador",
+                    "Retrabajo Eléctrico", "Retrabajo Soldador",
                 ]
                 for nombre in actividades_default:
                     cur.execute(
@@ -784,6 +785,10 @@ def _run_migrations():
                      "% de tickets cerrados que traen reporte adjunto."),
                     ("Puntualidad / asistencia", "%", "automatica_asistencia",
                      "100 menos el % de check-ins con tardanza."),
+                    ("Calidad / Retrabajos", "retrabajos", "automatica_calidad_retrabajo",
+                     "Penaliza al técnico que hizo el trabajo original de una unidad (cableado/programación "
+                     "para eléctrico, soldadura/check de fugas para soldador) si después se completa un "
+                     "retrabajo de esa unidad."),
                 ]
                 for nombre, unidad, clave, descripcion in metricas_automaticas:
                     cur.execute(
