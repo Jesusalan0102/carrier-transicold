@@ -7460,13 +7460,13 @@ async def panel_reporte_lote():
             const data = await res.json();
             const e = data.envio, entradas = data.entradas;
 
-            let texto = `📦 *Reporte de lote ${e.id_lote}* — ${e.nombre_lider}\n📅 ${e.fecha}\n✅ Unidades: ${e.total_unidades}   ⚠️ Problemas: ${e.total_problemas}\n\n`;
+            let texto = `*REPORTE DE LOTE ${e.id_lote}*\nLíder: ${e.nombre_lider}\nFecha: ${e.fecha}\nUnidades: ${e.total_unidades}  |  Problemas: ${e.total_problemas}\n\n*Detalle:*\n`;
             const maxLineas = 25;
             entradas.slice(0, maxLineas).forEach(en => {
-                const icono = en.tipo === 'problema' ? '⚠️' : '✅';
-                texto += `${icono} ${en.unit_number}: ${en.detalle}\n`;
+                const etiqueta = en.tipo === 'problema' ? 'PROBLEMA' : 'OK';
+                texto += `- ${en.unit_number} [${etiqueta}]: ${en.detalle}\n`;
             });
-            if (entradas.length > maxLineas) texto += `\n… y ${entradas.length - maxLineas} entrada(s) más (ver Excel completo)\n`;
+            if (entradas.length > maxLineas) texto += `\n(y ${entradas.length - maxLineas} entrada(s) más — ver Excel completo)\n`;
 
             // Intento 1: compartir el Excel adjunto directo (funciona en apps
             // móviles / PWA instalada con soporte de Web Share API nivel 2).
