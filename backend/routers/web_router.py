@@ -7309,7 +7309,10 @@ async def panel_reporte_lote():
 
         <div id="confirmacionEnvio" style="display:none; margin-top:20px; background:var(--color-background-secondary); border-radius:var(--border-radius-lg); padding:20px; text-align:center;">
             <div style="font-size:16px; font-weight:600; color:var(--color-text-primary); margin-bottom:12px;">✅ Reporte enviado al administrador</div>
-            <button id="btnExportarUltimo" style="padding:10px 24px; font-weight:600; background:var(--carrier-blue); color:white; border:none; border-radius:8px; cursor:pointer;">📊 Exportar a Excel (para compartir por WhatsApp)</button>
+            <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+                <button id="btnExportarUltimo" style="padding:10px 24px; font-weight:600; background:var(--carrier-blue); color:white; border:none; border-radius:8px; cursor:pointer;">📊 Exportar a Excel</button>
+                <button id="btnWhatsappUltimo" style="padding:10px 24px; font-weight:600; background:#25D366; color:white; border:none; border-radius:8px; cursor:pointer;">📲 Compartir por WhatsApp</button>
+            </div>
         </div>
     </div>
 
@@ -7448,6 +7451,41 @@ async def panel_reporte_lote():
         }
 
         document.getElementById('btnExportarUltimo')?.addEventListener('click', () => exportarEnvio(() => ultimoEnvioId));
+        document.getElementById('btnWhatsappUltimo')?.addEventListener('click', () => compartirWhatsApp(ultimoEnvioId));
+
+        async function compartirWhatsApp(envioId) {
+            if (!envioId) return;
+            const res = await fetchAuth('/api/reportes-unidad/envio/' + envioId);
+            if (!res.ok) { alert('No se pudo cargar el reporte'); return; }
+            const data = await res.json();
+            const e = data.envio, entradas = data.entradas;
+
+            let texto = `📦 *Reporte de lote ${e.id_lote}* — ${e.nombre_lider}\n📅 ${e.fecha}\n✅ Unidades: ${e.total_unidades}   ⚠️ Problemas: ${e.total_problemas}\n\n`;
+            const maxLineas = 25;
+            entradas.slice(0, maxLineas).forEach(en => {
+                const icono = en.tipo === 'problema' ? '⚠️' : '✅';
+                texto += `${icono} ${en.unit_number}: ${en.detalle}\n`;
+            });
+            if (entradas.length > maxLineas) texto += `\n… y ${entradas.length - maxLineas} entrada(s) más (ver Excel completo)\n`;
+
+            // Intento 1: compartir el Excel adjunto directo (funciona en apps
+            // móviles / PWA instalada con soporte de Web Share API nivel 2).
+            try {
+                const excelRes = await fetchAuth('/api/reportes-unidad/envio/' + envioId + '/excel');
+                if (excelRes.ok) {
+                    const blob = await excelRes.blob();
+                    const file = new File([blob], `reporte_lote_${e.id_lote}.xlsx`, { type: blob.type });
+                    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                        await navigator.share({ files: [file], title: `Reporte de lote ${e.id_lote}`, text: texto });
+                        return;
+                    }
+                }
+            } catch (err) { /* si el usuario cancela el share, no hacemos nada más */ if (err && err.name === 'AbortError') return; }
+
+            // Fallback: abre WhatsApp con el resumen en texto (sin archivo adjunto,
+            // WhatsApp no permite adjuntar archivos vía enlace).
+            window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
+        }
 
         async function exportarEnvio(getId) {
             const id = typeof getId === 'function' ? getId() : getId;
@@ -7501,7 +7539,10 @@ async def panel_reporte_lote():
                             <div style="font-weight:600; color:var(--color-text-primary);">📦 Lote ${escapeHtml(e.id_lote)} — ${escapeHtml(e.nombre_lider)}</div>
                             <div style="font-size:12px; color:var(--color-text-secondary);">${e.fecha} · ${e.total_unidades} unidad(es) · ${e.total_problemas} problema(s)</div>
                         </div>
-                        <button onclick="event.preventDefault(); event.stopPropagation(); exportarEnvio(${e.id})" style="padding:8px 16px; font-size:13px; background:var(--carrier-blue); color:white; border:none; border-radius:8px; cursor:pointer;">📊 Descargar Excel</button>
+                        <div style="display:flex; gap:8px;">
+                            <button onclick="event.preventDefault(); event.stopPropagation(); exportarEnvio(${e.id})" style="padding:8px 16px; font-size:13px; background:var(--carrier-blue); color:white; border:none; border-radius:8px; cursor:pointer;">📊 Excel</button>
+                            <button onclick="event.preventDefault(); event.stopPropagation(); compartirWhatsApp(${e.id})" style="padding:8px 16px; font-size:13px; background:#25D366; color:white; border:none; border-radius:8px; cursor:pointer;">📲 WhatsApp</button>
+                        </div>
                     </summary>
                     <div id="detalle-envio-${e.id}" style="margin-top:12px; padding-top:12px; border-top:0.5px solid var(--color-border-tertiary);"></div>
                 </details>

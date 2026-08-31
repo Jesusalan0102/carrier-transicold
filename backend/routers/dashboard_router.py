@@ -446,7 +446,7 @@ def get_kpis_tecnico(dias: int = 30, current_user: dict = Depends(verify_token))
                 AS horas_promedio_resolucion
         FROM tickets t
         INNER JOIN asignaciones a ON a.ticket_id = t.id
-        LEFT JOIN users usr ON usr.username = a.tecnico
+        INNER JOIN users usr ON usr.username = a.tecnico
         WHERE t.reporte_enviado = TRUE
           AND t.fecha_reporte >= DATE_SUB(NOW(), INTERVAL %s DAY)
         GROUP BY a.tecnico, usr.nombre_completo
@@ -457,6 +457,9 @@ def get_kpis_tecnico(dias: int = 30, current_user: dict = Depends(verify_token))
 
     # 2. Asistencia vs. tardanzas por técnico en la misma ventana de días.
     #    retardo_min > 0 marca un check-in tarde (ver migración en db.py).
+    #    INNER JOIN a users: si el usuario ya no existe (se borró la cuenta),
+    #    sus registros históricos de asistencia dejan de listarse aquí — ya
+    #    no aparecen como fila "huérfana" duplicando al técnico actual.
     asistencia_por_tecnico = execute_read(
         """
         SELECT
@@ -467,7 +470,7 @@ def get_kpis_tecnico(dias: int = 30, current_user: dict = Depends(verify_token))
             ROUND(AVG(ra.retardo_min), 1) AS retardo_promedio_min,
             ROUND(SUM(ra.retardo_min > 0) / COUNT(*) * 100) AS pct_tardanza
         FROM registros_asistencia ra
-        LEFT JOIN users usr ON usr.username = ra.username
+        INNER JOIN users usr ON usr.username = ra.username
         WHERE ra.tipo = 'entrada'
           AND ra.fecha >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
         GROUP BY ra.username, usr.nombre_completo
