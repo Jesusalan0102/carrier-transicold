@@ -7468,22 +7468,9 @@ async def panel_reporte_lote():
             });
             if (entradas.length > maxLineas) texto += `\n(y ${entradas.length - maxLineas} entrada(s) más — ver Excel completo)\n`;
 
-            // Intento 1: compartir el Excel adjunto directo (funciona en apps
-            // móviles / PWA instalada con soporte de Web Share API nivel 2).
-            try {
-                const excelRes = await fetchAuth('/api/reportes-unidad/envio/' + envioId + '/excel');
-                if (excelRes.ok) {
-                    const blob = await excelRes.blob();
-                    const file = new File([blob], `reporte_lote_${e.id_lote}.xlsx`, { type: blob.type });
-                    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                        await navigator.share({ files: [file], title: `Reporte de lote ${e.id_lote}`, text: texto });
-                        return;
-                    }
-                }
-            } catch (err) { /* si el usuario cancela el share, no hacemos nada más */ if (err && err.name === 'AbortError') return; }
-
-            // Fallback: abre WhatsApp con el resumen en texto (sin archivo adjunto,
-            // WhatsApp no permite adjuntar archivos vía enlace).
+            // Abre WhatsApp con el resumen en texto. WhatsApp no permite
+            // adjuntar archivos vía enlace, así que si necesitas el Excel
+            // úsalo con el botón "Excel" y adjúntalo tú desde ahí.
             window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
         }
 
