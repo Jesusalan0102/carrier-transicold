@@ -387,6 +387,60 @@ def exportar_envio_excel(envio_id: int, current_user=Depends(verify_token)):
     _autofit(ws, min_w=12, max_w=60)
     ws.freeze_panes = "A5"
 
+    # ── Hoja 2: Referencia de Unidades — ficha técnica completa del lote ───
+    # (todas las unidades del lote, no solo las que tuvieron reporte, para
+    # que quede como registro completo de auditoría).
+    unidades_lote = execute_read(
+        "SELECT unit_number, vin_number, reefer_serial, reefer_model, "
+        "evaporator_model_1, evaporator_serial_mjs11, evaporator_model_2, evaporator_serial_mjd22, "
+        "engine_serial, compressor_serial, generator_serial, battery_charger_serial "
+        "FROM unidades WHERE id_lote=%s ORDER BY unit_number",
+        (envio["id_lote"],)
+    ) or []
+
+    ws2 = wb.create_sheet("Referencia de Unidades")
+    titulo2 = ws2.cell(1, 1, f"FICHA TÉCNICA DEL LOTE {envio['id_lote']} — CARRIER TRANSICOLD")
+    titulo2.font = Font(name="Arial", size=13, bold=True, color="FFFFFF")
+    titulo2.fill = PatternFill("solid", start_color=AZUL_CORP, end_color=AZUL_CORP)
+    titulo2.alignment = Alignment(horizontal="center", vertical="center")
+    ws2.merge_cells("A1:L1")
+    ws2.row_dimensions[1].height = 26
+
+    sub2 = ws2.cell(2, 1, f"Registro completo de series de las {len(unidades_lote)} unidad(es) del lote, tal como están capturadas en el sistema.")
+    sub2.font = Font(name="Arial", size=9, italic=True, color="595959")
+    ws2.merge_cells("A2:L2")
+    ws2.append([])
+
+    columnas2 = [
+        "Unidad", "VIN", "Serie Reefer", "Modelo Reefer",
+        "Modelo Evap. 1", "Serie Evap. 1 (MJS11)", "Modelo Evap. 2", "Serie Evap. 2 (MJD22)",
+        "Serie Motor", "Serie Compresor", "Serie Generador", "Serie Cargador Batería",
+    ]
+    ws2.append(columnas2)
+    hstyle2 = _hdr(AZUL_CORP)
+    for col_i in range(1, len(columnas2) + 1):
+        _apply(ws2.cell(4, col_i), hstyle2)
+    ws2.row_dimensions[4].height = 32
+    ws2.cell(4, 1).alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    for col_i in range(1, len(columnas2) + 1):
+        ws2.cell(4, col_i).alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    for row_i, u in enumerate(unidades_lote, 5):
+        ws2.append([
+            u["unit_number"], u["vin_number"] or "—", u["reefer_serial"] or "—", u["reefer_model"] or "—",
+            u["evaporator_model_1"] or "—", u["evaporator_serial_mjs11"] or "—",
+            u["evaporator_model_2"] or "—", u["evaporator_serial_mjd22"] or "—",
+            u["engine_serial"] or "—", u["compressor_serial"] or "—",
+            u["generator_serial"] or "—", u["battery_charger_serial"] or "—",
+        ])
+        if row_i % 2 == 0:
+            fill = PatternFill("solid", start_color=AMARILLO, end_color=AMARILLO)
+            for col_i in range(1, len(columnas2) + 1):
+                ws2.cell(row_i, col_i).fill = fill
+
+    _autofit(ws2, min_w=10, max_w=26)
+    ws2.freeze_panes = "A5"
+
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
