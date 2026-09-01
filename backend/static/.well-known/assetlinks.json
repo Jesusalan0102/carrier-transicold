@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.carriertransicold.app",
+    "sha256_cert_fingerprints": ["D6:90:9D:40:A3:43:66:BA:7B:FA:90:45:01:66:32:74:92:96:F1:0A:AE:A5:32:E2:F5:49:D2:00:3A:09:06:44"]
+  }
+}]

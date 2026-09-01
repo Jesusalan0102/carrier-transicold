@@ -1,0 +1,51 @@
+name: Build APK Android
+
+on:
+  workflow_dispatch: {}   # se dispara a mano desde la pestaña Actions
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Instalar Bubblewrap CLI
+        run: npm install -g @bubblewrap/cli
+
+      - name: Restaurar keystore de firma
+        run: |
+          mkdir -p twa
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > twa/android.keystore
+
+      - name: Instalar Android SDK / build tools (lo hace bubblewrap la primera vez)
+        working-directory: twa
+        run: bubblewrap doctor || true
+
+      - name: Compilar APK
+        working-directory: twa
+        env:
+          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          bubblewrap build --skipPwaValidation \
+            --password="$BUBBLEWRAP_KEYSTORE_PASSWORD" \
+            --keyPassword="$BUBBLEWRAP_KEY_PASSWORD"
+
+      - name: Subir el APK como artefacto descargable
+        uses: actions/upload-artifact@v4
+        with:
+          name: carrier-transicold-apk
+          path: twa/app-release-signed.apk
+          retention-days: 90

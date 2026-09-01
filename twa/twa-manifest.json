@@ -1,0 +1,41 @@
+{
+  "packageId": "com.carriertransicold.app",
+  "host": "carrier-transicold-1.onrender.com",
+  "name": "Carrier Transicold",
+  "launcherName": "Carrier",
+  "display": "standalone",
+  "orientation": "portrait",
+  "themeColor": "#002B5B",
+  "themeColorDark": "#002B5B",
+  "navigationColor": "#002B5B",
+  "navigationColorDark": "#002B5B",
+  "navigationDividerColor": "#000000",
+  "navigationDividerColorDark": "#000000",
+  "backgroundColor": "#002B5B",
+  "enableNotifications": true,
+  "startUrl": "/app",
+  "iconUrl": "https://carrier-transicold-1.onrender.com/static/icons/icon-512.png",
+  "maskableIconUrl": "https://carrier-transicold-1.onrender.com/static/icons/icon-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "android"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [
+    {
+      "name": "Registrar Asistencia",
+      "shortName": "Asistencia",
+      "url": "/app/checkin",
+      "chosenIconUrl": "https://carrier-transicold-1.onrender.com/static/icons/icon-96.png"
+    },
+    {
+      "name": "Mis Tareas",
+      "shortName": "Tareas",
+      "url": "/app/mis-tareas",
+      "chosenIconUrl": "https://carrier-transicold-1.onrender.com/static/icons/icon-96.png"
+    }
+  ],
+  "generatorApp": "bubblewrap-cli"
+}
