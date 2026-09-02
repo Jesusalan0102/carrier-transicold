@@ -27,7 +27,14 @@ jobs:
       - name: Restaurar keystore de firma
         run: |
           mkdir -p twa
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > twa/android.keystore
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | tr -d '\n\r ' | base64 -d > twa/android.keystore
+          # Verificación: si el secreto vino vacío o mal pegado, fallar aquí con un mensaje claro
+          # en vez de dejar que truene más adelante sin explicación.
+          if [ ! -s twa/android.keystore ]; then
+            echo "::error::El keystore quedó vacío. Revisa que el secreto ANDROID_KEYSTORE_BASE64 tenga el contenido completo del archivo .txt pegado como UNA sola línea."
+            exit 1
+          fi
+          echo "Keystore restaurado: $(wc -c < twa/android.keystore) bytes"
 
       - name: Instalar Android SDK / build tools (lo hace bubblewrap la primera vez)
         working-directory: twa
