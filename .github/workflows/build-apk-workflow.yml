@@ -38,7 +38,7 @@ jobs:
 
       - name: Instalar Android SDK / build tools (lo hace bubblewrap la primera vez)
         working-directory: twa
-        run: bubblewrap doctor || true
+        run: yes | bubblewrap doctor || true
 
       - name: Compilar APK
         working-directory: twa
@@ -46,7 +46,7 @@ jobs:
           BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          bubblewrap build --skipPwaValidation \
+          yes | bubblewrap build --skipPwaValidation \
             --password="$BUBBLEWRAP_KEYSTORE_PASSWORD" \
             --keyPassword="$BUBBLEWRAP_KEY_PASSWORD"
 
