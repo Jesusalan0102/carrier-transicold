@@ -891,10 +891,18 @@ def get_resumen(
             reg_map[key] = r
 
     # ── Técnicos: unión de los que tienen horario + los que checan aunque sea ──
+    # FIX duplicados fantasma: al borrar un usuario solo se hace DELETE FROM users
+    # (no hay cascada), así que sus horarios/registros viejos quedan huérfanos en
+    # la BD. Antes esta lista se armaba directo de esas tablas, así que un técnico
+    # ya eliminado seguía apareciendo para siempre. Ahora se cruza contra los
+    # usernames que SIGUEN existiendo en `users`, sin borrar el historial.
+    usuarios_vigentes = {
+        u["username"] for u in (execute_read("SELECT username FROM users") or [])
+    }
     tecnicos = (
         {h["username"] for h in horarios_raw}
         | {r["username"] for r in registros_raw}
-    )
+    ) & usuarios_vigentes
 
     resultado = []
     for username in sorted(tecnicos):
