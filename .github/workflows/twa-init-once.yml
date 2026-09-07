@@ -45,7 +45,6 @@ jobs:
       - name: Generar proyecto Android (bubblewrap init)
         working-directory: twa
         run: |
-          set -o pipefail
           yes '' | timeout 600 bubblewrap init \
             --manifest "${{ inputs.manifest_url }}" \
             --directory .
