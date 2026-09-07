@@ -1,0 +1,64 @@
+name: TWA - Generar proyecto Android (una sola vez)
+
+on:
+  workflow_dispatch:
+    inputs:
+      manifest_url:
+        description: "URL del manifest.json de tu PWA"
+        required: true
+        default: "https://carrier-transicold-1.onrender.com/static/manifest.json"
+
+permissions:
+  contents: write   # necesario para que el job pueda hacer git push
+
+jobs:
+  init:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Instalar Bubblewrap CLI
+        run: npm install -g @bubblewrap/cli
+
+      - name: Restaurar keystore de firma
+        run: |
+          mkdir -p twa
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d -i > twa/android.keystore
+          test -s twa/android.keystore || { echo "::error::El keystore quedó vacío"; exit 1; }
+
+      - name: Instalar JDK/SDK (lo hace bubblewrap la primera vez)
+        working-directory: twa
+        run: yes | bubblewrap doctor || true
+
+      - name: Generar proyecto Android (bubblewrap init)
+        working-directory: twa
+        run: |
+          set -o pipefail
+          yes '' | timeout 600 bubblewrap init \
+            --manifest "${{ inputs.manifest_url }}" \
+            --directory .
+        env:
+          BUBBLEWRAP_DISABLE_TELEMETRY: '1'
+
+      - name: Quitar el keystore antes de comitear (NUNCA debe subirse)
+        run: rm -f twa/android.keystore
+
+      - name: Comitear el proyecto Android generado
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add twa/
+          git commit -m "chore(twa): generar proyecto Android con bubblewrap init" || echo "Nada que comitear"
+          git push
