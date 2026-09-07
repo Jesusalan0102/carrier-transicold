@@ -46,6 +46,10 @@ jobs:
           BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          # El runner de GitHub trae su propio Android SDK preinstalado (ANDROID_SDK_ROOT)
+          # y bubblewrap instaló el suyo aparte (ANDROID_HOME). Gradle se niega a compilar
+          # si ve las dos rutas a la vez, así que quitamos la del runner.
+          unset ANDROID_SDK_ROOT
           yes | bubblewrap build --skipPwaValidation \
             --password="$BUBBLEWRAP_KEYSTORE_PASSWORD" \
             --keyPassword="$BUBBLEWRAP_KEY_PASSWORD"
