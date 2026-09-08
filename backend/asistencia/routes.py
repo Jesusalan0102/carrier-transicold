@@ -41,8 +41,8 @@ class GeofenceConfig(BaseModel):
 
 class RegistroAsistenciaBody(BaseModel):
     tipo: str
-    lat: Optional[float] = None
-    lon: Optional[float] = None
+    lat: float          # obligatorio: ubicación real requerida
+    lon: float           # obligatorio: ubicación real requerida
     accuracy: Optional[float] = None
     foto_base64: Optional[str] = None
 
@@ -386,23 +386,22 @@ async def registrar_asistencia(
     if tipo not in ("entrada", "salida"):
         raise HTTPException(400, "Tipo debe ser 'entrada' o 'salida'")
 
-    # 1. Validar precisión GPS — MODO SOLO-REGISTRO: nunca se rechaza el check-in.
-    #    Se conserva el dato de precisión/ubicación para auditoría, pero ya no
-    #    bloquea a nadie. (Antes: HTTPException 422 si accuracy > GPS_ACCURACY_LIMIT)
+    # 1. Validar precisión GPS — bloqueante: se exige ubicación real y precisa.
     gps_ok, gps_msg = es_gps_preciso(body.accuracy, limite_metros=GPS_ACCURACY_LIMIT)
+    if not gps_ok:
+        raise HTTPException(422, gps_msg)
 
-    # 2. Validar geocerca — MODO SOLO-REGISTRO: si no hay coordenadas (permiso
-    #    de ubicación denegado), simplemente se registra sin dato de distancia.
+    # 2. Validar geocerca — bloqueante: debe estar dentro del radio permitido.
     config = obtener_configuracion()
-    if body.lat is None or body.lon is None:
-        dentro, distancia = True, None
-    else:
-        dentro, distancia, _ = validar_ubicacion(
-            lat_tecnico=body.lat, lon_tecnico=body.lon,
-            lat_fija=config["lat_fija"], lon_fija=config["lon_fija"],
-            radio_metros=config["radio_metros"]
-        )
-    aprobado = 1 if dentro else 0
+    dentro, distancia, geo_msg = validar_ubicacion(
+        lat_tecnico=body.lat, lon_tecnico=body.lon,
+        lat_fija=config["lat_fija"], lon_fija=config["lon_fija"],
+        radio_metros=config["radio_metros"]
+    )
+    if not dentro:
+        raise HTTPException(422, geo_msg)
+
+    aprobado = 1
 
     # 3. Hora Tijuana
     now_tj    = datetime.now(TZ_TJ)
@@ -436,7 +435,7 @@ async def registrar_asistencia(
             retardo_min = 0
 
     # 6. Insertar en DB
-    distancia_redondeada = round(distancia) if distancia is not None else None
+    distancia_redondeada = round(distancia)
     connection = get_db_connection()
     try:
         with connection.cursor() as cursor:
@@ -459,14 +458,11 @@ async def registrar_asistencia(
             "distancia_metros": distancia_redondeada,
             "radio_metros":     config["radio_metros"],
             "accuracy_metros":  body.accuracy,
-            "gps_sin_dato":     body.lat is None or body.lon is None,
             "hora":             hora_actual,
             "fecha":            fecha_hoy,
             "tipo":             tipo,
             "retardo_min":      retardo_min,
-            "mensaje": "✅ Registro exitoso" + (
-                " (sin dato de ubicación)" if body.lat is None or body.lon is None else ""
-            )
+            "mensaje": "✅ Registro exitoso"
         }
     except Exception as e:
         print(f"[registrar] {e}")
