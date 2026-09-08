@@ -49,21 +49,23 @@ def es_gps_preciso(
     """
     Verifica si la señal GPS es lo suficientemente precisa.
 
-    FIX Bug 4: cuando accuracy es None (navegador sin GPS físico, permisos
-    denegados o dispositivo de escritorio) ya NO se bloquea el registro.
-    Se devuelve True con un mensaje de advertencia para que el registro
-    continúe y quede marcado como 'sin dato de precisión'.
-    Si quieres volver al comportamiento bloqueante, cambia la línea
-    'return True, ...' por 'return False, ...' en el bloque de accuracy None.
+    Bloqueante: si no hay dato de precisión (permiso de ubicación denegado,
+    GPS apagado, dispositivo de escritorio sin GPS real) el registro se
+    rechaza. Se exige ubicación real y precisa para poder registrar
+    asistencia.
     """
     if accuracy is None:
-        # Advertencia no bloqueante: el registro se guarda sin dato de precisión.
-        return True, "⚠️ Sin dato de precisión GPS (se registra de todas formas)"
+        return False, (
+            "❌ No se pudo obtener tu ubicación GPS. Debes activar el GPS "
+            "y aceptar el permiso de ubicación en tu dispositivo para "
+            "poder registrar asistencia."
+        )
 
     if accuracy <= limite_metros:
         return True, f"✅ Precisión GPS aceptable: {accuracy:.1f}m"
 
     return False, (
         f"❌ Precisión GPS baja: {accuracy:.1f}m "
-        f"(máximo permitido: {limite_metros}m)"
+        f"(máximo permitido: {limite_metros}m). Sal a un lugar más "
+        f"despejado o espera a que el GPS mejore su señal."
     )
