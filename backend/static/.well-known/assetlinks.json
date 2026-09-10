@@ -3,6 +3,6 @@
   "target": {
     "namespace": "android_app",
     "package_name": "com.onrender.carrier_transicold_1.twa",
-    "sha256_cert_fingerprints": ["D6:90:9D:40:A3:43:66:BA:7B:FA:90:45:01:66:32:74:92:96:F1:0A:AE:A5:32:E2:F5:49:D2:00:3A:09:06:44"]
+    "sha256_cert_fingerprints": ["E6:4E:96:CD:12:4B:65:6F:95:BF:F9:2C:79:AA:3B:29:1B:0A:18:16:E1:5C:9C:47:C2:3F:F4:F2:3D:19:E3:7E"]
   }
 }]
