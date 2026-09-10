@@ -3,6 +3,9 @@ name: Build APK Android
 on:
   workflow_dispatch: {}   # se dispara a mano desde la pestaña Actions
 
+permissions:
+  contents: write   # necesario para comitear assetlinks.json actualizado
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -60,3 +63,50 @@ jobs:
           name: carrier-transicold-apk
           path: twa/app-release-signed.apk
           retention-days: 90
+
+      # ── Mantener assetlinks.json sincronizado con el keystore real ──────
+      # Chrome solo abre la app como TWA (pantalla completa, sin barra de
+      # navegador) si https://<host>/.well-known/assetlinks.json declara
+      # exactamente el mismo package_name y la misma huella SHA-256 del
+      # certificado con el que se firmó este APK. Si no coinciden, cae a
+      # modo "Custom Tabs" (se ve la URL, la "X" y el botón compartir).
+      # Este paso saca la huella del keystore recién usado y la escribe
+      # en el repo, así siempre queda al día sin tocarlo a mano.
+      - name: Extraer huella SHA-256 del keystore
+        working-directory: twa
+        env:
+          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          FINGERPRINT=$(keytool -list -v \
+            -keystore android.keystore \
+            -alias android \
+            -storepass "$BUBBLEWRAP_KEYSTORE_PASSWORD" \
+            | grep 'SHA256:' | head -1 | sed 's/.*SHA256: //')
+          if [ -z "$FINGERPRINT" ]; then
+            echo "::error::No se pudo extraer la huella SHA-256 del keystore"
+            exit 1
+          fi
+          echo "Huella SHA-256: $FINGERPRINT"
+          echo "FINGERPRINT=$FINGERPRINT" >> "$GITHUB_ENV"
+
+      - name: Actualizar assetlinks.json
+        run: |
+          mkdir -p backend/static/.well-known
+          cat > backend/static/.well-known/assetlinks.json <<EOF
+          [{
+            "relation": ["delegate_permission/common.handle_all_urls"],
+            "target": {
+              "namespace": "android_app",
+              "package_name": "com.onrender.carrier_transicold_1.twa",
+              "sha256_cert_fingerprints": ["${FINGERPRINT}"]
+            }
+          }]
+          EOF
+
+      - name: Comitear assetlinks.json si cambió
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add backend/static/.well-known/assetlinks.json
+          git commit -m "chore: sincronizar assetlinks.json con la huella del keystore firmado" || echo "Nada que comitear"
+          git push
