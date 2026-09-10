@@ -1,98 +1,112 @@
-name: Build APK (TWA)
+name: Build APK Android
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/build-apk.yml'
-      - 'twa/**'
-  workflow_dispatch:   # permite ejecutarlo manualmente desde GitHub
+  workflow_dispatch: {}   # se dispara a mano desde la pestaña Actions
+
+permissions:
+  contents: write   # necesario para comitear assetlinks.json actualizado
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      # ── 1. Checkout ─────────────────────────────────────────
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 2. Java (requerido por Gradle/Android) ──────────────
-      - name: Setup Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
-      # ── 3. Node (requerido por Bubblewrap) ──────────────────
-      - name: Setup Node 20
+      - name: Configurar Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
-      # ── 4. Android SDK ──────────────────────────────────────
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      # ── 5. Instalar Bubblewrap CLI ──────────────────────────
-      - name: Install Bubblewrap
+      - name: Instalar Bubblewrap CLI
         run: npm install -g @bubblewrap/cli
 
-      # ── 6. Inicializar proyecto TWA ─────────────────────────
-      - name: Init TWA project
-        working-directory: twa
+      - name: Restaurar keystore de firma
         run: |
-          bubblewrap init --manifest https://app-83fd3b1b-5d1d-43fd-be37-63f56db0efe8.cleverapps.io/static/manifest.json \
-            --directory . \
-            --skipPwaValidation
-        env:
-          BUBBLEWRAP_DISABLE_TELEMETRY: '1'
+          mkdir -p twa
+          KEYLEN=$(echo -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | wc -c)
+          echo "Longitud del secreto recibido: $KEYLEN caracteres (se esperaban ~3704)"
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d -i > twa/android.keystore
+          if [ ! -s twa/android.keystore ]; then
+            echo "::error::El keystore quedó vacío. Revisa que el secreto ANDROID_KEYSTORE_BASE64 tenga el contenido completo del archivo .txt pegado como UNA sola línea, sin cortes."
+            exit 1
+          fi
+          echo "Keystore restaurado: $(wc -c < twa/android.keystore) bytes (se esperaban 2698)"
 
-      # ── 7. Build APK (debug, sin firmar — para instalación directa) ──
-      - name: Build APK
+      - name: Instalar Android SDK / build tools (lo hace bubblewrap la primera vez)
         working-directory: twa
-        run: bubblewrap build --skipPwaValidation
+        run: yes | bubblewrap doctor || true
+
+      - name: Compilar APK
+        working-directory: twa
         env:
-          BUBBLEWRAP_DISABLE_TELEMETRY: '1'
-
-      # ── 8. Renombrar APK con versión y fecha ────────────────
-      - name: Rename APK
+          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          DATE=$(date +'%Y%m%d')
-          cp twa/app-release-unsigned.apk carrier-transicold-${DATE}.apk || \
-          cp twa/app/build/outputs/apk/release/app-release-unsigned.apk carrier-transicold-${DATE}.apk || \
-          find twa -name "*.apk" -exec cp {} carrier-transicold-${DATE}.apk \;
-          echo "APK_NAME=carrier-transicold-${DATE}.apk" >> $GITHUB_ENV
+          # El runner de GitHub trae su propio Android SDK preinstalado (ANDROID_SDK_ROOT)
+          # y bubblewrap instaló el suyo aparte (ANDROID_HOME). Gradle se niega a compilar
+          # si ve las dos rutas a la vez, así que quitamos la del runner.
+          unset ANDROID_SDK_ROOT
+          yes | bubblewrap build --skipPwaValidation \
+            --password="$BUBBLEWRAP_KEYSTORE_PASSWORD" \
+            --keyPassword="$BUBBLEWRAP_KEY_PASSWORD"
 
-      # ── 9. Subir APK como artifact (descargable desde Actions) ─
-      - name: Upload APK artifact
+      - name: Subir el APK como artefacto descargable
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.APK_NAME }}
-          path: ${{ env.APK_NAME }}
-          retention-days: 30
+          name: carrier-transicold-apk
+          path: twa/app-release-signed.apk
+          retention-days: 90
 
-      # ── 10. Crear Release automático ────────────────────────
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: apk-${{ github.run_number }}
-          name: "APK v${{ github.run_number }} — Carrier Transicold"
-          body: |
-            ## 📱 APK Carrier Transicold
-            
-            **Build:** #${{ github.run_number }}  
-            **Fecha:** ${{ github.event.head_commit.timestamp }}  
-            **Commit:** ${{ github.sha }}
-            
-            ### Instalación
-            1. Descarga el archivo `.apk`
-            2. En tu Android ve a **Ajustes → Seguridad → Fuentes desconocidas** (actívalo)
-            3. Abre el APK descargado e instala
-            
-            > ⚠️ Este APK es un debug build. Para producción se requiere firmado con keystore.
-          files: ${{ env.APK_NAME }}
-          draft: false
-          prerelease: false
+      # ── Mantener assetlinks.json sincronizado con el keystore real ──────
+      # Chrome solo abre la app como TWA (pantalla completa, sin barra de
+      # navegador) si https://<host>/.well-known/assetlinks.json declara
+      # exactamente el mismo package_name y la misma huella SHA-256 del
+      # certificado con el que se firmó este APK. Si no coinciden, cae a
+      # modo "Custom Tabs" (se ve la URL, la "X" y el botón compartir).
+      # Este paso saca la huella del keystore recién usado y la escribe
+      # en el repo, así siempre queda al día sin tocarlo a mano.
+      - name: Extraer huella SHA-256 del keystore
+        working-directory: twa
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          FINGERPRINT=$(keytool -list -v \
+            -keystore android.keystore \
+            -alias android \
+            -storepass "$BUBBLEWRAP_KEYSTORE_PASSWORD" \
+            | grep 'SHA256:' | head -1 | sed 's/.*SHA256: //')
+          if [ -z "$FINGERPRINT" ]; then
+            echo "::error::No se pudo extraer la huella SHA-256 del keystore"
+            exit 1
+          fi
+          echo "Huella SHA-256: $FINGERPRINT"
+          echo "FINGERPRINT=$FINGERPRINT" >> "$GITHUB_ENV"
+
+      - name: Actualizar assetlinks.json
+        run: |
+          mkdir -p backend/static/.well-known
+          cat > backend/static/.well-known/assetlinks.json <<EOF
+          [{
+            "relation": ["delegate_permission/common.handle_all_urls"],
+            "target": {
+              "namespace": "android_app",
+              "package_name": "com.onrender.carrier_transicold_1.twa",
+              "sha256_cert_fingerprints": ["${FINGERPRINT}"]
+            }
+          }]
+          EOF
+
+      - name: Comitear assetlinks.json si cambió
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add backend/static/.well-known/assetlinks.json
+          git commit -m "chore: sincronizar assetlinks.json con la huella del keystore firmado" || echo "Nada que comitear"
+          git push
