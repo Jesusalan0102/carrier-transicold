@@ -147,6 +147,18 @@ async def service_worker():
     sw_path = _STATIC_DIR / "sw.js"
     return FileResponse(str(sw_path), media_type="application/javascript")
 
+# ── Digital Asset Links (verificación TWA) ────────────────────────────────────
+# Chrome SOLO revisa https://<host>/.well-known/assetlinks.json (en la raíz del
+# dominio, no bajo /static). Si no lo encuentra ahí, o el package_name/huella
+# no coinciden con el APK instalado, la app deja de abrirse como TWA (pantalla
+# completa, sin barra de navegador) y cae a modo "Custom Tabs": Chrome muestra
+# la barra de URL, el botón de compartir y la "X" para cerrar — justo lo que
+# se ve cuando la verificación falla.
+@app.get("/.well-known/assetlinks.json", include_in_schema=False)
+async def digital_asset_links():
+    path = _STATIC_DIR / ".well-known" / "assetlinks.json"
+    return FileResponse(str(path), media_type="application/json")
+
 # ── Health check ──────────────────────────────────────────────────────────────
 @app.get("/api/health")
 async def root():
