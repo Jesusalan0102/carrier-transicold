@@ -821,9 +821,32 @@ async def login():
             .btn-primary { background: linear-gradient(135deg, #002B5B 0%, #0057A8 100%); color: white; border: none; border-radius: 10px; padding: 14px; width: 100%; font-weight: 700; font-size: 1rem; cursor: pointer; transition: transform 0.2s; }
             .btn-primary:hover { transform: translateY(-2px); }
             #errorMsg { color: #dc2626; font-size: 0.85rem; min-height: 20px; }
+
+            #splashScreen {
+                position: fixed; inset: 0; z-index: 9999;
+                background: linear-gradient(160deg, #002B5B 0%, #01418a 55%, #0057A8 100%);
+                display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+            }
+            #splashScreen img {
+                width: 96px; height: 96px; border-radius: 22px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+                opacity: 0; transform: scale(0.75);
+                animation: splashLogoIn 0.6s ease-out 0.1s forwards;
+            }
+            #splashScreen span {
+                color: white; font-weight: 800; font-size: 1.05rem; letter-spacing: 0.06em; text-transform: uppercase;
+                opacity: 0; transform: translateY(10px);
+                animation: splashTextIn 0.6s ease-out 0.55s forwards;
+            }
+            @keyframes splashLogoIn { to { opacity: 1; transform: scale(1); } }
+            @keyframes splashTextIn { to { opacity: 1; transform: translateY(0); } }
         </style>
     </head>
     <body>
+        <div id="splashScreen" aria-hidden="true">
+            <img src="https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo.jpg">
+            <span>Los más fríos de México</span>
+        </div>
         <div class="login-card">
             <img src="https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo.jpg">
             <h2>Sistema Operativo</h2>
@@ -853,6 +876,17 @@ async def login():
                     window.location.href = data.role === 'tecnico' ? '/app/mis-tareas' : '/app/dashboard';
                 } catch (err) { errorEl.textContent = err.message; }
             });
+
+            (function () {
+                var splash = document.getElementById('splashScreen');
+                if (!splash) return;
+                setTimeout(function () {
+                    splash.style.transition = 'opacity 0.5s ease, visibility 0.5s ease';
+                    splash.style.opacity = '0';
+                    splash.style.visibility = 'hidden';
+                    setTimeout(function () { splash.remove(); }, 550);
+                }, 1600);
+            })();
         </script>
     </body>
     </html>
