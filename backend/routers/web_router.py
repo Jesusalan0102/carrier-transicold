@@ -3354,6 +3354,7 @@ async def usuarios():
 async def admin():
     contenido = """
     <script> if (window.role !== 'admin' && window.role !== 'lider') { window.location.href = '/app/mis-tareas'; } </script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
     <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -3941,6 +3942,7 @@ async def admin():
               <td>${r.tecnico||''}</td>
               <td>${badgeEstado(r.estado||'')}</td>
               <td><div class="row-actions">
+                <button class="icon-btn" onclick="abrirTransferirQRAdmin(${r.id})" title="Transferir a otro técnico (QR)" style="color:#4f46e5"><i class="ti ti-qrcode"></i></button>
                 <button class="icon-btn edit" onclick="editarFilaAct(${r.id})" title="Editar"><i class="ti ti-edit"></i></button>
                 <button class="icon-btn del" onclick="eliminarFilaAct(${r.id})" title="Eliminar"><i class="ti ti-trash"></i></button>
               </div></td>
@@ -4108,7 +4110,7 @@ async def admin():
                         ev.stopPropagation();
                         evToggleFoto(f.id, card);
                     } else {
-                        evAbrirLightbox(f.id, f.nombre, f.tecnico, f.fecha, f.actividad, f.tipo);
+                        evAbrirLightbox(f.id, f.nombre, f.tecnico, f.fecha, f.actividad, f.tipo, f.equipo);
                     }
                 };
 
@@ -4151,6 +4153,7 @@ async def admin():
                 info.style.cssText = 'padding:6px 8px;font-size:11px;color:var(--color-text-secondary);line-height:1.5;';
                 info.innerHTML = `<b style="color:var(--color-text-primary);font-size:12px;">${f.nombre.length>22?f.nombre.slice(0,19)+'…':f.nombre}</b><br>
                   👷 ${f.tecnico||'—'}<br>
+                  ${f.equipo ? '👥 '+f.equipo+'<br>' : ''}
                   ${f.actividad ? '🛠 '+f.actividad+'<br>' : ''}
                   ${f.fecha ? '🗓 '+f.fecha.slice(0,10) : ''}`;
 
@@ -4202,7 +4205,7 @@ async def admin():
         }
     }
 
-    function evAbrirLightbox(id, nombre, tecnico, fecha, actividad, tipo) {
+    function evAbrirLightbox(id, nombre, tecnico, fecha, actividad, tipo, equipo) {
         const lb  = document.getElementById('ev-lightbox');
         const img = document.getElementById('ev-lb-img');
         const vid = document.getElementById('ev-lb-video');
@@ -4210,7 +4213,7 @@ async def admin():
         const esVideo = tipo === 'video';
         img.src = ''; img.style.display = 'none';
         vid.pause(); vid.removeAttribute('src'); vid.load(); vid.style.display = 'none';
-        cap.textContent = `${nombre}  ·  👷 ${tecnico||'—'}  ${actividad?'·  🛠 '+actividad+'  ':''}·  ${fecha?fecha.slice(0,10):''}`;
+        cap.textContent = `${nombre}  ·  👷 ${tecnico||'—'}  ${equipo?'·  👥 '+equipo+'  ':''}${actividad?'·  🛠 '+actividad+'  ':''}·  ${fecha?fecha.slice(0,10):''}`;
         lb.style.display = 'flex';
         if (esVideo) {
             vid.style.display = '';
@@ -4776,6 +4779,103 @@ async def admin():
         </div>`);
     }
 
+    function mostrarToast(msg, color) {
+        const t = document.createElement('div');
+        t.style.cssText = `position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:${color};color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:950;white-space:nowrap;`;
+        t.textContent = msg;
+        document.body.appendChild(t);
+        setTimeout(() => t.remove(), 3000);
+    }
+
+    // ── Transferir actividad a otro técnico (escaneando su código QR) ─────────
+    // Autocontenido (overlay propio) para no chocar con los modales del CRUD.
+    let _admTransferStream = null, _admTransferScanLoop = null;
+
+    function abrirTransferirQRAdmin(asigId) {
+        const overlay = document.createElement('div');
+        overlay.id = 'admTransferOverlay';
+        overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:900;';
+        overlay.innerHTML = `
+            <div style="background:#fff;border-radius:16px;padding:24px;width:90%;max-width:360px;text-align:center;">
+                <h3 style="margin:0 0 6px;color:#0f2d6b;">🔄 Transferir actividad</h3>
+                <p style="font-size:0.82rem;color:#6b7280;margin:0 0 10px;">Apunta la cámara al código del técnico destino.</p>
+                <video id="admTransferVideo" autoplay playsinline muted style="width:100%;border-radius:12px;background:#000;"></video>
+                <canvas id="admTransferCanvas" style="display:none;"></canvas>
+                <p id="admTransferStatus" style="margin-top:10px;font-size:0.85rem;color:#1d4ed8;">Solicitando cámara...</p>
+                <button onclick="cerrarTransferirQRAdmin()" style="margin-top:8px;background:#fef2f2;color:#dc2626;border:none;border-radius:8px;padding:10px 16px;font-weight:600;cursor:pointer;">Cancelar</button>
+            </div>`;
+        document.body.appendChild(overlay);
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+            .then(stream => {
+                _admTransferStream = stream;
+                const video = document.getElementById('admTransferVideo');
+                video.srcObject = stream;
+                video.play();
+                document.getElementById('admTransferStatus').textContent = '🔍 Buscando código...';
+                _admTransferScanLoop = setInterval(() => _admEscanearFrameTransfer(asigId), 300);
+            })
+            .catch(() => {
+                const st = document.getElementById('admTransferStatus');
+                if (st) st.textContent = '❌ No se pudo acceder a la cámara.';
+            });
+    }
+
+    function _admEscanearFrameTransfer(asigId) {
+        const video = document.getElementById('admTransferVideo');
+        const canvas = document.getElementById('admTransferCanvas');
+        if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height);
+        if (!code) return;
+        const m = /^TECNICO:(.+)$/.exec((code.data || '').trim());
+        if (!m) {
+            document.getElementById('admTransferStatus').textContent = '❌ Ese código no es de un técnico. Intenta de nuevo.';
+            return;
+        }
+        clearInterval(_admTransferScanLoop);
+        _admDetenerTransferCamara();
+        document.getElementById('admTransferStatus').textContent = '✅ Código reconocido: ' + m[1] + ' — transfiriendo...';
+        _admConfirmarTransferencia(asigId, m[1]);
+    }
+
+    function _admDetenerTransferCamara() {
+        if (_admTransferStream) { _admTransferStream.getTracks().forEach(t => t.stop()); _admTransferStream = null; }
+        if (_admTransferScanLoop) { clearInterval(_admTransferScanLoop); _admTransferScanLoop = null; }
+    }
+
+    function cerrarTransferirQRAdmin() {
+        _admDetenerTransferCamara();
+        const overlay = document.getElementById('admTransferOverlay');
+        if (overlay) overlay.remove();
+    }
+
+    async function _admConfirmarTransferencia(asigId, destino) {
+        if (!confirm(`¿Transferir esta actividad a ${destino}?`)) { cerrarTransferirQRAdmin(); return; }
+        let res;
+        try {
+            res = await fetchAuth('/api/asignaciones/' + asigId + '/transferir', {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tecnico_destino: destino })
+            });
+        } catch (e) {
+            cerrarTransferirQRAdmin();
+            alert('No se pudo conectar con el servidor.');
+            return;
+        }
+        cerrarTransferirQRAdmin();
+        if (res.ok) {
+            const d = await res.json();
+            mostrarToast('✅ ' + d.mensaje, '#16a34a');
+            recargarActividades();
+        } else {
+            const d = await res.json().catch(()=>({}));
+            alert(d.detail || 'No se pudo transferir la actividad');
+        }
+    }
+
     // -- Init -------------------------------------------------
     recargarActividades();
     recargarUsuarios();
@@ -4791,12 +4891,125 @@ async def admin():
 async def mis_tareas():
     contenido = """
     <script> if (window.role === 'visor') { window.location.href = '/app/dashboard'; } </script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <div style="margin-bottom:14px;">
+        <button class="btn-primary" onclick="mostrarMiCodigo()">🔖 Mi código para recibir actividades</button>
+    </div>
     <div id="pausarTodasBar" style="display:none; margin-bottom:14px;">
         <button class="btn-primary" onclick="pausarTodas()">☕ Pausar todas mis actividades (receso)</button>
     </div>
     <div id="tareasList"></div>
     <script>
         const fetchAuth = window.fetchAuth, username = window.username;
+
+        // ── Mi código personal (QR) — para recibir actividades por transferencia ──
+        function mostrarMiCodigo() {
+            const modal = mostrarModal(`
+                <div class="modal-content" style="text-align:center;">
+                    <h3 style="margin-bottom:6px;">🔖 Mi código</h3>
+                    <p style="font-size:0.83rem;color:#6b7280;margin-bottom:14px;">
+                        Muéstrale esta pantalla a quien te va a transferir una actividad
+                        para que apunte su cámara aquí.
+                    </p>
+                    <div id="miCodigoQR" style="display:flex;justify-content:center;margin-bottom:10px;"></div>
+                    <p style="font-size:0.8rem;color:#374151;font-weight:600;margin-bottom:14px;">${username}</p>
+                    <button class="btn-danger" onclick="cerrarModal()">Cerrar</button>
+                </div>`);
+            new QRCode(document.getElementById('miCodigoQR'), {
+                text: 'TECNICO:' + username, width: 220, height: 220,
+                colorDark: '#002B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.H
+            });
+        }
+
+        // ── Transferir actividad: escanear el código del técnico destino ──────────
+        let _transferStream = null, _transferScanLoop = null;
+
+        function abrirTransferirQR(asigId) {
+            mostrarModal(`
+                <div class="modal-content" style="text-align:center;">
+                    <h3 style="margin-bottom:6px;">🔄 Transferir actividad</h3>
+                    <p style="font-size:0.83rem;color:#6b7280;margin-bottom:10px;">
+                        Apunta la cámara al código del técnico que va a recibir esta actividad.
+                    </p>
+                    <video id="transferVideo" autoplay playsinline muted style="width:100%;max-width:320px;border-radius:12px;background:#000;"></video>
+                    <canvas id="transferCanvas" style="display:none;"></canvas>
+                    <p id="transferStatus" style="margin-top:10px;font-size:0.85rem;color:#1d4ed8;">Solicitando cámara...</p>
+                    <button class="btn-danger" onclick="cerrarTransferirQR()" style="margin-top:8px;">Cancelar</button>
+                </div>`);
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+                .then(stream => {
+                    _transferStream = stream;
+                    const video = document.getElementById('transferVideo');
+                    video.srcObject = stream;
+                    video.play();
+                    document.getElementById('transferStatus').textContent = '🔍 Buscando código...';
+                    _transferScanLoop = setInterval(() => _escanearFrameTransfer(asigId), 300);
+                })
+                .catch(() => {
+                    const st = document.getElementById('transferStatus');
+                    if (st) st.textContent = '❌ No se pudo acceder a la cámara.';
+                });
+        }
+
+        function _escanearFrameTransfer(asigId) {
+            const video = document.getElementById('transferVideo');
+            const canvas = document.getElementById('transferCanvas');
+            if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+            canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height);
+            if (!code) return;
+            const m = /^TECNICO:(.+)$/.exec((code.data || '').trim());
+            if (!m) {
+                document.getElementById('transferStatus').textContent = '❌ Ese código no es de un técnico. Intenta de nuevo.';
+                return;
+            }
+            clearInterval(_transferScanLoop);
+            _detenerTransferCamara();
+            document.getElementById('transferStatus').textContent = '✅ Código reconocido: ' + m[1] + ' — transfiriendo...';
+            confirmarTransferencia(asigId, m[1]);
+        }
+
+        function _detenerTransferCamara() {
+            if (_transferStream) { _transferStream.getTracks().forEach(t => t.stop()); _transferStream = null; }
+            if (_transferScanLoop) { clearInterval(_transferScanLoop); _transferScanLoop = null; }
+        }
+
+        function cerrarTransferirQR() {
+            _detenerTransferCamara();
+            cerrarModal();
+        }
+
+        async function confirmarTransferencia(asigId, destino) {
+            if (!confirm(`¿Transferir esta actividad a ${destino}?`)) { cerrarTransferirQR(); return; }
+            let res;
+            try {
+                res = await fetchAuth('/api/asignaciones/' + asigId + '/transferir', {
+                    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tecnico_destino: destino })
+                });
+            } catch (e) {
+                cerrarTransferirQR();
+                alert('No se pudo conectar con el servidor.');
+                return;
+            }
+            cerrarTransferirQR();
+            if (res.ok) {
+                const d = await res.json();
+                cargarTareas();
+                const toast = document.createElement('div');
+                toast.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#16a34a;color:white;padding:14px 28px;border-radius:50px;font-weight:700;font-size:0.95rem;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:600;';
+                toast.textContent = '✅ ' + d.mensaje;
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 3000);
+            } else {
+                const d = await res.json().catch(()=>({}));
+                alert(d.detail || 'No se pudo transferir la actividad');
+            }
+        }
         function mostrarModal(html) {
             const modal = document.createElement('div');
             modal.className = 'modal';
@@ -4830,6 +5043,7 @@ async def mis_tareas():
                         if (t.actividad_id === 'Toma de Valores') btn += `<button class="btn-primary" onclick="tomarValores(${t.id})">📊 Ingresar Valores</button>`;
                         if (t.actividad_id === 'Toma de Series') btn += `<button class="btn-primary" onclick="tomarSeries(${t.id})">🔢 Ingresar Series</button>`;
                     }
+                    btn += `<button class="btn-primary" onclick="abrirTransferirQR(${t.id})">🔄 Transferir</button>`;
                     html += `<div style="background:white; border-radius:12px; padding:16px; margin-bottom:12px; box-shadow:0 2px 8px rgba(0,0,0,0.05); display:flex; justify-content:space-between; align-items:center;"><div><b>${t.actividad_id}</b> — Unidad: <b>${t.unidad}</b><br><span class="badge" style="background:${t.estado === 'pendiente' ? 'var(--carrier-warn)' : 'var(--carrier-success)'}; color:white;">${t.estado}</span></div><div>${btn}</div></div>`;
                 });
             }
@@ -4924,6 +5138,10 @@ async def mis_tareas():
                     <div id="previewFotosFinalizar" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;"></div>
                     <div id="compressInfoFinalizar" style="font-size:12px;color:#666;margin-bottom:8px;"></div>
 
+                    <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">👥 ¿La trabajaste en equipo? (opcional)</label>
+                    <p style="font-size:0.78rem;color:#9ca3af;margin:0 0 8px;">Marca a los compañeros que también trabajaron esta evidencia. Tú quedas registrado como quien la subió.</p>
+                    <div id="equipoCheckboxes" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;font-size:0.85rem;color:#9ca3af;">Cargando compañeros...</div>
+
                     <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">📝 Comentario del técnico</label>
                     <textarea id="comentarioTexto" rows="4" placeholder="Describe brevemente el trabajo realizado, observaciones, etc." style="width:100%;border:1.5px solid #d1d5db;border-radius:12px;padding:12px;font-size:0.95rem;resize:vertical;font-family:inherit;transition:border-color 0.2s;"></textarea>
                     ${esTicket ? `
@@ -4939,6 +5157,8 @@ async def mis_tareas():
                 </div>
                 <style>@keyframes fadeInM{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}</style>`;
             document.body.appendChild(modal);
+
+            _cargarEquipoCheckboxes();
 
             document.getElementById('fotosFinalizarInput').addEventListener('change', e => {
                 const files = Array.from(e.target.files).slice(0, 100);
@@ -4975,6 +5195,27 @@ async def mis_tareas():
             });
 
             setTimeout(() => document.getElementById('comentarioTexto').focus(), 100);
+        }
+
+        async function _cargarEquipoCheckboxes() {
+            const cont = document.getElementById('equipoCheckboxes');
+            if (!cont) return;
+            try {
+                const res = await fetchAuth('/api/usuarios/tecnicos');
+                if (!res.ok) { cont.innerHTML = ''; return; }
+                const tecnicos = (await res.json()).filter(t => t.username !== username);
+                if (!tecnicos.length) { cont.innerHTML = '<span style="color:#9ca3af;">No hay otros técnicos registrados.</span>'; return; }
+                cont.innerHTML = tecnicos.map(t => `
+                    <label style="display:flex;align-items:center;gap:5px;background:#f1f5f9;border-radius:8px;padding:5px 10px;cursor:pointer;">
+                        <input type="checkbox" class="equipoCheck" value="${t.username}">
+                        ${t.nombre_completo || t.username}
+                    </label>`).join('');
+            } catch (e) { cont.innerHTML = ''; }
+        }
+
+        function _equipoSeleccionado() {
+            const marcados = [...document.querySelectorAll('.equipoCheck:checked')].map(c => c.value);
+            return marcados.length ? [username, ...marcados].join(',') : '';
         }
 
         async function confirmarFinalizar(id) {
@@ -5034,6 +5275,8 @@ async def mis_tareas():
                 fd.append('unidad', unidad);
                 fd.append('tecnico', username);
                 fd.append('asignacion_id', id);
+                const equipo = _equipoSeleccionado();
+                if (equipo) fd.append('equipo', equipo);
                 procesados.forEach(f => fd.append('files', f));
                 let upRes;
                 try {

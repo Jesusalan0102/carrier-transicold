@@ -94,7 +94,7 @@ def comprimir_imagen(contenido: bytes, filename: str) -> bytes:
 
 
 # ── TAREA PARA UN SOLO ARCHIVO (foto o video) ─────────────────────────────
-async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_id: int = None) -> dict:
+async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_id: int = None, equipo: str = None) -> dict:
     """Lee, comprime (si es foto) y guarda una foto o video. Devuelve
     {'filename', 'ok', 'error'}.
 
@@ -144,13 +144,13 @@ async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_
         try:
             ok = await run_in_threadpool(
                 execute_write,
-                "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico, asignacion_id, tipo, mime_type, onedrive_item_id, onedrive_url) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                (unidad, file.filename, contenido_a_guardar, tecnico, asignacion_id, tipo, mime_type, onedrive_item_id, onedrive_url)
+                "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico, asignacion_id, tipo, mime_type, onedrive_item_id, onedrive_url, equipo) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                (unidad, file.filename, contenido_a_guardar, tecnico, asignacion_id, tipo, mime_type, onedrive_item_id, onedrive_url, equipo)
             )
         except Exception as e_insert:
-            # Columnas nuevas (tipo/mime_type/onedrive_*) aún no migradas en la
-            # DB (deploy muy reciente) — no perder el archivo del técnico:
+            # Columnas nuevas (tipo/mime_type/onedrive_*/equipo) aún no migradas
+            # en la DB (deploy muy reciente) — no perder el archivo del técnico:
             # reintentar con el INSERT clásico. Si es un video y ya se subió a
             # OneDrive, se guarda igual el blob completo como respaldo porque
             # sin la columna onedrive_item_id no hay forma de solo guardar la
@@ -215,7 +215,7 @@ def contar_evidencias_asignacion(asignacion_id: int, current_user=Depends(verify
 def evidencias_por_actividad(asignacion_id: int, current_user=Depends(require_admin_or_visor)):
     try:
         rows = execute_read(
-            """SELECT id, nombre_archivo, tecnico, unit_number, tipo,
+            """SELECT id, nombre_archivo, tecnico, unit_number, tipo, equipo,
                       COALESCE(created_at, '') AS fecha
                FROM evidencias
                WHERE asignacion_id=%s
@@ -223,9 +223,9 @@ def evidencias_por_actividad(asignacion_id: int, current_user=Depends(require_ad
             (asignacion_id,)
         )
     except Exception as e:
-        # Columna 'tipo' aún no migrada en la DB (deploy reciente) — no tronar,
-        # responder igual sin ese campo (se asume 'foto' por defecto).
-        logger.warning(f"[evidencias] Fallback sin columna 'tipo' en por-actividad: {e}")
+        # Columnas 'tipo'/'equipo' aún no migradas en la DB (deploy reciente) —
+        # no tronar, responder igual sin esos campos.
+        logger.warning(f"[evidencias] Fallback sin columna 'tipo'/'equipo' en por-actividad: {e}")
         rows = execute_read(
             """SELECT id, nombre_archivo, tecnico, unit_number,
                       COALESCE(created_at, '') AS fecha
@@ -238,6 +238,7 @@ def evidencias_por_actividad(asignacion_id: int, current_user=Depends(require_ad
         "id": r["id"],
         "nombre": r["nombre_archivo"] or f"foto_{r['id']}.jpg",
         "tecnico": r["tecnico"] or "",
+        "equipo": r.get("equipo") or "",
         "unit_number": r["unit_number"],
         "tipo": r.get("tipo") or "foto",
         "fecha": str(r["fecha"]) if r["fecha"] else "",
@@ -252,6 +253,7 @@ async def subir_evidencias(
     tecnico: str = Form(...),
     files: List[UploadFile] = File(...),
     asignacion_id: int = Form(None),
+    equipo: str = Form(None),
     current_user=Depends(verify_token)
 ):
     # Verificar límite
@@ -285,12 +287,25 @@ async def subir_evidencias(
 
     files_a_guardar = files[:disponibles]
 
+    # ── Normalizar equipo: lista de usernames separados por coma, sin        ─
+    # duplicados, quien sube siempre incluido (aunque no lo haya marcado). ──
+    equipo_normalizado = None
+    if equipo:
+        nombres = [n.strip() for n in equipo.split(",") if n.strip()]
+        vistos, ordenados = set(), []
+        for n in [tecnico] + nombres:
+            if n not in vistos:
+                vistos.add(n)
+                ordenados.append(n)
+        if len(ordenados) > 1:
+            equipo_normalizado = ", ".join(ordenados)
+
     # ── Procesar en paralelo con semáforo para no saturar DB/red ──────────
     semaforo = asyncio.Semaphore(MAX_CONCURRENT)
 
     async def procesar_con_limite(file):
         async with semaforo:
-            return await procesar_foto(file, unidad, tecnico, asignacion_id)
+            return await procesar_foto(file, unidad, tecnico, asignacion_id, equipo_normalizado)
 
     resultados = await asyncio.gather(
         *[procesar_con_limite(f) for f in files_a_guardar],
@@ -435,7 +450,7 @@ def listar_evidencias(
 
     try:
         rows = execute_read(
-            """SELECT e.id, e.nombre_archivo, e.tecnico, e.asignacion_id, e.tipo,
+            """SELECT e.id, e.nombre_archivo, e.tecnico, e.asignacion_id, e.tipo, e.equipo,
                       COALESCE(e.created_at, '') AS fecha,
                       a.actividad_id AS actividad
                FROM evidencias e
@@ -446,9 +461,9 @@ def listar_evidencias(
             (unit_number, per_page, offset)
         )
     except Exception as e:
-        # Columna 'tipo' aún no migrada en la DB (deploy reciente) — no tronar,
-        # responder igual sin ese campo (se asume 'foto' por defecto).
-        logger.warning(f"[evidencias] Fallback sin columna 'tipo' en lista: {e}")
+        # Columnas 'tipo'/'equipo' aún no migradas en la DB (deploy reciente) —
+        # no tronar, responder igual sin esos campos.
+        logger.warning(f"[evidencias] Fallback sin columna 'tipo'/'equipo' en lista: {e}")
         rows = execute_read(
             """SELECT e.id, e.nombre_archivo, e.tecnico, e.asignacion_id,
                       COALESCE(e.created_at, '') AS fecha,
@@ -466,6 +481,7 @@ def listar_evidencias(
             "id": r["id"],
             "nombre": r["nombre_archivo"] or f"foto_{r['id']}.jpg",
             "tecnico": r["tecnico"] or "",
+            "equipo": r.get("equipo") or "",
             "tipo": r.get("tipo") or "foto",
             "fecha": str(r["fecha"]) if r["fecha"] else "",
             "actividad": r.get("actividad") or "",

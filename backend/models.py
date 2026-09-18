@@ -42,6 +42,9 @@ class AsignacionUpdate(BaseModel):
     actividad_id: Optional[str] = None
     comentario: Optional[str] = None
 
+class AsignacionTransferir(BaseModel):
+    tecnico_destino: str
+
 class TicketCreate(BaseModel):
     unit_number: str
     vin_number: Optional[str] = ""

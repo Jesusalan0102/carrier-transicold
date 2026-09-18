@@ -868,6 +868,47 @@ def _run_migrations():
             except Exception as e_ru:
                 print(f"⚠️  Migración (reportes_unidad) omitida: {e_ru}")
 
+            # ── evidencias.equipo: técnicos que trabajaron en conjunto ─────────
+            # Cuando varias personas hacen la misma actividad, `tecnico` sigue
+            # guardando quién subió cada archivo (autoría real de la subida),
+            # y `equipo` guarda la lista completa (separada por comas) de
+            # quienes trabajaron esa evidencia en grupo, elegida al subir.
+            try:
+                cur.execute("""
+                    SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME   = 'evidencias'
+                      AND COLUMN_NAME  = 'equipo'
+                """)
+                row_eq = cur.fetchone()
+                count_eq = row_eq[0] if isinstance(row_eq, tuple) else list(row_eq.values())[0]
+                if count_eq == 0:
+                    cur.execute(
+                        "ALTER TABLE evidencias ADD COLUMN equipo TEXT DEFAULT NULL"
+                    )
+                    conn.commit()
+                    print("✅ Migración: columna equipo añadida a evidencias")
+            except Exception as e_eq:
+                print(f"⚠️  Migración (evidencias.equipo) omitida: {e_eq}")
+
+            # ── asignaciones: historial de transferencias vía QR ───────────────
+            try:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS asignaciones_transferencias (
+                        id              INT AUTO_INCREMENT PRIMARY KEY,
+                        asignacion_id   INT NOT NULL,
+                        tecnico_origen  VARCHAR(80)  NOT NULL,
+                        tecnico_destino VARCHAR(80)  NOT NULL,
+                        transferido_por VARCHAR(80)  NOT NULL,
+                        created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        INDEX idx_asignacion (asignacion_id)
+                    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+                """)
+                conn.commit()
+                print("✅ Migración: tabla asignaciones_transferencias verificada")
+            except Exception as e_at:
+                print(f"⚠️  Migración (asignaciones_transferencias) omitida: {e_at}")
+
     except Exception as e:
         print(f"⚠️  Migración omitida: {e}")
     finally:

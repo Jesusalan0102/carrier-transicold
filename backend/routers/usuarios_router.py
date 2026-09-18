@@ -35,6 +35,16 @@ def mi_perfil(current_user=Depends(verify_token)):
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return rows[0]
 
+@router.get("/tecnicos")
+def listar_tecnicos(current_user=Depends(verify_token)):
+    """Lista liviana (username + nombre) de todos los técnicos — accesible para
+    cualquier rol autenticado. La usan los propios técnicos para elegir con
+    quién trabajaron una evidencia en equipo (no expone datos administrativos,
+    a diferencia de listar_usuarios abajo)."""
+    return execute_read(
+        "SELECT username, nombre_completo FROM users WHERE role='tecnico' ORDER BY username"
+    )
+
 @router.get("/")
 def listar_usuarios(current_user=Depends(verify_token)):
     """Ver la lista es distinto a administrar usuarios: el líder la necesita

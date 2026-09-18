@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from db import execute_read, execute_write
 from auth import verify_token
-from models import AsignacionCreate, AsignacionUpdate
+from models import AsignacionCreate, AsignacionUpdate, AsignacionTransferir
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import corriendo_tracking
@@ -232,6 +232,69 @@ def finalizar(asig_id: int, data: dict, current_user=Depends(verify_token)):
         )
     _notify("actividad_completada", {"asignacion_id": asig_id, "tecnico": current_user["username"]})
     return {"mensaje": "Actividad finalizada"}
+
+# ── TRANSFERIR (vía QR: técnico transfiere lo suyo, o admin/líder reasigna) ─
+# El técnico origen o el destino se identifican escaneando el código QR
+# personal de un técnico (ver /app/mis-tareas → "Mi código"), que codifica
+# TECNICO:{username}. El frontend valida el formato y solo envía el username
+# destino; aquí se revalida contra la tabla de usuarios por seguridad.
+@router.patch("/{asig_id}/transferir")
+def transferir(asig_id: int, data: AsignacionTransferir, current_user=Depends(verify_token)):
+    rows = execute_read(
+        "SELECT unidad, actividad_id, tecnico, estado FROM asignaciones WHERE id=%s",
+        (asig_id,)
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Asignación no encontrada")
+    asig = rows[0]
+
+    es_admin_o_lider = current_user["role"] in ("admin", "lider")
+    if not es_admin_o_lider and asig["tecnico"] != current_user["username"]:
+        raise HTTPException(status_code=403, detail="Solo puedes transferir tus propias actividades")
+
+    if asig["estado"] not in ("pendiente", "en_proceso"):
+        raise HTTPException(status_code=400, detail="Solo se pueden transferir actividades pendientes o en proceso")
+
+    destino = data.tecnico_destino.strip()
+    if not destino:
+        raise HTTPException(status_code=400, detail="Código de técnico no válido")
+    if destino == asig["tecnico"]:
+        raise HTTPException(status_code=400, detail="La actividad ya pertenece a ese técnico")
+
+    destino_rows = execute_read(
+        "SELECT username, role FROM users WHERE username=%s", (destino,)
+    )
+    if not destino_rows:
+        raise HTTPException(status_code=404, detail="El técnico escaneado no existe")
+    if destino_rows[0]["role"] != "tecnico":
+        raise HTTPException(status_code=400, detail="El código escaneado no corresponde a un técnico")
+
+    origen = asig["tecnico"]
+
+    # Si estaba en proceso, se pausa el acumulado antes de mover la actividad
+    # (el técnico destino la retoma con "Iniciar", no queda corriendo a su nombre sin que lo sepa)
+    if asig["estado"] == "en_proceso" and asig["actividad_id"] == "Corriendo":
+        corriendo_tracking.pausar(asig["unidad"])
+
+    execute_write(
+        "UPDATE asignaciones SET tecnico=%s, estado='pendiente', fecha_inicio=NULL WHERE id=%s",
+        (destino, asig_id)
+    )
+    execute_write(
+        "INSERT INTO asignaciones_transferencias (asignacion_id, tecnico_origen, tecnico_destino, transferido_por) "
+        "VALUES (%s,%s,%s,%s)",
+        (asig_id, origen, destino, current_user["username"])
+    )
+    execute_write(
+        "INSERT INTO comentarios_actividades (asignacion_id, tecnico, comentario) VALUES (%s,%s,%s)",
+        (asig_id, current_user["username"],
+         f"Actividad transferida de {origen} a {destino} (vía QR)")
+    )
+    _notify("actividad_transferida", {
+        "asignacion_id": asig_id, "unidad": asig["unidad"],
+        "tecnico_origen": origen, "tecnico_destino": destino,
+    })
+    return {"mensaje": f"Actividad transferida a {destino}", "tecnico_destino": destino}
 
 # ── EDITAR (admin o líder: cambiar estado/técnico/actividad + comentario) ──
 @router.put("/{asig_id}")
