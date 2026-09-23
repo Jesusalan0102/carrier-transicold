@@ -5100,6 +5100,268 @@ async def mis_tareas():
             });
         }
 
+        // ══════════════════════════════════════════════════════════════════
+        // 📷 CÁMARA DE EVIDENCIA — captura directa dentro de la app, varias
+        // fotos seguidas (sin reabrir la app de cámara del sistema cada vez
+        // ni pasar por la galería). Pensado para ~100 fotos por actividad
+        // sin que la app se rompa o pierda lo ya tomado:
+        //   1) Cada foto se reduce/comprime en el momento (máx. 1280px,
+        //      JPEG 0.8) → nunca se guardan imágenes pesadas en memoria.
+        //   2) Cada foto se guarda de inmediato en IndexedDB (disco del
+        //      dispositivo) ANTES de intentar subirla → si la pestaña se
+        //      recarga, se queda sin memoria o se pierde la conexión, la
+        //      foto ya tomada NO se pierde.
+        //   3) Las fotos se suben una por una en segundo plano (máx. 2 a la
+        //      vez) con reintentos automáticos (backoff) si falla la red;
+        //      solo se borran de IndexedDB cuando el servidor confirma que
+        //      quedaron guardadas.
+        //   4) Si se cierra la cámara con subidas pendientes, o el técnico
+        //      recarga la página sin querer, al volver a abrir la cámara
+        //      para esa misma actividad se detectan y se reanudan solas.
+        // ══════════════════════════════════════════════════════════════════
+        const EVID_DB_NAME = 'evidenciaCamaraDB';
+        const EVID_STORE = 'fotos';
+        let _evidDbPromise = null;
+
+        function _evidDb() {
+            if (_evidDbPromise) return _evidDbPromise;
+            _evidDbPromise = new Promise((resolve, reject) => {
+                const req = indexedDB.open(EVID_DB_NAME, 1);
+                req.onupgradeneeded = () => {
+                    const db = req.result;
+                    if (!db.objectStoreNames.contains(EVID_STORE)) {
+                        const store = db.createObjectStore(EVID_STORE, { keyPath: 'id' });
+                        store.createIndex('asignacionId', 'asignacionId', { unique: false });
+                    }
+                };
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+            return _evidDbPromise;
+        }
+
+        async function _evidPut(record) {
+            const db = await _evidDb();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(EVID_STORE, 'readwrite');
+                tx.objectStore(EVID_STORE).put(record);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+
+        async function _evidDelete(id) {
+            const db = await _evidDb();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(EVID_STORE, 'readwrite');
+                tx.objectStore(EVID_STORE).delete(id);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+
+        async function _evidGetPendientes(asignacionId) {
+            const db = await _evidDb();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(EVID_STORE, 'readonly');
+                const idx = tx.objectStore(EVID_STORE).index('asignacionId');
+                const req = idx.getAll(IDBKeyRange.only(asignacionId));
+                req.onsuccess = () => resolve(req.result || []);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        // Fotos que la cámara ya confirmó subidas al servidor en esta
+        // sesión del navegador, por actividad — se usa al validar el
+        // formulario de "Finalizar Actividad" para no exigir también el
+        // <input type="file"> clásico si ya se tomaron fotos con la cámara.
+        window._camaraFotosConfirmadas = window._camaraFotosConfirmadas || {};
+
+        function abrirCamaraEvidencia(asignacionId, unidad) {
+            return new Promise((resolveModal) => {
+                const overlay = document.createElement('div');
+                overlay.id = 'camaraEvidenciaOverlay';
+                overlay.style.cssText = 'position:fixed;inset:0;background:#000;z-index:900;display:flex;flex-direction:column;';
+                overlay.innerHTML = `
+                    <video id="camEvidVideo" autoplay playsinline muted style="flex:1;width:100%;object-fit:cover;background:#000;"></video>
+                    <div style="position:absolute;top:0;left:0;right:0;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;background:linear-gradient(rgba(0,0,0,0.6),transparent);">
+                        <span id="camEvidContador" style="color:#fff;font-weight:700;font-size:0.95rem;">0 / 100</span>
+                        <button id="camEvidCerrar" type="button" style="background:rgba(255,255,255,0.15);border:none;color:#fff;border-radius:50%;width:38px;height:38px;font-size:1.1rem;cursor:pointer;">✖</button>
+                    </div>
+                    <div id="camEvidEstado" style="position:absolute;top:56px;left:0;right:0;text-align:center;color:#facc15;font-size:0.8rem;min-height:16px;padding:0 16px;"></div>
+                    <div id="camEvidThumbs" style="position:absolute;bottom:112px;left:0;right:0;display:flex;gap:6px;overflow-x:auto;padding:0 12px;"></div>
+                    <div style="position:absolute;bottom:0;left:0;right:0;padding:18px 20px 26px;background:linear-gradient(transparent,rgba(0,0,0,0.7));display:flex;align-items:center;justify-content:center;gap:22px;">
+                        <button id="camEvidCambiar" type="button" style="background:rgba(255,255,255,0.15);border:none;color:#fff;border-radius:50%;width:46px;height:46px;font-size:1.2rem;cursor:pointer;">🔄</button>
+                        <button id="camEvidCapturar" type="button" style="background:#fff;border:5px solid rgba(255,255,255,0.4);border-radius:50%;width:72px;height:72px;cursor:pointer;"></button>
+                        <button id="camEvidTerminar" type="button" style="background:#16a34a;border:none;color:#fff;border-radius:24px;padding:12px 20px;font-weight:700;cursor:pointer;">✅ Listo</button>
+                    </div>`;
+                document.body.appendChild(overlay);
+
+                const videoEl = overlay.querySelector('#camEvidVideo');
+                const contadorEl = overlay.querySelector('#camEvidContador');
+                const estadoEl = overlay.querySelector('#camEvidEstado');
+                const thumbsEl = overlay.querySelector('#camEvidThumbs');
+
+                let stream = null;
+                let facing = 'environment';
+                let capturadas = 0;
+                let subidasOk = 0;
+                let enCola = 0;
+                let subiendoAhora = 0;
+                let cerrando = false;
+                const MAX_CONCURRENTES = 2;
+
+                async function iniciarCamara() {
+                    try {
+                        if (stream) stream.getTracks().forEach(t => t.stop());
+                        stream = await navigator.mediaDevices.getUserMedia({
+                            video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } },
+                            audio: false
+                        });
+                        videoEl.srcObject = stream;
+                    } catch (e) {
+                        estadoEl.style.color = '#f87171';
+                        estadoEl.textContent = 'No se pudo acceder a la cámara: ' + (e.message || e.name);
+                    }
+                }
+
+                function actualizarContador() { contadorEl.textContent = `${capturadas} / 100`; }
+
+                function agregarMiniatura(blobUrl, id) {
+                    const img = document.createElement('img');
+                    img.dataset.evidId = id;
+                    img.src = blobUrl;
+                    img.style.cssText = 'width:52px;height:52px;object-fit:cover;border-radius:8px;flex:0 0 auto;border:2px solid #facc15;opacity:0.9;';
+                    thumbsEl.appendChild(img);
+                    thumbsEl.scrollLeft = thumbsEl.scrollWidth;
+                    return img;
+                }
+
+                async function subirFoto(record, imgEl) {
+                    enCola++; subiendoAhora++;
+                    let intentos = record.intentos || 0;
+                    while (intentos < 6) {
+                        if (!navigator.onLine) {
+                            estadoEl.style.color = '#facc15';
+                            estadoEl.textContent = 'Sin conexión — esperando para subir…';
+                            await new Promise(r => {
+                                const h = () => { window.removeEventListener('online', h); r(); };
+                                window.addEventListener('online', h);
+                            });
+                        }
+                        try {
+                            const fd = new FormData();
+                            fd.append('unidad', unidad);
+                            fd.append('tecnico', window.username);
+                            fd.append('asignacion_id', asignacionId);
+                            fd.append('files', new File([record.blob], record.filename, { type: 'image/jpeg' }));
+                            const res = await window.fetchAuth('/api/evidencias/upload', { method: 'POST', body: fd });
+                            if (res.ok) {
+                                subidasOk++;
+                                window._camaraFotosConfirmadas[asignacionId] = (window._camaraFotosConfirmadas[asignacionId] || 0) + 1;
+                                await _evidDelete(record.id);
+                                if (imgEl) { imgEl.style.border = '2px solid #22c55e'; imgEl.style.opacity = '1'; }
+                                estadoEl.textContent = '';
+                                subiendoAhora--; enCola--;
+                                return;
+                            }
+                            if (res.status === 400) {
+                                if (imgEl) imgEl.style.border = '2px solid #ef4444';
+                                estadoEl.style.color = '#f87171';
+                                const d = await res.json().catch(() => ({}));
+                                estadoEl.textContent = d.detail || 'No se pudo subir una foto.';
+                                subiendoAhora--; enCola--;
+                                return;
+                            }
+                        } catch (e) { /* red caída — se reintenta abajo */ }
+                        intentos++;
+                        record.intentos = intentos;
+                        await _evidPut(record);
+                        await new Promise(r => setTimeout(r, Math.min(1000 * 2 ** intentos, 15000)));
+                    }
+                    if (imgEl) imgEl.style.border = '2px solid #ef4444';
+                    estadoEl.style.color = '#f87171';
+                    estadoEl.textContent = 'Una foto no se pudo subir tras varios intentos. Sigue guardada en este dispositivo.';
+                    subiendoAhora--; enCola--;
+                }
+
+                const colaPendiente = [];
+                function encolar(record, imgEl) { colaPendiente.push({ record, imgEl }); procesarCola(); }
+                function procesarCola() {
+                    while (subiendoAhora < MAX_CONCURRENTES && colaPendiente.length) {
+                        const { record, imgEl } = colaPendiente.shift();
+                        subirFoto(record, imgEl).finally(procesarCola);
+                    }
+                }
+
+                async function capturar() {
+                    if (capturadas >= 100) {
+                        estadoEl.style.color = '#facc15';
+                        estadoEl.textContent = 'Llegaste al máximo de 100 fotos para esta actividad.';
+                        return;
+                    }
+                    if (!stream || !videoEl.videoWidth) return;
+                    const w = videoEl.videoWidth, h = videoEl.videoHeight;
+                    const MAX = 1280;
+                    let outW = w, outH = h;
+                    if (Math.max(w, h) > MAX) {
+                        const r = MAX / Math.max(w, h);
+                        outW = Math.round(w * r); outH = Math.round(h * r);
+                    }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = outW; canvas.height = outH;
+                    canvas.getContext('2d').drawImage(videoEl, 0, 0, outW, outH);
+                    canvas.toBlob(async (blob) => {
+                        if (!blob) return;
+                        capturadas++;
+                        actualizarContador();
+                        const id = `${asignacionId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                        const record = { id, asignacionId, unidad, filename: `evid_${Date.now()}.jpg`, blob, intentos: 0, creado: Date.now() };
+                        await _evidPut(record);   // respaldo local INMEDIATO, antes de intentar subir
+                        const url = URL.createObjectURL(blob);
+                        const imgEl = agregarMiniatura(url, id);
+                        encolar(record, imgEl);
+                    }, 'image/jpeg', 0.8);
+                }
+
+                async function reanudarPendientes() {
+                    const pendientes = await _evidGetPendientes(asignacionId);
+                    if (!pendientes.length) return;
+                    estadoEl.style.color = '#facc15';
+                    estadoEl.textContent = `Reanudando ${pendientes.length} foto(s) de una sesión anterior…`;
+                    pendientes.forEach(record => {
+                        capturadas++;
+                        actualizarContador();
+                        const url = URL.createObjectURL(record.blob);
+                        const imgEl = agregarMiniatura(url, record.id);
+                        encolar(record, imgEl);
+                    });
+                }
+
+                async function cerrar() {
+                    if (cerrando) return;
+                    cerrando = true;
+                    if (enCola > 0) {
+                        const seguir = confirm(`Aún se están subiendo ${enCola} foto(s). Si cierras ahora, quedan guardadas en este dispositivo y se reintentan la próxima vez que abras la cámara para esta actividad. ¿Cerrar de todas formas?`);
+                        if (!seguir) { cerrando = false; return; }
+                    }
+                    if (stream) stream.getTracks().forEach(t => t.stop());
+                    overlay.remove();
+                    resolveModal({ capturadas, subidasOk });
+                }
+
+                overlay.querySelector('#camEvidCapturar').addEventListener('click', capturar);
+                overlay.querySelector('#camEvidCerrar').addEventListener('click', cerrar);
+                overlay.querySelector('#camEvidTerminar').addEventListener('click', cerrar);
+                overlay.querySelector('#camEvidCambiar').addEventListener('click', () => {
+                    facing = facing === 'environment' ? 'user' : 'environment';
+                    iniciarCamara();
+                });
+
+                iniciarCamara().then(reanudarPendientes);
+            });
+        }
+
         async function completarTarea(id, unidad, actividad, ticketId) {
             const prev = document.getElementById('modalFinalizar');
             if (prev) prev.remove();
@@ -5133,6 +5395,8 @@ async def mis_tareas():
 
                     <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">📸 Evidencia fotográfica o de video</label>
                     ${fotosPrevias > 0 ? `<p style="font-size:0.8rem;color:#16a34a;margin:0 0 8px;">✔ Ya tienes ${fotosPrevias} archivo(s) guardado(s) para esta actividad. Puedes agregar más o continuar.</p>` : ''}
+                    <button type="button" id="btnAbrirCamaraEvid" style="width:100%;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:10px;padding:12px;font-weight:700;font-size:0.88rem;cursor:pointer;margin-bottom:8px;">📷 Tomar varias fotos con la cámara</button>
+                    <p style="font-size:0.75rem;color:#9ca3af;margin:0 0 8px;">También puedes adjuntar fotos o video ya guardados:</p>
                     <input type="file" id="fotosFinalizarInput" multiple accept="image/*,video/*" style="width:100%;margin-bottom:8px;">
                     <p style="font-size:0.75rem;color:#9ca3af;margin:0 0 8px;">Videos hasta 80MB por archivo.</p>
                     <div id="previewFotosFinalizar" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;"></div>
@@ -5163,6 +5427,14 @@ async def mis_tareas():
                 </div>
                 <style>@keyframes fadeInM{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}</style>`;
             document.body.appendChild(modal);
+
+            document.getElementById('btnAbrirCamaraEvid').addEventListener('click', async () => {
+                const resultado = await abrirCamaraEvidencia(id, unidad);
+                if (resultado && resultado.subidasOk > 0) {
+                    const infoEl = document.getElementById('compressInfoFinalizar');
+                    if (infoEl) infoEl.textContent = `📷 ${resultado.subidasOk} foto(s) subida(s) con la cámara en esta sesión.`;
+                }
+            });
 
             document.getElementById('fotosFinalizarInput').addEventListener('change', e => {
                 const files = Array.from(e.target.files).slice(0, 100);
@@ -5283,7 +5555,8 @@ async def mis_tareas():
                 }
             }
 
-            if (fotosPrevias === 0 && archivosNuevos.length === 0) {
+            const fotosCamara = window._camaraFotosConfirmadas[id] || 0;
+            if (fotosPrevias === 0 && archivosNuevos.length === 0 && fotosCamara === 0) {
                 errorEl.textContent = 'Debes agregar al menos una foto de evidencia de tu trabajo.';
                 return;
             }
