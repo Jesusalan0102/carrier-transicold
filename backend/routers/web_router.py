@@ -5138,9 +5138,15 @@ async def mis_tareas():
                     <div id="previewFotosFinalizar" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;"></div>
                     <div id="compressInfoFinalizar" style="font-size:12px;color:#666;margin-bottom:8px;"></div>
 
-                    <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">👥 ¿La trabajaste en equipo? (opcional)</label>
-                    <p style="font-size:0.78rem;color:#9ca3af;margin:0 0 8px;">Marca a los compañeros que también trabajaron esta evidencia. Tú quedas registrado como quien la subió.</p>
-                    <div id="equipoCheckboxes" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;font-size:0.85rem;color:#9ca3af;">Cargando compañeros...</div>
+                    <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">👥 ¿La trabajaste en equipo?</label>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+                        <button type="button" id="btnSolo" onclick="_toggleEquipo(false)" style="border:1.5px solid var(--carrier-blue);background:var(--carrier-blue);color:white;border-radius:10px;padding:10px;font-weight:700;font-size:0.85rem;cursor:pointer;">🧍 Trabajé solo</button>
+                        <button type="button" id="btnEquipo" onclick="_toggleEquipo(true)" style="border:1.5px solid #d1d5db;background:white;color:#374151;border-radius:10px;padding:10px;font-weight:700;font-size:0.85rem;cursor:pointer;">👥 Trabajé en equipo</button>
+                    </div>
+                    <div id="equipoSeccion" style="display:none;margin-bottom:14px;">
+                        <p style="font-size:0.78rem;color:#9ca3af;margin:0 0 8px;">Marca a los compañeros que también trabajaron esta evidencia. Tú quedas registrado como quien la subió.</p>
+                        <div id="equipoCheckboxes" style="display:flex;flex-wrap:wrap;gap:8px;font-size:0.85rem;color:#9ca3af;max-height:220px;overflow-y:auto;">Cargando compañeros...</div>
+                    </div>
 
                     <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">📝 Comentario del técnico</label>
                     <textarea id="comentarioTexto" rows="4" placeholder="Describe brevemente el trabajo realizado, observaciones, etc." style="width:100%;border:1.5px solid #d1d5db;border-radius:12px;padding:12px;font-size:0.95rem;resize:vertical;font-family:inherit;transition:border-color 0.2s;"></textarea>
@@ -5157,8 +5163,6 @@ async def mis_tareas():
                 </div>
                 <style>@keyframes fadeInM{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}</style>`;
             document.body.appendChild(modal);
-
-            _cargarEquipoCheckboxes();
 
             document.getElementById('fotosFinalizarInput').addEventListener('change', e => {
                 const files = Array.from(e.target.files).slice(0, 100);
@@ -5197,6 +5201,39 @@ async def mis_tareas():
             setTimeout(() => document.getElementById('comentarioTexto').focus(), 100);
         }
 
+        let _equipoCheckboxesCargados = false;
+
+        function _toggleEquipo(esEquipo) {
+            const seccion = document.getElementById('equipoSeccion');
+            const btnSolo = document.getElementById('btnSolo');
+            const btnEquipo = document.getElementById('btnEquipo');
+            if (!seccion || !btnSolo || !btnEquipo) return;
+
+            seccion.style.display = esEquipo ? 'block' : 'none';
+
+            if (esEquipo) {
+                btnEquipo.style.background = 'var(--carrier-blue)';
+                btnEquipo.style.color = 'white';
+                btnEquipo.style.borderColor = 'var(--carrier-blue)';
+                btnSolo.style.background = 'white';
+                btnSolo.style.color = '#374151';
+                btnSolo.style.borderColor = '#d1d5db';
+                if (!_equipoCheckboxesCargados) {
+                    _equipoCheckboxesCargados = true;
+                    _cargarEquipoCheckboxes();
+                }
+            } else {
+                btnSolo.style.background = 'var(--carrier-blue)';
+                btnSolo.style.color = 'white';
+                btnSolo.style.borderColor = 'var(--carrier-blue)';
+                btnEquipo.style.background = 'white';
+                btnEquipo.style.color = '#374151';
+                btnEquipo.style.borderColor = '#d1d5db';
+                // Al volver a "solo", se desmarcan los compañeros para que no cuenten ocultos.
+                document.querySelectorAll('.equipoCheck:checked').forEach(c => c.checked = false);
+            }
+        }
+
         async function _cargarEquipoCheckboxes() {
             const cont = document.getElementById('equipoCheckboxes');
             if (!cont) return;
@@ -5214,6 +5251,8 @@ async def mis_tareas():
         }
 
         function _equipoSeleccionado() {
+            const seccion = document.getElementById('equipoSeccion');
+            if (!seccion || seccion.style.display === 'none') return '';
             const marcados = [...document.querySelectorAll('.equipoCheck:checked')].map(c => c.value);
             return marcados.length ? [username, ...marcados].join(',') : '';
         }
