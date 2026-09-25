@@ -899,6 +899,8 @@ async def dashboard():
         .status-tbl td:first-child { font-weight:700; color:#002B5B; background:#f8fafc; text-align:left; }
         .status-tbl td:nth-child(2) { font-family:monospace; font-weight:600; text-align:left; }
         .status-tbl tbody tr:hover td { background:#eef4ff; }
+        .status-tbl .comentario-unidad-input:hover { border-color:#d8dee6 !important; }
+        .status-tbl .comentario-unidad-input:empty::before { content: attr(data-placeholder); color:#9ca3af; }
         .status-tbl .check { color:#16a34a; font-size:1rem; }
         .status-tbl .dash { color:#d1d5db; }
         .status-tbl .badge-proceso {
@@ -1341,11 +1343,14 @@ async def dashboard():
                                     tbl += '<td><span class="dash">—</span></td>';
                                 }
                             });
-                            const comentarioEsc = (u.comentario||'').replace(/"/g,'&quot;');
+                            const comentarioEsc = (u.comentario||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
                             if (window.role === 'admin') {
-                                tbl += `<td style="min-width:180px;"><input type="text" class="comentario-unidad-input" data-unidad="${u.unit_number}" data-valor-guardado="${comentarioEsc}" value="${comentarioEsc}" placeholder="Sin comentario" onblur="guardarComentarioUnidad(this)" style="width:100%;border:1px solid #d8dee6;border-radius:6px;padding:6px 8px;font-size:.82rem;"></td>`;
+                                // contenteditable en vez de <input>: así el texto queda "plano" en el documento
+                                // y se puede seleccionar/copiar en línea junto con el resto de la columna,
+                                // en vez de quedar aislado dentro de un recuadro de formulario.
+                                tbl += `<td style="min-width:180px;"><span class="comentario-unidad-input" contenteditable="true" data-unidad="${u.unit_number}" data-valor-guardado="${comentarioEsc}" data-placeholder="Sin comentario" onfocus="this.style.borderColor='#d8dee6';" onblur="guardarComentarioUnidad(this)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" style="display:block;width:100%;min-height:1.3em;border:1px solid transparent;border-radius:6px;padding:6px 8px;font-size:.82rem;cursor:text;">${comentarioEsc}</span></td>`;
                             } else {
-                                tbl += `<td style="min-width:150px;font-size:.82rem;color:var(--text-secondary);">${u.comentario||'—'}</td>`;
+                                tbl += `<td style="min-width:150px;font-size:.82rem;color:var(--text-secondary);">${comentarioEsc||'—'}</td>`;
                             }
                             tbl += '</tr>';
                         });
@@ -1389,10 +1394,12 @@ async def dashboard():
         }
 
         // ── Comentario libre por unidad (editable solo por admin) ─────────────
+        // Nota: "input" aquí es el <span contenteditable> de la celda, no un <input>.
         async function guardarComentarioUnidad(input) {
             const unidad = input.dataset.unidad;
-            const valorPrevio = input.dataset.valorGuardado !== undefined ? input.dataset.valorGuardado : input.value;
-            const comentario = input.value;
+            const valorPrevio = input.dataset.valorGuardado !== undefined ? input.dataset.valorGuardado : input.textContent.trim();
+            const comentario = input.textContent.trim();
+            input.style.borderColor = 'transparent';
             if (comentario === valorPrevio) return; // sin cambios, no llamar al servidor
             try {
                 const res = await fetchAuth(`/api/unidades/${encodeURIComponent(unidad)}/comentario`, {
@@ -1403,7 +1410,7 @@ async def dashboard():
                 if (res.ok) {
                     input.dataset.valorGuardado = comentario;
                     input.style.borderColor = '#16a34a';
-                    setTimeout(() => { input.style.borderColor = '#d8dee6'; }, 800);
+                    setTimeout(() => { input.style.borderColor = 'transparent'; }, 800);
                 } else {
                     input.style.borderColor = '#dc2626';
                 }
@@ -3841,7 +3848,16 @@ async def admin():
             <input type="checkbox" id="lotes-mostrar-ocultos" onchange="lotesCargar()" style="cursor:pointer;">
             Mostrar lotes ocultos
           </label>
+          <span style="flex:1;"></span>
+          <span id="lotes-sel-badge" style="font-size:13px;color:var(--color-text-secondary);"></span>
+          <button class="btn btn-navy" id="lotes-btn-descargar-evidencias" onclick="lotesDescargarEvidenciasSeleccionadas()" disabled style="opacity:.5;">
+            <i class="ti ti-folder-download"></i> Descargar evidencias
+          </button>
         </div>
+        <p style="font-size:12.5px;color:var(--color-text-secondary);margin:-6px 0 10px;">
+          Marca uno o varios lotes y presiona <b>Descargar evidencias</b> para obtener un ZIP organizado por
+          Lote → VIN → Actividad, con un <code>informacion.csv</code> (técnico, fecha, hora) en cada carpeta de actividad.
+        </p>
 
         <div id="lotes-loading" style="display:none;text-align:center;padding:32px;color:var(--color-text-secondary);">
           <i class="ti ti-loader" style="font-size:24px;"></i> Cargando lotes…
@@ -4521,7 +4537,8 @@ async def admin():
                   ${oculto ? 'opacity:.7;' : ''}
                 ">
                   <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-                    <span style="font-size:15px;font-weight:600;color:var(--navy);">
+                    <span style="font-size:15px;font-weight:600;color:var(--navy);display:flex;align-items:center;gap:8px;">
+                      <input type="checkbox" class="lote-check" data-idx="${safeId}" style="cursor:pointer;width:16px;height:16px;">
                       <i class="ti ti-layout-grid" style="font-size:14px;"></i>
                       ${l.id_lote}
                     </span>
@@ -4569,6 +4586,16 @@ async def admin():
                     lotesModal(true, l.id_lote, l.total_unidades);
                 });
             });
+            grid.querySelectorAll('.lote-check').forEach(chk => {
+                chk.checked = _lotesSeleccionados.has(window._lotesData[chk.dataset.idx].id_lote);
+                chk.addEventListener('change', () => {
+                    const idLote = window._lotesData[chk.dataset.idx].id_lote;
+                    if (chk.checked) _lotesSeleccionados.add(idLote);
+                    else _lotesSeleccionados.delete(idLote);
+                    lotesActualizarBarraSeleccion();
+                });
+            });
+            lotesActualizarBarraSeleccion();
 
         } catch(e) {
             loading.style.display = 'none';
@@ -4605,6 +4632,51 @@ async def admin():
         a.href = URL.createObjectURL(blob);
         a.download = `backup_lote_${id_lote}.zip`;
         a.click();
+    }
+
+    // -- Descarga de evidencias organizadas (Lote → VIN → Actividad) --------
+    const _lotesSeleccionados = new Set();  // persiste entre recargas de la grilla
+
+    function lotesActualizarBarraSeleccion() {
+        const badge = document.getElementById('lotes-sel-badge');
+        const btn   = document.getElementById('lotes-btn-descargar-evidencias');
+        const n = _lotesSeleccionados.size;
+        badge.textContent = n ? `${n} lote${n !== 1 ? 's' : ''} seleccionado${n !== 1 ? 's' : ''}` : '';
+        btn.disabled = n === 0;
+        btn.style.opacity = n === 0 ? '.5' : '1';
+    }
+
+    async function lotesDescargarEvidenciasSeleccionadas() {
+        const lotes = Array.from(_lotesSeleccionados);
+        if (!lotes.length) return;
+
+        const btn = document.getElementById('lotes-btn-descargar-evidencias');
+        const textoOriginal = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="ti ti-loader"></i> Generando ZIP…';
+        try {
+            const params = lotes.map(l => `id_lote=${encodeURIComponent(l)}`).join('&');
+            const res = await fetchAuth(`/api/unidades/lotes/evidencias-zip?${params}`);
+            if (!res.ok) {
+                let detalle = 'No se pudieron descargar las evidencias de los lotes seleccionados';
+                try { const d = await res.json(); detalle = d.detail || detalle; } catch(e) {}
+                alert(detalle);
+                return;
+            }
+            const blob = await res.blob();
+            const nombreArchivo = lotes.length <= 3
+                ? `EVIDENCIAS_${lotes.join('_')}.zip`
+                : `EVIDENCIAS_${lotes.length}_lotes.zip`;
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = nombreArchivo;
+            a.click();
+        } catch(e) {
+            alert('Error de red al generar el ZIP: ' + e.message);
+        } finally {
+            btn.disabled = _lotesSeleccionados.size === 0;
+            btn.innerHTML = textoOriginal;
+        }
     }
 
     function lotesModal(visible, id_lote, total) {
