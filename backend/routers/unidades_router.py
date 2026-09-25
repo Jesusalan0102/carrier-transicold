@@ -442,7 +442,11 @@ async def descargar_evidencias_lotes(
         raise HTTPException(status_code=404, detail=f"Lote(s) no encontrado(s): {', '.join(faltantes)}")
 
     logger.info(f"[evidencias_lotes] Exportación solicitada por {current_user.get('username')} para: {id_lotes}")
-    zip_bytes = await run_in_threadpool(_generar_zip_evidencias_por_lotes, id_lotes)
+    try:
+        zip_bytes = await run_in_threadpool(_generar_zip_evidencias_por_lotes, id_lotes)
+    except Exception as e:
+        logger.exception(f"[evidencias_lotes] Falló la generación del ZIP para {id_lotes}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error generando el ZIP de evidencias: {e}")
     if not zip_bytes:
         raise HTTPException(status_code=500, detail="No se pudo generar el ZIP (sin datos para los lotes seleccionados)")
 
