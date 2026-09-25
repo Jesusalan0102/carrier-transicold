@@ -256,7 +256,8 @@ def _sheet_toma_valores(wb, conn):
 def _sheet_actividades(wb, conn):
     ws = wb.create_sheet("Actividades")
     rows_db = _query(conn, """
-        SELECT a.id, a.unidad, a.actividad_id, a.tecnico, a.estado,
+        SELECT u.id_lote AS lote, a.unidad, u.vin_number AS vin,
+               a.actividad_id, a.tecnico, a.estado,
                COALESCE(c.comentarios, a.comentario) AS comentario,
                a.fecha_asignacion, a.fecha_inicio, a.fecha_fin, a.ticket_id
         FROM asignaciones a
