@@ -4653,14 +4653,30 @@ async def admin():
         const btn = document.getElementById('lotes-btn-descargar-evidencias');
         const textoOriginal = btn.innerHTML;
         btn.disabled = true;
-        btn.innerHTML = '<i class="ti ti-loader"></i> Generando ZIP…';
+
+        // Aviso de progreso: si son varios lotes con muchas fotos/videos, armar
+        // el ZIP puede tardar; mostramos segundos transcurridos para que no
+        // parezca que la pantalla se congeló, y cortamos con un mensaje claro
+        // si se pasa de 4 minutos en vez de dejar el botón "colgado" para siempre.
+        const inicio = Date.now();
+        const actualizarTexto = () => {
+            const seg = Math.floor((Date.now() - inicio) / 1000);
+            btn.innerHTML = `<i class="ti ti-loader"></i> Generando ZIP… (${seg}s)`;
+        };
+        actualizarTexto();
+        const intervalo = setInterval(actualizarTexto, 1000);
+
+        const TIMEOUT_MS = 240000; // 4 minutos
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
         try {
             const params = lotes.map(l => `id_lote=${encodeURIComponent(l)}`).join('&');
-            const res = await fetchAuth(`/api/unidades/lotes/evidencias-zip?${params}`);
+            const res = await fetchAuth(`/api/unidades/lotes/evidencias-zip?${params}`, { signal: controller.signal });
             if (!res.ok) {
                 let detalle = 'No se pudieron descargar las evidencias de los lotes seleccionados';
                 try { const d = await res.json(); detalle = d.detail || detalle; } catch(e) {}
-                alert(detalle);
+                alert(`Error ${res.status}: ${detalle}`);
                 return;
             }
             const blob = await res.blob();
@@ -4672,8 +4688,15 @@ async def admin():
             a.download = nombreArchivo;
             a.click();
         } catch(e) {
-            alert('Error de red al generar el ZIP: ' + e.message);
+            if (e.name === 'AbortError') {
+                alert('La generación del ZIP tardó demasiado (más de 4 minutos) y se canceló. ' +
+                      'Prueba con menos lotes a la vez, o avísame para optimizar la descarga de videos de OneDrive, que suele ser lo más lento.');
+            } else {
+                alert('Error de red al generar el ZIP: ' + e.message);
+            }
         } finally {
+            clearInterval(intervalo);
+            clearTimeout(timeoutId);
             btn.disabled = _lotesSeleccionados.size === 0;
             btn.innerHTML = textoOriginal;
         }
