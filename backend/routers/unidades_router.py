@@ -4,10 +4,11 @@ from fastapi.concurrency import run_in_threadpool
 from db import execute_read, execute_write
 from auth import verify_token
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import io
+import re
 import zipfile
 import asyncio
 import logging
@@ -17,10 +18,11 @@ logger = logging.getLogger(__name__)
 
 # ── Importación opcional de OneDrive ────────────────────────────────────────
 try:
-    from onedrive_service import sync_zip_lote
+    from onedrive_service import sync_zip_lote, download_item_bytes as _od_download_item_bytes
     ONEDRIVE_ENABLED = True
 except ImportError:
     ONEDRIVE_ENABLED = False
+    _od_download_item_bytes = None
 
 router = APIRouter(prefix="/api/unidades", tags=["unidades"])
 
@@ -162,6 +164,212 @@ def _generar_zip_backup_lote(id_lote: str) -> bytes:
         conn.close()
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# ── DESCARGA DE EVIDENCIAS ORGANIZADA: LOTE → VIN → ACTIVIDAD → EVIDENCIAS ──
+# ═══════════════════════════════════════════════════════════════════════════
+# No sustituye ni modifica _generar_zip_backup_lote ni cómo se almacenan las
+# evidencias (siguen viviendo en la tabla `evidencias`, ligadas a
+# unit_number / asignacion_id / tecnico / equipo). Esta función solo las
+# reorganiza al momento de exportarlas a un ZIP.
+
+_CARACTERES_INVALIDOS_WINDOWS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def _nombre_seguro(valor, fallback: str = "SIN_DATO") -> str:
+    """Convierte un valor arbitrario en un nombre de carpeta/archivo válido
+    en Windows (y compatible con Mac/Linux): sin < > : " / \\ | ? *, sin
+    espacios/puntos al final. Si queda vacío, usa el fallback."""
+    texto = ("" if valor is None else str(valor)).strip()
+    texto = _CARACTERES_INVALIDOS_WINDOWS.sub("_", texto)
+    texto = texto.strip(" .")
+    return texto or fallback
+
+
+def _generar_zip_evidencias_por_lotes(id_lotes: list) -> bytes:
+    """
+    ZIP en memoria con estructura LOTE/VIN/ACTIVIDAD/evidencia, más un
+    informacion.csv por carpeta de actividad (Lote,VIN,Actividad,Tecnico,
+    Fecha,Hora,Archivo,Equipo). Reglas:
+      - Cada lote seleccionado queda en su propia carpeta raíz; nunca se
+        mezclan VINs o evidencias entre lotes.
+      - Cada VIN del lote tiene su carpeta, aunque no tenga evidencias.
+      - Solo se crean carpetas de actividad que sí tengan al menos una
+        evidencia.
+      - Evidencias de distintos técnicos para la misma actividad quedan
+        juntas dentro de esa carpeta (no se separan por técnico).
+      - Nunca se sobrescribe un archivo: ante una colisión de nombre se
+        agrega un sufijo numérico.
+    """
+    import pymysql
+    from db import get_db_connection
+
+    conn = get_db_connection()
+    if not conn:
+        raise RuntimeError("No hay conexión con la base de datos")
+
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as zf:
+                rutas_usadas = set()
+
+                for id_lote in id_lotes:
+                    lote_safe = _nombre_seguro(id_lote, "SIN_LOTE")
+
+                    cur.execute(
+                        "SELECT unit_number, vin_number FROM unidades WHERE id_lote=%s ORDER BY unit_number",
+                        (id_lote,)
+                    )
+                    unidades = cur.fetchall()
+                    if not unidades:
+                        continue
+
+                    # VIN de carpeta por unidad (si no hay VIN capturado, se usa el
+                    # #económico para no perder la unidad de la exportación) y
+                    # desambiguación si dos unidades del lote comparten VIN.
+                    vin_por_unidad = {}
+                    vin_usados = {}
+                    for u in unidades:
+                        vin_base = (u.get("vin_number") or "").strip() or u["unit_number"]
+                        vin_safe = _nombre_seguro(vin_base, u["unit_number"])
+                        if vin_safe in vin_usados:
+                            vin_usados[vin_safe] += 1
+                            vin_safe = f"{vin_safe}_{vin_usados[vin_safe]}"
+                        else:
+                            vin_usados[vin_safe] = 0
+                        vin_por_unidad[u["unit_number"]] = vin_safe
+
+                        # Carpeta del VIN aunque quede vacía (entrada de directorio en el ZIP)
+                        ruta_vin = f"{lote_safe}/{vin_safe}/"
+                        if ruta_vin not in rutas_usadas:
+                            zf.writestr(ruta_vin, "")
+                            rutas_usadas.add(ruta_vin)
+
+                    unit_numbers = list(vin_por_unidad.keys())
+                    ph = ",".join(["%s"] * len(unit_numbers))
+
+                    # Metadatos de evidencias + actividad (con fallback si el
+                    # deploy aún no tiene las columnas tipo/equipo/onedrive_*).
+                    try:
+                        cur.execute(
+                            f"""SELECT e.id, e.unit_number, e.nombre_archivo, e.tecnico, e.equipo,
+                                       e.asignacion_id, e.tipo, e.onedrive_item_id,
+                                       COALESCE(e.created_at, NOW()) AS fecha_hora,
+                                       a.actividad_id AS actividad
+                                FROM evidencias e
+                                LEFT JOIN asignaciones a ON a.id = e.asignacion_id
+                                WHERE e.unit_number IN ({ph})
+                                ORDER BY e.unit_number, actividad, e.id""",
+                            tuple(unit_numbers)
+                        )
+                        meta = cur.fetchall()
+                    except Exception as e_meta:
+                        logger.warning(f"[evidencias_lotes] Fallback sin columnas nuevas: {e_meta}")
+                        cur.execute(
+                            f"""SELECT e.id, e.unit_number, e.nombre_archivo, e.tecnico,
+                                       NULL AS equipo, e.asignacion_id, 'foto' AS tipo,
+                                       NULL AS onedrive_item_id,
+                                       COALESCE(e.created_at, NOW()) AS fecha_hora,
+                                       a.actividad_id AS actividad
+                                FROM evidencias e
+                                LEFT JOIN asignaciones a ON a.id = e.asignacion_id
+                                WHERE e.unit_number IN ({ph})
+                                ORDER BY e.unit_number, actividad, e.id""",
+                            tuple(unit_numbers)
+                        )
+                        meta = cur.fetchall()
+
+                    if not meta:
+                        continue
+
+                    # Contenido de los blobs en bloques (pueden pesar bastante)
+                    BLOQUE = 40
+                    contenidos = {}
+                    ids_lista = [m["id"] for m in meta]
+                    for i in range(0, len(ids_lista), BLOQUE):
+                        trozo = ids_lista[i:i + BLOQUE]
+                        ph2 = ",".join(["%s"] * len(trozo))
+                        cur.execute(f"SELECT id, contenido FROM evidencias WHERE id IN ({ph2})", tuple(trozo))
+                        for fila in cur.fetchall():
+                            if fila["contenido"]:
+                                contenidos[fila["id"]] = fila["contenido"]
+
+                    contadores = {}       # (vin_safe, actividad_safe) -> consecutivo
+                    filas_csv = {}        # (vin_safe, actividad_safe) -> [filas]
+
+                    for m in meta:
+                        contenido = contenidos.get(m["id"])
+                        if not contenido and m.get("onedrive_item_id") and ONEDRIVE_ENABLED and _od_download_item_bytes:
+                            # Video que solo vive en OneDrive: se baja aquí para incluirlo en el ZIP
+                            try:
+                                contenido = _od_download_item_bytes(m["onedrive_item_id"])
+                            except Exception as e_od:
+                                logger.error(f"[evidencias_lotes] No se pudo bajar de OneDrive id={m['id']}: {e_od}")
+                        if not contenido:
+                            continue
+
+                        vin_safe = vin_por_unidad.get(m["unit_number"])
+                        if not vin_safe:
+                            # Evidencia de una unidad que ya no pertenece a este lote: se ignora
+                            # (evita mezclar evidencias entre lotes/unidades reasignadas).
+                            continue
+
+                        actividad_original = m.get("actividad") or "Sin actividad"
+                        actividad_safe = _nombre_seguro(actividad_original, "Sin_actividad")
+                        tecnico_original = m.get("tecnico") or ""
+                        tecnico_safe = _nombre_seguro(tecnico_original, "Sin_tecnico")
+
+                        fh = m.get("fecha_hora")
+                        try:
+                            fecha = fh.strftime("%Y-%m-%d")
+                            hora_archivo = fh.strftime("%H-%M-%S")
+                            hora_csv = fh.strftime("%H:%M:%S")
+                        except Exception:
+                            fecha, hora_archivo, hora_csv = "sin-fecha", "sin-hora", ""
+
+                        nombre_orig = m.get("nombre_archivo") or ""
+                        ext = nombre_orig.rsplit(".", 1)[-1].lower() if "." in nombre_orig else (
+                            "mp4" if m.get("tipo") == "video" else "jpg"
+                        )
+                        ext = _nombre_seguro(ext, "jpg")
+
+                        clave = (vin_safe, actividad_safe)
+                        contadores[clave] = contadores.get(clave, 0) + 1
+                        idx = contadores[clave]
+
+                        base = f"{idx:02d}_{actividad_safe}_{vin_safe}_{tecnico_safe}_{fecha}_{hora_archivo}"
+                        ruta = f"{lote_safe}/{vin_safe}/{actividad_safe}/{base}.{ext}"
+                        # Nunca sobrescribir: si hay colisión (p.ej. dos evidencias
+                        # del mismo técnico en el mismo segundo), se agrega sufijo.
+                        sufijo = 1
+                        ruta_final = ruta
+                        while ruta_final in rutas_usadas:
+                            sufijo += 1
+                            ruta_final = f"{lote_safe}/{vin_safe}/{actividad_safe}/{base}_{sufijo}.{ext}"
+                        rutas_usadas.add(ruta_final)
+
+                        zf.writestr(ruta_final, contenido)
+
+                        filas_csv.setdefault(clave, []).append([
+                            id_lote, vin_safe, actividad_original, tecnico_original,
+                            fecha, hora_csv, ruta_final.rsplit("/", 1)[-1], m.get("equipo") or ""
+                        ])
+
+                    # informacion.csv por carpeta de actividad (no reemplaza la
+                    # info visual que ya trae cada fotografía, es adicional).
+                    for (vin_safe, actividad_safe), filas in filas_csv.items():
+                        lineas = ["Lote,VIN,Actividad,Tecnico,Fecha,Hora,Archivo,Equipo"]
+                        for f in filas:
+                            lineas.append(",".join('"' + str(x).replace('"', '""') + '"' for x in f))
+                        ruta_csv = f"{lote_safe}/{vin_safe}/{actividad_safe}/informacion.csv"
+                        zf.writestr(ruta_csv, "\n".join(lineas))
+
+            buf.seek(0)
+            return buf.getvalue()
+    finally:
+        conn.close()
+
+
 # GET /api/unidades/lotes  — listar lotes con conteo y estado oculto
 @router.get("/lotes")
 def listar_lotes(current_user=Depends(verify_token)):
@@ -204,6 +412,48 @@ async def descargar_backup_lote(
         media_type="application/zip",
         headers={
             "Content-Disposition": f"attachment; filename=backup_lote_{nombre_safe}.zip",
+            "Cache-Control": "no-store",
+        }
+    )
+
+
+# GET /api/unidades/lotes/evidencias-zip?id_lote=A&id_lote=B  (uno o varios)
+# ZIP organizado LOTE/VIN/ACTIVIDAD/evidencia + informacion.csv por actividad.
+@router.get("/lotes/evidencias-zip")
+async def descargar_evidencias_lotes(
+    id_lote: List[str] = Query(..., description="Uno o más IDs de lote a exportar"),
+    current_user=Depends(verify_token)
+):
+    if current_user["role"] not in ("admin", "visor"):
+        raise HTTPException(status_code=403, detail="Acceso restringido a administradores y visores")
+
+    id_lotes = list(dict.fromkeys(l.strip() for l in id_lote if l and l.strip()))  # sin duplicados, conserva orden
+    if not id_lotes:
+        raise HTTPException(status_code=400, detail="Debes seleccionar al menos un lote")
+
+    placeholders = ",".join(["%s"] * len(id_lotes))
+    filas = execute_read(
+        f"SELECT DISTINCT id_lote FROM unidades WHERE id_lote IN ({placeholders})",
+        tuple(id_lotes)
+    )
+    existentes = {r["id_lote"] for r in (filas or [])}
+    faltantes = [l for l in id_lotes if l not in existentes]
+    if faltantes:
+        raise HTTPException(status_code=404, detail=f"Lote(s) no encontrado(s): {', '.join(faltantes)}")
+
+    logger.info(f"[evidencias_lotes] Exportación solicitada por {current_user.get('username')} para: {id_lotes}")
+    zip_bytes = await run_in_threadpool(_generar_zip_evidencias_por_lotes, id_lotes)
+    if not zip_bytes:
+        raise HTTPException(status_code=500, detail="No se pudo generar el ZIP (sin datos para los lotes seleccionados)")
+
+    nombre_lotes = "_".join(_nombre_seguro(l, "LOTE") for l in id_lotes)
+    if len(nombre_lotes) > 120:
+        nombre_lotes = f"{len(id_lotes)}_lotes"
+    return StreamingResponse(
+        io.BytesIO(zip_bytes),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f"attachment; filename=EVIDENCIAS_{nombre_lotes}.zip",
             "Cache-Control": "no-store",
         }
     )
