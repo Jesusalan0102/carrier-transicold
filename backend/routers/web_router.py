@@ -5118,31 +5118,122 @@ async def mis_tareas():
             if (modal) document.body.removeChild(modal);
         }
 
+        // ── Tarjeta de una tarea (misma lógica/botones de siempre) ──────────
+        function _renderTareaCard(t) {
+            let btn = '';
+            if (t.estado === 'pendiente') btn = `<button class="btn-primary" onclick="iniciarTarea(${t.id})">▶️ Iniciar Actividad</button>`;
+            else if (t.estado === 'en_proceso') {
+                btn = `<button class="btn-success" onclick="completarTarea(${t.id}, '${t.unidad}', '${t.actividad_id}', ${t.ticket_id != null ? t.ticket_id : 'null'})">✅ Finalizar</button>`;
+                if (t.actividad_id === 'Corriendo') btn += `<button class="btn-primary" onclick="pausarTarea(${t.id})">⏸️ Pausar</button>`;
+                if (t.actividad_id === 'Toma de Valores') btn += `<button class="btn-primary" onclick="tomarValores(${t.id})">📊 Ingresar Valores</button>`;
+                if (t.actividad_id === 'Toma de Series') btn += `<button class="btn-primary" onclick="tomarSeries(${t.id})">🔢 Ingresar Series</button>`;
+            }
+            btn += `<button class="btn-primary" onclick="abrirTransferirQR(${t.id})">🔄 Transferir</button>`;
+            return `<div style="background:white; border-radius:12px; padding:16px; margin-bottom:12px; box-shadow:0 2px 8px rgba(0,0,0,0.05); display:flex; justify-content:space-between; align-items:center;"><div><b>${t.actividad_id}</b><br><span class="badge" style="background:${t.estado === 'pendiente' ? 'var(--carrier-warn)' : 'var(--carrier-success)'}; color:white;">${t.estado}</span></div><div>${btn}</div></div>`;
+        }
+
+        // ── Panel de una unidad (Opción B): pantalla dedicada al abrir la unidad ──
+        function abrirPanelUnidad(unidad) {
+            window._unidadPanelAbierta = unidad;
+            renderPanelUnidad(unidad);
+        }
+
+        function cerrarPanelUnidad() {
+            window._unidadPanelAbierta = null;
+            const overlay = document.getElementById('panelUnidadOverlay');
+            if (overlay) overlay.remove();
+        }
+
+        function renderPanelUnidad(unidad) {
+            const datos = (window._tareasPorUnidad || {})[unidad];
+            // Si ya no quedan tareas de esta unidad (se completaron/transfirieron todas), se cierra solo.
+            if (!datos || (!datos.activas.length && !datos.solicitadas.length)) {
+                cerrarPanelUnidad();
+                return;
+            }
+            let overlay = document.getElementById('panelUnidadOverlay');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'panelUnidadOverlay';
+                overlay.style.cssText = 'position:fixed;inset:0;background:#f4f6f9;z-index:150;display:flex;flex-direction:column;overflow-y:auto;';
+                document.body.appendChild(overlay);
+            }
+            let html = `
+                <div style="background:var(--carrier-blue);color:white;padding:16px 18px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:2;">
+                    <button onclick="cerrarPanelUnidad()" style="background:rgba(255,255,255,0.15);border:none;color:white;border-radius:50%;width:36px;height:36px;font-size:1.1rem;cursor:pointer;flex:0 0 auto;">←</button>
+                    <h2 style="margin:0;font-size:1.15rem;">🚚 Unidad ${unidad}</h2>
+                </div>
+                <div style="padding:16px;">`;
+            if (datos.activas.length) {
+                html += datos.activas.map(_renderTareaCard).join('');
+            }
+            if (datos.solicitadas.length) {
+                html += `<h4 style="margin:${datos.activas.length ? '18px' : '0'} 0 8px;color:#7c3aed;font-size:0.9rem;">🕓 Solicitadas por ti, esperando aprobación</h4>`;
+                html += datos.solicitadas.map(t => `
+                    <div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:12px;padding:14px 16px;margin-bottom:10px;">
+                        <b>${t.actividad_id}</b><br>
+                        <span class="badge" style="background:#a78bfa;color:white;">🕓 Esperando aprobación</span>
+                    </div>`).join('');
+            }
+            html += `</div>`;
+            overlay.innerHTML = html;
+        }
+
         async function cargarTareas() {
             const res = await fetchAuth('/api/asignaciones/?tecnico=' + username);
             if (!res.ok) { document.getElementById('tareasList').innerHTML = '<p style="color:red;">Error al cargar tareas.</p>'; return; }
             const tareas = await res.json();
-            const activas = Array.isArray(tareas) ? tareas.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso') : [];
+            const lista = Array.isArray(tareas) ? tareas : [];
+            const activas = lista.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso');
+            const solicitadas = lista.filter(t => t.estado === 'solicitado');
             const hayEnProceso = activas.some(t => t.estado === 'en_proceso');
             document.getElementById('pausarTodasBar').style.display = hayEnProceso ? 'block' : 'none';
+
+            // Agrupar por unidad: cada unidad se ve como una sola fila compacta,
+            // y al abrirla aparecen sus tareas asignadas + lo que el técnico
+            // solicitó y sigue esperando aprobación.
+            const porUnidad = {};
+            const grupo = (u) => (porUnidad[u] || (porUnidad[u] = { activas: [], solicitadas: [] }));
+            activas.forEach(t => grupo(t.unidad || 'Sin unidad').activas.push(t));
+            solicitadas.forEach(t => grupo(t.unidad || 'Sin unidad').solicitadas.push(t));
+            window._tareasPorUnidad = porUnidad;
+
+            const unidades = Object.keys(porUnidad).sort((a, b) => {
+                const aProc = porUnidad[a].activas.some(t => t.estado === 'en_proceso');
+                const bProc = porUnidad[b].activas.some(t => t.estado === 'en_proceso');
+                if (aProc !== bProc) return aProc ? -1 : 1;
+                return a.localeCompare(b, undefined, { numeric: true });
+            });
+
             let html = '';
-            if (activas.length === 0) {
+            if (unidades.length === 0) {
                 html = '<p>✅ No tienes tareas activas.</p>';
             } else {
-                activas.forEach(t => {
-                    let btn = '';
-                    if (t.estado === 'pendiente') btn = `<button class="btn-primary" onclick="iniciarTarea(${t.id})">▶️ Iniciar Actividad</button>`;
-                    else if (t.estado === 'en_proceso') {
-                        btn = `<button class="btn-success" onclick="completarTarea(${t.id}, '${t.unidad}', '${t.actividad_id}', ${t.ticket_id != null ? t.ticket_id : 'null'})">✅ Finalizar</button>`;
-                        if (t.actividad_id === 'Corriendo') btn += `<button class="btn-primary" onclick="pausarTarea(${t.id})">⏸️ Pausar</button>`;
-                        if (t.actividad_id === 'Toma de Valores') btn += `<button class="btn-primary" onclick="tomarValores(${t.id})">📊 Ingresar Valores</button>`;
-                        if (t.actividad_id === 'Toma de Series') btn += `<button class="btn-primary" onclick="tomarSeries(${t.id})">🔢 Ingresar Series</button>`;
-                    }
-                    btn += `<button class="btn-primary" onclick="abrirTransferirQR(${t.id})">🔄 Transferir</button>`;
-                    html += `<div style="background:white; border-radius:12px; padding:16px; margin-bottom:12px; box-shadow:0 2px 8px rgba(0,0,0,0.05); display:flex; justify-content:space-between; align-items:center;"><div><b>${t.actividad_id}</b> — Unidad: <b>${t.unidad}</b><br><span class="badge" style="background:${t.estado === 'pendiente' ? 'var(--carrier-warn)' : 'var(--carrier-success)'}; color:white;">${t.estado}</span></div><div>${btn}</div></div>`;
+                unidades.forEach(u => {
+                    const g = porUnidad[u];
+                    const tieneEnProceso = g.activas.some(t => t.estado === 'en_proceso');
+                    html += `
+                    <div onclick="abrirPanelUnidad('${u}')" style="background:white;border-radius:12px;padding:14px 16px;margin-bottom:10px;box-shadow:0 2px 8px rgba(0,0,0,0.05);display:flex;justify-content:space-between;align-items:center;cursor:pointer;">
+                        <div style="display:flex;align-items:center;gap:10px;">
+                            <span style="font-size:1.05rem;font-weight:700;color:var(--carrier-blue);">🚚 ${u}</span>
+                            ${tieneEnProceso ? '<span class="badge" style="background:var(--carrier-success);color:white;">en proceso</span>' : ''}
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            ${g.activas.length ? `<span class="badge" style="background:var(--carrier-warn);color:white;">${g.activas.length} tarea${g.activas.length !== 1 ? 's' : ''}</span>` : ''}
+                            ${g.solicitadas.length ? `<span class="badge" style="background:#a78bfa;color:white;">${g.solicitadas.length} solicitud${g.solicitadas.length !== 1 ? 'es' : ''}</span>` : ''}
+                            <span style="color:#9ca3af;">›</span>
+                        </div>
+                    </div>`;
                 });
             }
             document.getElementById('tareasList').innerHTML = html;
+
+            // Si había un panel de unidad abierto, se refresca en su lugar (o se
+            // cierra solo si ya no le quedan tareas) — así una acción dentro del
+            // panel no manda al técnico de regreso a la lista general.
+            if (window._unidadPanelAbierta) {
+                renderPanelUnidad(window._unidadPanelAbierta);
+            }
         }
 
         async function iniciarTarea(id) { const res = await fetchAuth('/api/asignaciones/' + id + '/iniciar', { method: 'PATCH' }); if (res.ok) cargarTareas(); else alert('Error al iniciar la tarea'); }
