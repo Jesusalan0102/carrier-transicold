@@ -5155,11 +5155,11 @@ async def mis_tareas():
             if (!overlay) {
                 overlay = document.createElement('div');
                 overlay.id = 'panelUnidadOverlay';
-                overlay.style.cssText = 'position:fixed;inset:0;background:#f4f6f9;z-index:150;display:flex;flex-direction:column;overflow-y:auto;';
+                overlay.style.cssText = 'position:fixed;inset:0;background:#f4f6f9;z-index:90;display:flex;flex-direction:column;overflow-y:auto;';
                 document.body.appendChild(overlay);
             }
             let html = `
-                <div style="background:var(--carrier-blue);color:white;padding:16px 18px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:2;">
+                <div style="background:var(--carrier-blue);color:white;padding:16px 18px 16px 70px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:2;">
                     <button onclick="cerrarPanelUnidad()" style="background:rgba(255,255,255,0.15);border:none;color:white;border-radius:50%;width:36px;height:36px;font-size:1.1rem;cursor:pointer;flex:0 0 auto;">←</button>
                     <h2 style="margin:0;font-size:1.15rem;">🚚 Unidad ${unidad}</h2>
                 </div>
@@ -5205,25 +5205,54 @@ async def mis_tareas():
                 return a.localeCompare(b, undefined, { numeric: true });
             });
 
+            // Lote de cada unidad (para agrupar visualmente) — endpoint chico,
+            // accesible a técnicos, que solo mapea unidad -> id_lote.
+            let lotePorUnidad = {};
+            if (unidades.length) {
+                try {
+                    const params = unidades.filter(u => u !== 'Sin unidad').map(u => `unit_number=${encodeURIComponent(u)}`).join('&');
+                    if (params) {
+                        const resLote = await fetchAuth('/api/unidades/lote-por-unidad?' + params);
+                        if (resLote.ok) lotePorUnidad = await resLote.json();
+                    }
+                } catch (e) { /* si falla, se agrupa todo bajo "Sin lote" y no se rompe la lista */ }
+            }
+
+            // Cluster: lote -> [unidades], ordenado por lote; dentro, respeta
+            // el orden ya calculado (en_proceso primero, luego alfabético).
+            const porLote = {};
+            unidades.forEach(u => {
+                const lote = lotePorUnidad[u] || 'Sin lote';
+                (porLote[lote] || (porLote[lote] = [])).push(u);
+            });
+            const lotesOrdenados = Object.keys(porLote).sort((a, b) => {
+                if (a === 'Sin lote') return 1;
+                if (b === 'Sin lote') return -1;
+                return a.localeCompare(b, undefined, { numeric: true });
+            });
+
             let html = '';
             if (unidades.length === 0) {
                 html = '<p>✅ No tienes tareas activas.</p>';
             } else {
-                unidades.forEach(u => {
-                    const g = porUnidad[u];
-                    const tieneEnProceso = g.activas.some(t => t.estado === 'en_proceso');
-                    html += `
-                    <div onclick="abrirPanelUnidad('${u}')" style="background:white;border-radius:12px;padding:14px 16px;margin-bottom:10px;box-shadow:0 2px 8px rgba(0,0,0,0.05);display:flex;justify-content:space-between;align-items:center;cursor:pointer;">
-                        <div style="display:flex;align-items:center;gap:10px;">
-                            <span style="font-size:1.05rem;font-weight:700;color:var(--carrier-blue);">🚚 ${u}</span>
-                            ${tieneEnProceso ? '<span class="badge" style="background:var(--carrier-success);color:white;">en proceso</span>' : ''}
-                        </div>
-                        <div style="display:flex;align-items:center;gap:8px;">
-                            ${g.activas.length ? `<span class="badge" style="background:var(--carrier-warn);color:white;">${g.activas.length} tarea${g.activas.length !== 1 ? 's' : ''}</span>` : ''}
-                            ${g.solicitadas.length ? `<span class="badge" style="background:#a78bfa;color:white;">${g.solicitadas.length} solicitud${g.solicitadas.length !== 1 ? 'es' : ''}</span>` : ''}
-                            <span style="color:#9ca3af;">›</span>
-                        </div>
-                    </div>`;
+                lotesOrdenados.forEach(lote => {
+                    html += `<div style="font-size:0.78rem;font-weight:700;color:var(--carrier-blue);text-transform:uppercase;letter-spacing:0.4px;margin:18px 0 8px;padding-left:2px;">📦 Lote ${lote}</div>`;
+                    porLote[lote].forEach(u => {
+                        const g = porUnidad[u];
+                        const tieneEnProceso = g.activas.some(t => t.estado === 'en_proceso');
+                        html += `
+                        <div onclick="abrirPanelUnidad('${u}')" style="background:white;border-radius:12px;padding:14px 16px;margin-bottom:10px;box-shadow:0 2px 8px rgba(0,0,0,0.05);display:flex;justify-content:space-between;align-items:center;cursor:pointer;">
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <span style="font-size:1.05rem;font-weight:700;color:var(--carrier-blue);">🚚 ${u}</span>
+                                ${tieneEnProceso ? '<span class="badge" style="background:var(--carrier-success);color:white;">en proceso</span>' : ''}
+                            </div>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                ${g.activas.length ? `<span class="badge" style="background:var(--carrier-warn);color:white;">${g.activas.length} tarea${g.activas.length !== 1 ? 's' : ''}</span>` : ''}
+                                ${g.solicitadas.length ? `<span class="badge" style="background:#a78bfa;color:white;">${g.solicitadas.length} solicitud${g.solicitadas.length !== 1 ? 'es' : ''}</span>` : ''}
+                                <span style="color:#9ca3af;">›</span>
+                            </div>
+                        </div>`;
+                    });
                 });
             }
             document.getElementById('tareasList').innerHTML = html;
