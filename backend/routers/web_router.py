@@ -5284,6 +5284,7 @@ async def mis_tareas():
                         <button id="camEvidCerrar" type="button" style="background:rgba(255,255,255,0.15);border:none;color:#fff;border-radius:50%;width:38px;height:38px;font-size:1.1rem;cursor:pointer;">✖</button>
                     </div>
                     <div id="camEvidEstado" style="position:absolute;top:56px;left:0;right:0;text-align:center;color:#facc15;font-size:0.8rem;min-height:16px;padding:0 16px;"></div>
+                    <div id="camEvidHint" style="position:absolute;bottom:190px;left:0;right:0;text-align:center;color:rgba(255,255,255,0.7);font-size:0.72rem;">Toca para foto · mantén presionado para grabar video</div>
                     <div id="camEvidThumbs" style="position:absolute;bottom:112px;left:0;right:0;display:flex;gap:6px;overflow-x:auto;padding:0 12px;"></div>
                     <div style="position:absolute;bottom:0;left:0;right:0;padding:18px 20px 26px;background:linear-gradient(transparent,rgba(0,0,0,0.7));display:flex;align-items:center;justify-content:center;gap:22px;">
                         <button id="camEvidCambiar" type="button" style="background:rgba(255,255,255,0.15);border:none;color:#fff;border-radius:50%;width:46px;height:46px;font-size:1.2rem;cursor:pointer;">🔄</button>
@@ -5305,6 +5306,18 @@ async def mis_tareas():
                 let subiendoAhora = 0;
                 let cerrando = false;
                 const MAX_CONCURRENTES = 2;
+
+                // ── Grabación de video (mantener presionado el botón) ──────
+                let mediaRecorder = null;
+                let videoChunks = [];
+                let grabando = false;
+                let holdTimer = null;
+                let disparoVideo = false;
+                let grabInicio = 0;
+                let grabInterval = null;
+                let grabTimeoutMax = null;
+                const HOLD_MS = 350;          // umbral tap vs. mantener presionado
+                const MAX_VIDEO_MS = 60000;   // 60s tope por clip
 
                 async function iniciarCamara() {
                     try {
@@ -5332,6 +5345,25 @@ async def mis_tareas():
                     return img;
                 }
 
+                function agregarMiniaturaVideo(blobUrl, id) {
+                    const wrap = document.createElement('div');
+                    wrap.style.cssText = 'position:relative;flex:0 0 auto;width:52px;height:52px;';
+                    const vid = document.createElement('video');
+                    vid.dataset.evidId = id;
+                    vid.src = blobUrl;
+                    vid.muted = true;
+                    vid.playsInline = true;
+                    vid.style.cssText = 'width:52px;height:52px;object-fit:cover;border-radius:8px;border:2px solid #facc15;opacity:0.9;display:block;';
+                    const play = document.createElement('span');
+                    play.textContent = '▶';
+                    play.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:1rem;text-shadow:0 0 4px rgba(0,0,0,0.9);pointer-events:none;';
+                    wrap.appendChild(vid);
+                    wrap.appendChild(play);
+                    thumbsEl.appendChild(wrap);
+                    thumbsEl.scrollLeft = thumbsEl.scrollWidth;
+                    return vid; // se usa igual que el <img> para marcar borde verde/rojo al subir
+                }
+
                 async function subirFoto(record, imgEl) {
                     enCola++; subiendoAhora++;
                     let intentos = record.intentos || 0;
@@ -5349,7 +5381,8 @@ async def mis_tareas():
                             fd.append('unidad', unidad);
                             fd.append('tecnico', window.username);
                             fd.append('asignacion_id', asignacionId);
-                            fd.append('files', new File([record.blob], record.filename, { type: 'image/jpeg' }));
+                            const mimeArchivo = record.mime || (record.blob && record.blob.type) || 'image/jpeg';
+                            fd.append('files', new File([record.blob], record.filename, { type: mimeArchivo }));
                             const res = await window.fetchAuth('/api/evidencias/upload', { method: 'POST', body: fd });
                             if (res.ok) {
                                 subidasOk++;
@@ -5389,6 +5422,92 @@ async def mis_tareas():
                     }
                 }
 
+                function mimeTypeVideoSoportado() {
+                    const candidatos = [
+                        'video/webm;codecs=vp9,opus',
+                        'video/webm;codecs=vp8,opus',
+                        'video/webm',
+                        'video/mp4'
+                    ];
+                    for (const m of candidatos) {
+                        if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m;
+                    }
+                    return '';
+                }
+
+                function iniciarGrabacionVideo() {
+                    if (!stream || grabando) return;
+                    if (!window.MediaRecorder) {
+                        estadoEl.style.color = '#f87171';
+                        estadoEl.textContent = 'Este navegador no soporta grabar video — solo fotos.';
+                        return;
+                    }
+                    if (capturadas >= 100) {
+                        estadoEl.style.color = '#facc15';
+                        estadoEl.textContent = 'Llegaste al máximo de 100 evidencias para esta actividad.';
+                        return;
+                    }
+                    const mime = mimeTypeVideoSoportado();
+                    try {
+                        videoChunks = [];
+                        mediaRecorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+                        mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size) videoChunks.push(e.data); };
+                        mediaRecorder.onstop = () => finalizarGrabacionVideo(mime);
+                        mediaRecorder.start();
+                        grabando = true;
+                        const capBtn = overlay.querySelector('#camEvidCapturar');
+                        capBtn.style.background = '#ef4444';
+                        capBtn.style.borderColor = 'rgba(239,68,68,0.5)';
+                        capBtn.style.transform = 'scale(1.12)';
+                        grabInicio = Date.now();
+                        estadoEl.style.color = '#ef4444';
+                        estadoEl.textContent = '🔴 Grabando… 0s';
+                        grabInterval = setInterval(() => {
+                            const seg = Math.floor((Date.now() - grabInicio) / 1000);
+                            estadoEl.textContent = `🔴 Grabando… ${seg}s`;
+                        }, 250);
+                        grabTimeoutMax = setTimeout(() => { if (grabando) detenerGrabacionVideo(); }, MAX_VIDEO_MS);
+                    } catch (e) {
+                        estadoEl.style.color = '#f87171';
+                        estadoEl.textContent = 'No se pudo iniciar la grabación: ' + (e.message || e.name);
+                    }
+                }
+
+                function detenerGrabacionVideo() {
+                    if (!grabando || !mediaRecorder) return;
+                    grabando = false;
+                    clearTimeout(grabTimeoutMax);
+                    clearInterval(grabInterval);
+                    const capBtn = overlay.querySelector('#camEvidCapturar');
+                    capBtn.style.background = '#fff';
+                    capBtn.style.borderColor = 'rgba(255,255,255,0.4)';
+                    capBtn.style.transform = 'scale(1)';
+                    try { mediaRecorder.stop(); } catch(e) {}
+                }
+
+                async function finalizarGrabacionVideo(mime) {
+                    estadoEl.textContent = '';
+                    if (!videoChunks.length) return;
+                    const tipoBlob = (mime && mime.indexOf('video/mp4') === 0) ? 'video/mp4' : 'video/webm';
+                    const blob = new Blob(videoChunks, { type: tipoBlob });
+                    videoChunks = [];
+                    if (blob.size < 5000) return; // toque accidental, casi sin datos
+                    if (blob.size > 80 * 1024 * 1024) {
+                        estadoEl.style.color = '#f87171';
+                        estadoEl.textContent = 'El video quedó muy pesado (más de 80MB) y no se guardó. Graba clips más cortos.';
+                        return;
+                    }
+                    capturadas++;
+                    actualizarContador();
+                    const ext = tipoBlob === 'video/mp4' ? 'mp4' : 'webm';
+                    const id = `${asignacionId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                    const record = { id, asignacionId, unidad, filename: `evid_${Date.now()}.${ext}`, blob, mime: tipoBlob, tipo: 'video', intentos: 0, creado: Date.now() };
+                    await _evidPut(record);   // respaldo local INMEDIATO, antes de intentar subir
+                    const url = URL.createObjectURL(blob);
+                    const vidEl = agregarMiniaturaVideo(url, id);
+                    encolar(record, vidEl);
+                }
+
                 async function capturar() {
                     if (capturadas >= 100) {
                         estadoEl.style.color = '#facc15';
@@ -5423,21 +5542,22 @@ async def mis_tareas():
                     const pendientes = await _evidGetPendientes(asignacionId);
                     if (!pendientes.length) return;
                     estadoEl.style.color = '#facc15';
-                    estadoEl.textContent = `Reanudando ${pendientes.length} foto(s) de una sesión anterior…`;
+                    estadoEl.textContent = `Reanudando ${pendientes.length} archivo(s) de una sesión anterior…`;
                     pendientes.forEach(record => {
                         capturadas++;
                         actualizarContador();
                         const url = URL.createObjectURL(record.blob);
-                        const imgEl = agregarMiniatura(url, record.id);
-                        encolar(record, imgEl);
+                        const el = record.tipo === 'video' ? agregarMiniaturaVideo(url, record.id) : agregarMiniatura(url, record.id);
+                        encolar(record, el);
                     });
                 }
 
                 async function cerrar() {
                     if (cerrando) return;
                     cerrando = true;
+                    if (grabando) { clearTimeout(holdTimer); detenerGrabacionVideo(); }
                     if (enCola > 0) {
-                        const seguir = confirm(`Aún se están subiendo ${enCola} foto(s). Si cierras ahora, quedan guardadas en este dispositivo y se reintentan la próxima vez que abras la cámara para esta actividad. ¿Cerrar de todas formas?`);
+                        const seguir = confirm(`Aún se están subiendo ${enCola} archivo(s). Si cierras ahora, quedan guardadas en este dispositivo y se reintentan la próxima vez que abras la cámara para esta actividad. ¿Cerrar de todas formas?`);
                         if (!seguir) { cerrando = false; return; }
                     }
                     if (stream) stream.getTracks().forEach(t => t.stop());
@@ -5445,10 +5565,40 @@ async def mis_tareas():
                     resolveModal({ capturadas, subidasOk });
                 }
 
-                overlay.querySelector('#camEvidCapturar').addEventListener('click', capturar);
+                const capBtn = overlay.querySelector('#camEvidCapturar');
+                function onCapPressStart(e) {
+                    if (e.cancelable) e.preventDefault();
+                    disparoVideo = false;
+                    clearTimeout(holdTimer);
+                    holdTimer = setTimeout(() => {
+                        disparoVideo = true;
+                        iniciarGrabacionVideo();
+                    }, HOLD_MS);
+                }
+                function onCapPressEnd(e) {
+                    if (e.cancelable) e.preventDefault();
+                    clearTimeout(holdTimer);
+                    if (disparoVideo) {
+                        detenerGrabacionVideo();
+                    } else {
+                        capturar();
+                    }
+                }
+                function onCapPressCancel() {
+                    clearTimeout(holdTimer);
+                    if (grabando) detenerGrabacionVideo();
+                }
+                capBtn.style.touchAction = 'none';
+                capBtn.style.userSelect = 'none';
+                capBtn.addEventListener('pointerdown', onCapPressStart);
+                capBtn.addEventListener('pointerup', onCapPressEnd);
+                capBtn.addEventListener('pointerleave', onCapPressCancel);
+                capBtn.addEventListener('pointercancel', onCapPressCancel);
+                capBtn.addEventListener('contextmenu', (e) => e.preventDefault());
                 overlay.querySelector('#camEvidCerrar').addEventListener('click', cerrar);
                 overlay.querySelector('#camEvidTerminar').addEventListener('click', cerrar);
                 overlay.querySelector('#camEvidCambiar').addEventListener('click', () => {
+                    if (grabando) detenerGrabacionVideo();
                     facing = facing === 'environment' ? 'user' : 'environment';
                     iniciarCamara();
                 });
@@ -5490,7 +5640,7 @@ async def mis_tareas():
 
                     <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">📸 Evidencia fotográfica o de video</label>
                     ${fotosPrevias > 0 ? `<p style="font-size:0.8rem;color:#16a34a;margin:0 0 8px;">✔ Ya tienes ${fotosPrevias} archivo(s) guardado(s) para esta actividad. Puedes agregar más o continuar.</p>` : ''}
-                    <button type="button" id="btnAbrirCamaraEvid" style="width:100%;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:10px;padding:12px;font-weight:700;font-size:0.88rem;cursor:pointer;margin-bottom:8px;">📷 Tomar varias fotos con la cámara</button>
+                    <button type="button" id="btnAbrirCamaraEvid" style="width:100%;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:10px;padding:12px;font-weight:700;font-size:0.88rem;cursor:pointer;margin-bottom:8px;">📷 Tomar fotos o video con la cámara</button>
                     <p style="font-size:0.75rem;color:#9ca3af;margin:0 0 8px;">También puedes adjuntar fotos o video ya guardados:</p>
                     <input type="file" id="fotosFinalizarInput" multiple accept="image/*,video/*" style="width:100%;margin-bottom:8px;">
                     <p style="font-size:0.75rem;color:#9ca3af;margin:0 0 8px;">Videos hasta 80MB por archivo.</p>
