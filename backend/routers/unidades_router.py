@@ -383,6 +383,26 @@ def listar_lotes(current_user=Depends(verify_token)):
     """)
 
 
+# GET /api/unidades/lote-por-unidad?unit_number=A&unit_number=B  (uno o varios)
+# Mapeo rápido unidad -> lote. Sin restricción de rol (accesible a técnicos
+# también): solo expone el id_lote, nada sensible. Se usa en "Mis tareas"
+# para agrupar visualmente las unidades del técnico por lote.
+@router.get("/lote-por-unidad")
+def lote_por_unidad(
+    unit_number: List[str] = Query(..., description="Uno o varios números de unidad"),
+    current_user=Depends(verify_token)
+):
+    unidades = list(dict.fromkeys(u.strip() for u in unit_number if u and u.strip()))
+    if not unidades:
+        return {}
+    placeholders = ",".join(["%s"] * len(unidades))
+    filas = execute_read(
+        f"SELECT unit_number, id_lote FROM unidades WHERE unit_number IN ({placeholders})",
+        tuple(unidades)
+    )
+    return {f["unit_number"]: f["id_lote"] for f in (filas or [])}
+
+
 # GET /api/unidades/lotes/backup?id_lote=XXX
 @router.get("/lotes/backup")
 async def descargar_backup_lote(
