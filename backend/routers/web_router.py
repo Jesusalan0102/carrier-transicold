@@ -5323,7 +5323,7 @@ async def mis_tareas():
                     try {
                         if (stream) stream.getTracks().forEach(t => t.stop());
                         stream = await navigator.mediaDevices.getUserMedia({
-                            video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } },
+                            video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } },
                             audio: false
                         });
                         videoEl.srcObject = stream;
@@ -5450,10 +5450,12 @@ async def mis_tareas():
                     const mime = mimeTypeVideoSoportado();
                     try {
                         videoChunks = [];
-                        mediaRecorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+                        const opciones = { videoBitsPerSecond: 2_000_000 }; // 2 Mbps: fluido y liviano en celulares de gama media/baja
+                        if (mime) opciones.mimeType = mime;
+                        mediaRecorder = new MediaRecorder(stream, opciones);
                         mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size) videoChunks.push(e.data); };
                         mediaRecorder.onstop = () => finalizarGrabacionVideo(mime);
-                        mediaRecorder.start();
+                        mediaRecorder.start(1000); // entrega datos cada 1s en vez de guardarlo todo hasta el final
                         grabando = true;
                         const capBtn = overlay.querySelector('#camEvidCapturar');
                         capBtn.style.background = '#ef4444';
@@ -5465,7 +5467,7 @@ async def mis_tareas():
                         grabInterval = setInterval(() => {
                             const seg = Math.floor((Date.now() - grabInicio) / 1000);
                             estadoEl.textContent = `🔴 Grabando… ${seg}s`;
-                        }, 250);
+                        }, 500);
                         grabTimeoutMax = setTimeout(() => { if (grabando) detenerGrabacionVideo(); }, MAX_VIDEO_MS);
                     } catch (e) {
                         estadoEl.style.color = '#f87171';
