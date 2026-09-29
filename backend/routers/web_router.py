@@ -5207,15 +5207,38 @@ async def mis_tareas():
 
             // Lote de cada unidad (para agrupar visualmente) — endpoint chico,
             // accesible a técnicos, que solo mapea unidad -> id_lote.
+            // Se cachea en localStorage (6h) para no repetir la consulta en
+            // cada refresh de "Mis tareas"; solo se piden al servidor las
+            // unidades que falten en caché o cuyo dato ya venció.
+            const LOTE_CACHE_KEY = 'miTareasLoteCache';
+            const LOTE_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 horas
+            let loteCache = {};
+            try { loteCache = JSON.parse(localStorage.getItem(LOTE_CACHE_KEY) || '{}'); } catch (e) { loteCache = {}; }
+
             let lotePorUnidad = {};
-            if (unidades.length) {
+            const ahora = Date.now();
+            const faltantes = [];
+            unidades.filter(u => u !== 'Sin unidad').forEach(u => {
+                const c = loteCache[u];
+                if (c && (ahora - c.ts) < LOTE_CACHE_TTL_MS) {
+                    lotePorUnidad[u] = c.lote;
+                } else {
+                    faltantes.push(u);
+                }
+            });
+            if (faltantes.length) {
                 try {
-                    const params = unidades.filter(u => u !== 'Sin unidad').map(u => `unit_number=${encodeURIComponent(u)}`).join('&');
-                    if (params) {
-                        const resLote = await fetchAuth('/api/unidades/lote-por-unidad?' + params);
-                        if (resLote.ok) lotePorUnidad = await resLote.json();
+                    const params = faltantes.map(u => `unit_number=${encodeURIComponent(u)}`).join('&');
+                    const resLote = await fetchAuth('/api/unidades/lote-por-unidad?' + params);
+                    if (resLote.ok) {
+                        const nuevos = await resLote.json();
+                        Object.keys(nuevos).forEach(u => {
+                            lotePorUnidad[u] = nuevos[u];
+                            loteCache[u] = { lote: nuevos[u], ts: ahora };
+                        });
+                        try { localStorage.setItem(LOTE_CACHE_KEY, JSON.stringify(loteCache)); } catch (e) { /* localStorage lleno o bloqueado: sin caché, no rompe nada */ }
                     }
-                } catch (e) { /* si falla, se agrupa todo bajo "Sin lote" y no se rompe la lista */ }
+                } catch (e) { /* si falla, esas unidades caen en "Sin lote" y no se rompe la lista */ }
             }
 
             // Cluster: lote -> [unidades], ordenado por lote; dentro, respeta
