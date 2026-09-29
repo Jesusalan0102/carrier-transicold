@@ -12,6 +12,7 @@ import re
 import zipfile
 import asyncio
 import logging
+import concurrent.futures
 
 TZ = ZoneInfo("America/Tijuana")
 logger = logging.getLogger(__name__)
@@ -294,17 +295,33 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list) -> bytes:
                             if fila["contenido"]:
                                 contenidos[fila["id"]] = fila["contenido"]
 
+                    # Videos que solo viven en OneDrive (sin blob en la BD): se bajan
+                    # en paralelo (antes era uno por uno y era el cuello de botella
+                    # real en lotes con varios videos). La conexión MySQL (cur/conn)
+                    # NO se toca desde estos hilos, solo se usa para I/O de red.
+                    onedrive_pendientes = {
+                        m["id"]: m["onedrive_item_id"] for m in meta
+                        if m["id"] not in contenidos and m.get("onedrive_item_id")
+                    }
+                    onedrive_contenidos = {}
+                    if onedrive_pendientes and ONEDRIVE_ENABLED and _od_download_item_bytes:
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                            futuros = {
+                                executor.submit(_od_download_item_bytes, item_id): eid
+                                for eid, item_id in onedrive_pendientes.items()
+                            }
+                            for fut in concurrent.futures.as_completed(futuros):
+                                eid = futuros[fut]
+                                try:
+                                    onedrive_contenidos[eid] = fut.result()
+                                except Exception as e_od:
+                                    logger.error(f"[evidencias_lotes] No se pudo bajar de OneDrive id={eid}: {e_od}")
+
                     contadores = {}       # (vin_safe, actividad_safe) -> consecutivo
                     filas_csv = {}        # (vin_safe, actividad_safe) -> [filas]
 
                     for m in meta:
-                        contenido = contenidos.get(m["id"])
-                        if not contenido and m.get("onedrive_item_id") and ONEDRIVE_ENABLED and _od_download_item_bytes:
-                            # Video que solo vive en OneDrive: se baja aquí para incluirlo en el ZIP
-                            try:
-                                contenido = _od_download_item_bytes(m["onedrive_item_id"])
-                            except Exception as e_od:
-                                logger.error(f"[evidencias_lotes] No se pudo bajar de OneDrive id={m['id']}: {e_od}")
+                        contenido = contenidos.get(m["id"]) or onedrive_contenidos.get(m["id"])
                         if not contenido:
                             continue
 
