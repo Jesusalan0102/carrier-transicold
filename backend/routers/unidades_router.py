@@ -1,6 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.concurrency import run_in_threadpool
+from starlette.background import BackgroundTask
 from db import execute_read, execute_write
 from auth import verify_token
 from pydantic import BaseModel
@@ -8,6 +9,7 @@ from typing import Optional, List
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import io
+import os
 import re
 import zipfile
 import asyncio
@@ -186,10 +188,10 @@ def _nombre_seguro(valor, fallback: str = "SIN_DATO") -> str:
     return texto or fallback
 
 
-def _generar_zip_evidencias_por_lotes(id_lotes: list) -> bytes:
+def _generar_zip_evidencias_por_lotes(id_lotes: list) -> str:
     """
-    ZIP en memoria con estructura LOTE/VIN/ACTIVIDAD/evidencia, más un
-    informacion.csv por carpeta de actividad (Lote,VIN,Actividad,Tecnico,
+    ZIP en DISCO (archivo temporal) con estructura LOTE/VIN/ACTIVIDAD/evidencia,
+    más un informacion.csv por carpeta de actividad (Lote,VIN,Actividad,Tecnico,
     Fecha,Hora,Archivo,Equipo). Reglas:
       - Cada lote seleccionado queda en su propia carpeta raíz; nunca se
         mezclan VINs o evidencias entre lotes.
@@ -200,18 +202,29 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list) -> bytes:
         juntas dentro de esa carpeta (no se separan por técnico).
       - Nunca se sobrescribe un archivo: ante una colisión de nombre se
         agrega un sufijo numérico.
+
+    Se devuelve la RUTA del ZIP (no los bytes en memoria): con lotes grandes,
+    tener todas las evidencias descargadas + el ZIP comprimido completos en
+    RAM al mismo tiempo puede tumbar el proceso por falta de memoria.
+    Escribiendo directo a disco, en cualquier momento solo se mantiene en RAM
+    la evidencia que se está procesando. El archivo se borra automáticamente
+    después de enviarse (ver el endpoint más abajo).
     """
     import pymysql
+    import tempfile
     from db import get_db_connection
 
     conn = get_db_connection()
     if not conn:
         raise RuntimeError("No hay conexión con la base de datos")
 
+    tmp = tempfile.NamedTemporaryFile(prefix="evid_lotes_", suffix=".zip", delete=False)
+    tmp_path = tmp.name
+    tmp.close()
+
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
-            buf = io.BytesIO()
-            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as zf:
+            with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as zf:
                 rutas_usadas = set()
 
                 for id_lote in id_lotes:
@@ -284,7 +297,7 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list) -> bytes:
                         continue
 
                     # Contenido de los blobs en bloques (pueden pesar bastante)
-                    BLOQUE = 40
+                    BLOQUE = 15
                     contenidos = {}
                     ids_lista = [m["id"] for m in meta]
                     for i in range(0, len(ids_lista), BLOQUE):
@@ -305,7 +318,7 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list) -> bytes:
                     }
                     onedrive_contenidos = {}
                     if onedrive_pendientes and ONEDRIVE_ENABLED and _od_download_item_bytes:
-                        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                             futuros = {
                                 executor.submit(_od_download_item_bytes, item_id): eid
                                 for eid, item_id in onedrive_pendientes.items()
@@ -381,8 +394,14 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list) -> bytes:
                         ruta_csv = f"{lote_safe}/{vin_safe}/{actividad_safe}/informacion.csv"
                         zf.writestr(ruta_csv, "\n".join(lineas))
 
-            buf.seek(0)
-            return buf.getvalue()
+        return tmp_path
+    except Exception:
+        # Si algo falla a medio camino, no dejar el temporal huérfano en disco.
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
     finally:
         conn.close()
 
@@ -480,23 +499,37 @@ async def descargar_evidencias_lotes(
 
     logger.info(f"[evidencias_lotes] Exportación solicitada por {current_user.get('username')} para: {id_lotes}")
     try:
-        zip_bytes = await run_in_threadpool(_generar_zip_evidencias_por_lotes, id_lotes)
+        zip_path = await run_in_threadpool(_generar_zip_evidencias_por_lotes, id_lotes)
     except Exception as e:
         logger.exception(f"[evidencias_lotes] Falló la generación del ZIP para {id_lotes}: {e}")
         raise HTTPException(status_code=500, detail=f"Error generando el ZIP de evidencias: {e}")
-    if not zip_bytes:
+    if not zip_path or not os.path.exists(zip_path) or os.path.getsize(zip_path) == 0:
+        if zip_path and os.path.exists(zip_path):
+            os.remove(zip_path)
         raise HTTPException(status_code=500, detail="No se pudo generar el ZIP (sin datos para los lotes seleccionados)")
+
+    peso_mb = os.path.getsize(zip_path) / (1024 * 1024)
+    logger.info(f"[evidencias_lotes] ZIP generado para {id_lotes}: {peso_mb:.1f} MB")
 
     nombre_lotes = "_".join(_nombre_seguro(l, "LOTE") for l in id_lotes)
     if len(nombre_lotes) > 120:
         nombre_lotes = f"{len(id_lotes)}_lotes"
-    return StreamingResponse(
-        io.BytesIO(zip_bytes),
+
+    def _borrar_temp():
+        try:
+            os.remove(zip_path)
+        except OSError:
+            pass
+
+    # FileResponse transmite el archivo desde disco por partes (no lo vuelve
+    # a cargar entero en RAM), y borra el temporal en cuanto termina de
+    # enviarse, sin importar si el cliente cortó la descarga a medias.
+    return FileResponse(
+        zip_path,
         media_type="application/zip",
-        headers={
-            "Content-Disposition": f"attachment; filename=EVIDENCIAS_{nombre_lotes}.zip",
-            "Cache-Control": "no-store",
-        }
+        filename=f"EVIDENCIAS_{nombre_lotes}.zip",
+        headers={"Cache-Control": "no-store"},
+        background=BackgroundTask(_borrar_temp)
     )
 
 
