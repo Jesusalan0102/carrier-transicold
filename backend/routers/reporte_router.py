@@ -281,7 +281,28 @@ def _sheet_actividades(wb, conn):
     nombres = _nombres_tecnicos(conn)
     for r in rows_db:
         r["tecnico"] = _nombre(nombres, r["tecnico"])
-    cols = list(rows_db[0].keys())
+
+    # Numerar visitas repetidas (misma unidad + actividad + técnico): cuando
+    # un técnico regresa a la misma unidad a subir más evidencia de la misma
+    # actividad, queda como un registro aparte (no se borra ni se junta nada,
+    # para conservar el historial completo), pero se marca cuál fue la
+    # primera vez para poder contar unidades/actividades reales sin que las
+    # repeticiones inflen el total en un pivot o COUNTIFS.
+    orden_cronologico = sorted(
+        rows_db,
+        key=lambda r: r.get("fecha_asignacion") or r.get("fecha_inicio") or datetime.min
+    )
+    contador = {}
+    for r in orden_cronologico:
+        clave = (r.get("unidad"), r.get("actividad_id"), r.get("tecnico"))
+        contador[clave] = contador.get(clave, 0) + 1
+        r["visita_num"] = contador[clave]
+        r["conteo_unico"] = "Sí" if r["visita_num"] == 1 else f"No (repetido #{r['visita_num']})"
+
+    cols_orden = ["lote", "unidad", "vin", "actividad_id", "tecnico", "estado",
+                  "visita_num", "conteo_unico", "comentario",
+                  "fecha_asignacion", "fecha_inicio", "fecha_fin", "ticket_id"]
+    cols = [c for c in cols_orden if c in rows_db[0]]
     _write_sheet(ws, cols, [[_safe_str(r[c]) for c in cols] for r in rows_db])
 
 
