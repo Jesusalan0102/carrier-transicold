@@ -246,6 +246,45 @@ def evidencias_por_actividad(asignacion_id: int, current_user=Depends(require_ad
     return {"asignacion_id": asignacion_id, "total": len(fotos), "fotos": fotos}
 
 
+# ── LISTAR EVIDENCIA PROPIA DE UNA ACTIVIDAD — técnico dueño, o admin/visor ──
+# A diferencia de /por-actividad (solo admin/visor), esta ruta la puede usar
+# el propio técnico para revisar, antes de subir más, lo que ya subió para
+# ESA actividad puntual — validando que la actividad sea suya (si no es
+# admin/visor), para no exponer evidencia de actividades ajenas.
+@router.get("/mis-evidencias/{asignacion_id}")
+def mis_evidencias(asignacion_id: int, current_user=Depends(verify_token)):
+    if current_user["role"] not in ("admin", "visor", "lider"):
+        propia = execute_read(
+            "SELECT 1 FROM asignaciones WHERE id=%s AND tecnico=%s",
+            (asignacion_id, current_user["username"])
+        )
+        if not propia:
+            raise HTTPException(status_code=403, detail="Esta actividad no te pertenece")
+    try:
+        rows = execute_read(
+            """SELECT id, nombre_archivo, tecnico, tipo,
+                      COALESCE(created_at, '') AS fecha
+               FROM evidencias WHERE asignacion_id=%s ORDER BY id ASC""",
+            (asignacion_id,)
+        )
+    except Exception as e:
+        logger.warning(f"[evidencias] Fallback sin columna 'tipo' en mis-evidencias: {e}")
+        rows = execute_read(
+            """SELECT id, nombre_archivo, tecnico,
+                      COALESCE(created_at, '') AS fecha
+               FROM evidencias WHERE asignacion_id=%s ORDER BY id ASC""",
+            (asignacion_id,)
+        )
+    evidencias = [{
+        "id": r["id"],
+        "nombre": r["nombre_archivo"] or f"evidencia_{r['id']}",
+        "tecnico": r.get("tecnico") or "",
+        "tipo": r.get("tipo") or "foto",
+        "fecha": str(r["fecha"]) if r.get("fecha") else "",
+    } for r in (rows or [])]
+    return {"asignacion_id": asignacion_id, "total": len(evidencias), "evidencias": evidencias}
+
+
 # ── SUBIR FOTOS ───────────────────────────────────────────────────────────
 @router.post("/upload")
 async def subir_evidencias(
@@ -593,6 +632,24 @@ def ver_foto(foto_id: int, range: Optional[str] = Header(None), current_user=Dep
         "Cache-Control": "private, max-age=3600",
     }
     return Response(content=chunk, media_type=media_type, headers=headers, status_code=206)
+
+
+# ── VER UNA EVIDENCIA PROPIA — técnico dueño de la actividad, o admin/visor ──
+# Reutiliza toda la lógica de servir el archivo de ver_foto() (incluye el
+# soporte de Range para reproducir/buscar en video); solo agrega una
+# validación de que la evidencia pertenezca a una actividad del técnico
+# que la pide, cuando no es admin/visor/líder.
+@router.get("/mi-foto/{foto_id}")
+def mi_foto(foto_id: int, range: Optional[str] = Header(None), current_user=Depends(verify_token)):
+    if current_user["role"] not in ("admin", "visor", "lider"):
+        propia = execute_read(
+            """SELECT 1 FROM evidencias e INNER JOIN asignaciones a ON a.id = e.asignacion_id
+               WHERE e.id=%s AND a.tecnico=%s""",
+            (foto_id, current_user["username"])
+        )
+        if not propia:
+            raise HTTPException(status_code=403, detail="Esta evidencia no te pertenece")
+    return ver_foto(foto_id, range)
 
 
 # ── ELIMINAR FOTOS SELECCIONADAS — solo admin ─────────────────────────────
