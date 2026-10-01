@@ -5427,7 +5427,7 @@ async def mis_tareas():
                         <button id="camEvidCerrar" type="button" style="background:rgba(255,255,255,0.15);border:none;color:#fff;border-radius:50%;width:38px;height:38px;font-size:1.1rem;cursor:pointer;">✖</button>
                     </div>
                     <div id="camEvidEstado" style="position:absolute;top:56px;left:0;right:0;text-align:center;color:#facc15;font-size:0.8rem;min-height:16px;padding:0 16px;"></div>
-                    <div id="camEvidHint" style="position:absolute;bottom:190px;left:0;right:0;text-align:center;color:rgba(255,255,255,0.7);font-size:0.72rem;">Toca para foto · mantén presionado para grabar video</div>
+                    <div id="camEvidHint" style="position:absolute;bottom:190px;left:0;right:0;text-align:center;color:rgba(255,255,255,0.7);font-size:0.72rem;">Toca para foto · mantén presionado para grabar video · 🔵 azul = ya subida antes</div>
                     <div id="camEvidThumbs" style="position:absolute;bottom:112px;left:0;right:0;display:flex;gap:6px;overflow-x:auto;padding:0 12px;"></div>
                     <div style="position:absolute;bottom:0;left:0;right:0;padding:18px 20px 26px;background:linear-gradient(transparent,rgba(0,0,0,0.7));display:flex;align-items:center;justify-content:center;gap:22px;">
                         <button id="camEvidCambiar" type="button" style="background:rgba(255,255,255,0.15);border:none;color:#fff;border-radius:50%;width:46px;height:46px;font-size:1.2rem;cursor:pointer;">🔄</button>
@@ -5465,10 +5465,19 @@ async def mis_tareas():
                 async function iniciarCamara() {
                     try {
                         if (stream) stream.getTracks().forEach(t => t.stop());
-                        stream = await navigator.mediaDevices.getUserMedia({
-                            video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } },
-                            audio: false
-                        });
+                        const videoConstraints = { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } };
+                        try {
+                            stream = await navigator.mediaDevices.getUserMedia({
+                                video: videoConstraints,
+                                audio: { echoCancellation: true, noiseSuppression: true }
+                            });
+                        } catch (eAudio) {
+                            // Sin permiso de micrófono (o sin micrófono): se abre solo
+                            // video para no bloquear la cámara por completo; el video
+                            // quedará mudo pero la foto no se ve afectada en nada.
+                            console.warn('No se pudo abrir audio, se continúa solo con video:', eAudio);
+                            stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
+                        }
                         videoEl.srcObject = stream;
                     } catch (e) {
                         estadoEl.style.color = '#f87171';
@@ -5482,7 +5491,9 @@ async def mis_tareas():
                     const img = document.createElement('img');
                     img.dataset.evidId = id;
                     img.src = blobUrl;
-                    img.style.cssText = 'width:52px;height:52px;object-fit:cover;border-radius:8px;flex:0 0 auto;border:2px solid #facc15;opacity:0.9;';
+                    img.style.cssText = 'width:52px;height:52px;object-fit:cover;border-radius:8px;flex:0 0 auto;border:2px solid #facc15;opacity:0.9;cursor:pointer;';
+                    img.title = 'Toca para ver en grande';
+                    img.addEventListener('click', () => abrirVistaPrevia(blobUrl, false));
                     thumbsEl.appendChild(img);
                     thumbsEl.scrollLeft = thumbsEl.scrollWidth;
                     return img;
@@ -5490,7 +5501,8 @@ async def mis_tareas():
 
                 function agregarMiniaturaVideo(blobUrl, id) {
                     const wrap = document.createElement('div');
-                    wrap.style.cssText = 'position:relative;flex:0 0 auto;width:52px;height:52px;';
+                    wrap.style.cssText = 'position:relative;flex:0 0 auto;width:52px;height:52px;cursor:pointer;';
+                    wrap.title = 'Toca para reproducir';
                     const vid = document.createElement('video');
                     vid.dataset.evidId = id;
                     vid.src = blobUrl;
@@ -5502,6 +5514,7 @@ async def mis_tareas():
                     play.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:1rem;text-shadow:0 0 4px rgba(0,0,0,0.9);pointer-events:none;';
                     wrap.appendChild(vid);
                     wrap.appendChild(play);
+                    wrap.addEventListener('click', () => abrirVistaPrevia(blobUrl, true));
                     thumbsEl.appendChild(wrap);
                     thumbsEl.scrollLeft = thumbsEl.scrollWidth;
                     return vid; // se usa igual que el <img> para marcar borde verde/rojo al subir
@@ -5593,7 +5606,7 @@ async def mis_tareas():
                     const mime = mimeTypeVideoSoportado();
                     try {
                         videoChunks = [];
-                        const opciones = { videoBitsPerSecond: 2_000_000 }; // 2 Mbps: fluido y liviano en celulares de gama media/baja
+                        const opciones = { videoBitsPerSecond: 2_000_000, audioBitsPerSecond: 64_000 }; // video fluido + audio liviano (voz)
                         if (mime) opciones.mimeType = mime;
                         mediaRecorder = new MediaRecorder(stream, opciones);
                         mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size) videoChunks.push(e.data); };
@@ -5683,6 +5696,67 @@ async def mis_tareas():
                     }, 'image/jpeg', 0.8);
                 }
 
+                // ── Vista previa (lightbox) de cualquier foto/video, propio o ya subido ──
+                function abrirVistaPrevia(src, esVideo) {
+                    let lb = document.getElementById('camEvidLightbox');
+                    if (!lb) {
+                        lb = document.createElement('div');
+                        lb.id = 'camEvidLightbox';
+                        lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.94);z-index:950;display:flex;align-items:center;justify-content:center;';
+                        lb.addEventListener('click', (e) => { if (e.target === lb) cerrarVistaPrevia(); });
+                        document.body.appendChild(lb);
+                    }
+                    lb.innerHTML = `
+                        <button id="camEvidLbCerrar" style="position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.15);border:none;color:#fff;border-radius:50%;width:40px;height:40px;font-size:1.2rem;cursor:pointer;z-index:1;">✖</button>
+                        ${esVideo
+                            ? `<video src="${src}" controls autoplay playsinline style="max-width:94vw;max-height:88vh;"></video>`
+                            : `<img src="${src}" style="max-width:94vw;max-height:88vh;object-fit:contain;">`}
+                    `;
+                    lb.querySelector('#camEvidLbCerrar').addEventListener('click', cerrarVistaPrevia);
+                }
+                function cerrarVistaPrevia() {
+                    const lb = document.getElementById('camEvidLightbox');
+                    if (lb) lb.remove();
+                }
+
+                // ── Evidencia ya subida en sesiones anteriores de esta misma actividad ──
+                // Se muestra junto a las miniaturas nuevas (borde azul en vez de
+                // amarillo) para que el técnico vea de un vistazo qué ya mandó antes
+                // de seguir agregando. El contenido se baja solo al tocarla (no se
+                // precarga nada, para no gastar datos del celular de más).
+                async function verEvidenciaPrevia(fotoId, esVideo) {
+                    estadoEl.style.color = '#facc15';
+                    estadoEl.textContent = 'Cargando evidencia…';
+                    try {
+                        const res = await fetchAuth(`/api/evidencias/mi-foto/${fotoId}`);
+                        if (!res.ok) { estadoEl.style.color = '#f87171'; estadoEl.textContent = 'No se pudo cargar esa evidencia.'; return; }
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        estadoEl.textContent = '';
+                        abrirVistaPrevia(url, esVideo);
+                    } catch (e) {
+                        estadoEl.style.color = '#f87171';
+                        estadoEl.textContent = 'Error al cargar la evidencia.';
+                    }
+                }
+
+                async function cargarEvidenciasPrevias() {
+                    try {
+                        const res = await fetchAuth(`/api/evidencias/mis-evidencias/${asignacionId}`);
+                        if (!res.ok) return;
+                        const data = await res.json();
+                        (data.evidencias || []).forEach(ev => {
+                            const esVideo = ev.tipo === 'video';
+                            const chip = document.createElement('div');
+                            chip.title = 'Ya subida antes — toca para verla';
+                            chip.style.cssText = 'flex:0 0 auto;width:52px;height:52px;border-radius:8px;border:2px solid #60a5fa;background:#111;display:flex;align-items:center;justify-content:center;font-size:1.3rem;opacity:0.9;cursor:pointer;';
+                            chip.textContent = esVideo ? '🎥' : '📷';
+                            chip.addEventListener('click', () => verEvidenciaPrevia(ev.id, esVideo));
+                            thumbsEl.appendChild(chip);
+                        });
+                    } catch (e) { /* si falla, simplemente no se muestran previas; no bloquea la cámara */ }
+                }
+
                 async function reanudarPendientes() {
                     const pendientes = await _evidGetPendientes(asignacionId);
                     if (!pendientes.length) return;
@@ -5749,6 +5823,7 @@ async def mis_tareas():
                 });
 
                 iniciarCamara().then(reanudarPendientes);
+                cargarEvidenciasPrevias();
             });
         }
 
