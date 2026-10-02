@@ -4988,6 +4988,7 @@ async def mis_tareas():
     <script> if (window.role === 'visor') { window.location.href = '/app/dashboard'; } </script>
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <script src="/static/video_compress.js?v=1"></script>
     <div style="margin-bottom:14px;">
         <button class="btn-primary" onclick="mostrarMiCodigo()">🔖 Mi código para recibir actividades</button>
     </div>
@@ -5863,7 +5864,7 @@ async def mis_tareas():
                     <button type="button" id="btnAbrirCamaraEvid" style="width:100%;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:10px;padding:12px;font-weight:700;font-size:0.88rem;cursor:pointer;margin-bottom:8px;">📷 Tomar fotos o video con la cámara</button>
                     <p style="font-size:0.75rem;color:#9ca3af;margin:0 0 8px;">También puedes adjuntar fotos o video ya guardados:</p>
                     <input type="file" id="fotosFinalizarInput" multiple accept="image/*,video/*" style="width:100%;margin-bottom:8px;">
-                    <p style="font-size:0.75rem;color:#9ca3af;margin:0 0 8px;">Videos hasta 80MB por archivo.</p>
+                    <p style="font-size:0.75rem;color:#9ca3af;margin:0 0 8px;">Los videos de galería se comprimen automáticamente antes de subirse (deja la pantalla encendida mientras tanto).</p>
                     <div id="previewFotosFinalizar" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;"></div>
                     <div id="compressInfoFinalizar" style="font-size:12px;color:#666;margin-bottom:8px;"></div>
 
@@ -6031,22 +6032,53 @@ async def mis_tareas():
 
             // 1) Subir evidencia (si hay archivos nuevos), vinculada a esta actividad exacta
             if (archivosNuevos.length > 0) {
-                const MAX_VIDEO_MB = 80;
-                const videoDemasiadoGrande = archivosNuevos.find(f => {
-                    const esVideo = f.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|3gp|avi|mkv)$/i.test(f.name);
-                    return esVideo && f.size > MAX_VIDEO_MB * 1024 * 1024;
-                });
-                if (videoDemasiadoGrande) {
-                    errorEl.textContent = `El video "${videoDemasiadoGrande.name}" pesa más de ${MAX_VIDEO_MB}MB. Comprímelo o recorta la duración antes de subirlo.`;
-                    btn.disabled = false;
-                    return;
-                }
+                const MAX_VIDEO_MB = 80;   // tope del servidor
+                const _esVideoArchivo = f => f.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|3gp|avi|mkv)$/i.test(f.name);
 
                 btn.textContent = '⏳ Preparando archivos...';
-                const procesados = await Promise.all(archivosNuevos.map(f => {
-                    const esVideo = f.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|3gp|avi|mkv)$/i.test(f.name);
-                    return esVideo ? Promise.resolve(f) : _comprimirImagenCanvas(f);
-                }));
+                const nVideosTotal = archivosNuevos.filter(_esVideoArchivo).length;
+                let videoIdx = 0;
+                const procesados = [];
+                // Se procesan en serie: comprimir varios videos a la vez satura la memoria del celular.
+                for (const f of archivosNuevos) {
+                    if (!_esVideoArchivo(f)) {
+                        procesados.push(await _comprimirImagenCanvas(f));
+                        continue;
+                    }
+                    videoIdx++;
+                    const etiqueta = nVideosTotal > 1 ? ` ${videoIdx}/${nVideosTotal}` : '';
+                    const mbOrig = (f.size / (1024 * 1024)).toFixed(1);
+                    let r;
+                    if (typeof window.comprimirVideoGaleria === 'function') {
+                        r = await window.comprimirVideoGaleria(f, {
+                            onProgress: p => {
+                                btn.textContent = `🎞️ Comprimiendo video${etiqueta}… ${Math.round(p * 100)}%`;
+                                const infoEl = document.getElementById('compressInfoFinalizar');
+                                if (infoEl) infoEl.textContent = `Comprimiendo ${mbOrig} MB… no cierres ni cambies de app.`;
+                            }
+                        });
+                    } else {
+                        r = { file: f, comprimido: false, motivo: 'sin-libreria', bytesAntes: f.size, bytesDespues: f.size };
+                    }
+
+                    if (r.file.size > MAX_VIDEO_MB * 1024 * 1024) {
+                        const razones = {
+                            'sin-webcodecs': 'Este navegador no puede comprimir video. Actualiza Chrome (o Safari en iPhone) e intenta de nuevo.',
+                            'sin-libreria': 'No se pudo cargar el compresor de video. Revisa tu conexión e intenta de nuevo.',
+                            'sin-codec': 'Este dispositivo no tiene codificador de video compatible.',
+                            'timeout': 'La compresión se detuvo por tardar demasiado.',
+                            'error': 'No se pudo comprimir este video.'
+                        };
+                        const detalle = razones[r.motivo] || 'No se pudo comprimir lo suficiente.';
+                        errorEl.textContent = `El video "${f.name}" pesa ${mbOrig} MB y el máximo es ${MAX_VIDEO_MB} MB. ${detalle} Recórtalo o grábalo con la cámara de la app.`;
+                        btn.textContent = '✅ Confirmar y Finalizar'; btn.disabled = false;
+                        return;
+                    }
+                    if (r.comprimido) {
+                        console.log(`[video] ${f.name}: ${mbOrig} MB → ${(r.file.size / (1024 * 1024)).toFixed(1)} MB`);
+                    }
+                    procesados.push(r.file);
+                }
                 btn.textContent = '📤 Subiendo evidencia...';
                 const fd = new FormData();
                 fd.append('unidad', unidad);
