@@ -4,6 +4,7 @@ from db import execute_read, execute_write
 from auth import verify_token
 from pydantic import BaseModel
 from typing import List
+from routers.reporte_mensual_page import CONTENIDO_REPORTE_MENSUAL
 
 router = APIRouter()
 
@@ -206,6 +207,94 @@ BASE_STYLE = """
     }
     .global-search-item:hover { background: rgba(99,102,241,0.08); }
     .global-search-item-titulo { font-weight: 600; font-size: 0.92rem; }
+
+    /* ══════════════════════════════════════════════════════════════════
+       TEMA CARRIER v2 — apariencia del tablero "Indicadores por Técnico"
+       (colores muestreados de la imagen de referencia)
+       ══════════════════════════════════════════════════════════════════ */
+    :root {
+        --carrier-blue: #062F67;         /* encabezado, barras de panel, cabeceras de tabla */
+        --carrier-accent: #1655A2;       /* elemento activo del menú */
+        --carrier-light: #E7F1FE;        /* cajas de nota / fondos suaves */
+        --bg-page: #F3F7FC; --bg-page-2: #F5F9FE; --bg-page-3: #F1F6FC;
+        --bg-surface-2: #F8FBFF;
+        --border-color: #D5E4F8; --border-color-soft: #E6EEF8;
+        --shadow-soft: rgba(6,47,103,0.07);
+        --sidebar-bg: #04295E;
+        --sidebar-w: 17rem;
+    }
+    body { background: var(--bg-page-2); }
+
+    /* Sidebar: azul marino plano con brillo azul en la esquina inferior */
+    .sidebar { background: linear-gradient(200deg, #04295E 58%, #07439D 100%); padding: 1.1rem 1rem; box-shadow: none; }
+    body.theme-dark .sidebar { background: linear-gradient(200deg, #060d1a 58%, #0a2552 100%); }
+    .brand-chip { display: inline-block; background: #fff; border-radius: 999px; padding: 7px 18px; }
+    .brand-chip img { width: 128px; display: block; }
+    .side-tag { text-align: center; color: #C9DBF5; font-size: .8rem; margin: 12px 0 0; }
+    .nav-item { border-radius: 0; margin: 0 -1rem 2px; padding: 13px 1.35rem; color: #fff; font-weight: 500; font-size: .98rem; gap: 14px; }
+    .nav-item i { font-size: 21px; }
+    .nav-item:hover { background: rgba(255,255,255,0.10); }
+    .nav-item.active { background: #1655A2; }
+    body.theme-dark .nav-item.active { background: #17407c; }
+    .user-chip { background: rgba(255,255,255,0.10); }
+
+    /* Encabezado azul con título, subtítulo y bloque de total */
+    .app-header {
+        background: #062F67; color: #fff; display: flex; align-items: center; justify-content: space-between;
+        gap: 16px; flex-wrap: wrap; min-height: 5.4rem; padding: 1rem 1.75rem 1rem calc(1.75rem + 54px);
+    }
+    body.theme-dark .app-header { background: #0a1830; }
+    .app-header h1 { margin: 0; font-size: 1.9rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; color: #fff; }
+    .app-header-sub { font-size: 1.05rem; color: #D6E4F7; margin-top: 2px; font-weight: 400; }
+    .app-header-r { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .app-header .time-badge { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25); box-shadow: none; }
+    .app-header .global-search-trigger { background: rgba(255,255,255,0.10); border-color: rgba(255,255,255,0.28); color: #fff; }
+    .app-header .global-search-trigger:hover { border-color: #fff; color: #fff; }
+    .app-header .global-search-trigger-kbd { background: rgba(255,255,255,0.18); color: #fff; }
+    .app-header-total { display: flex; align-items: center; gap: 14px; padding-left: 22px; margin-left: 6px; border-left: 1px solid rgba(255,255,255,0.28); }
+    .app-header-total > i { font-size: 44px; }
+    .app-header-total span { display: block; font-size: .98rem; color: #D6E4F7; }
+    .app-header-total b { display: block; font-size: 2.2rem; font-weight: 700; line-height: 1.05; }
+    .app-body { padding: 1.25rem 1.75rem 2rem; }
+    .main-content, body.sidebar-hidden .main-content { padding: 0 !important; }
+    .hamburger { top: 18px; background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.30); box-shadow: none; }
+    .hamburger:hover { background: rgba(255,255,255,0.24); }
+    .hamburger:focus-visible, .nav-item:focus-visible, .rm-btn:focus-visible { outline: 3px solid #7fb2ff; outline-offset: 2px; }
+
+    @media (min-width: 901px) {
+        .sidebar { width: var(--sidebar-w); }
+        .main-content { margin-left: var(--sidebar-w); }
+        .hamburger.sidebar-open { left: calc(var(--sidebar-w) + 14px); }
+    }
+    @media (max-width: 900px) {
+        .app-header h1 { font-size: 1.3rem; }
+        .app-header { padding: .8rem 1rem .8rem 4.2rem; min-height: 4.4rem; }
+        .app-header-total > i { display: none; }
+        .app-header-total b { font-size: 1.6rem; }
+        .app-body { padding: 1rem; }
+    }
+
+    /* Tarjetas KPI, títulos de sección y tablas */
+    .kpi-wrap { background: var(--bg-surface-2); border: 1px solid var(--border-color); border-top: 1px solid var(--border-color);
+                border-radius: 10px; box-shadow: 0 1px 3px var(--shadow-soft); }
+    .kpi-wrap::after { display: none; }
+    .kpi-wrap:hover { transform: none; box-shadow: 0 2px 8px var(--shadow-soft); }
+    .kpi-wrap.green  { border-top: 3px solid var(--carrier-success); }
+    .kpi-wrap.amber  { border-top: 3px solid var(--carrier-warn); }
+    .kpi-wrap.red    { border-top: 3px solid var(--carrier-danger); }
+    .kpi-wrap.purple { border-top: 3px solid #7c3aed; }
+    .kpi-num { color: var(--carrier-blue); font-weight: 700; letter-spacing: -0.02em; }
+    body.theme-dark .kpi-num { color: #cfe0ff; }
+    .kpi-lbl { text-transform: none; letter-spacing: 0; font-size: .82rem; font-weight: 600; color: var(--text-primary); }
+    .section-title { background: var(--carrier-blue); color: #fff; border-left: none; border-radius: 8px; padding: 9px 16px; font-size: .95rem; box-shadow: none; }
+    body.theme-dark .section-title { background: #12305f; color: #fff; }
+    table { border: 1px solid var(--border-color); border-radius: 10px; box-shadow: none; }
+    th { background: var(--carrier-blue); color: #fff; border-bottom: none; font-weight: 700; }
+    body.theme-dark th { background: #12305f; color: #fff; }
+    tbody tr:nth-child(even) td { background: #F4F7FD; }
+    body.theme-dark tbody tr:nth-child(even) td { background: var(--bg-surface-2); }
+    td { border-bottom: 1px solid var(--border-color-soft); }
+    .login-card { border-radius: 14px; }
     .global-search-item-sub { font-size: 0.8rem; color: var(--text-secondary, #8a97ab); }
 </style>
 """
@@ -213,8 +302,9 @@ BASE_STYLE = """
 # ------------------------------------------------------------
 # FUNCIÓN AUXILIAR CON SIDEBAR, MENÚ Y CIERRE DE SESIÓN SIEMPRE VISIBLE
 # ------------------------------------------------------------
-def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_scripts: str = "", icono: str = "") -> str:
-    icono_html = f'<i class="ti ti-{icono}" aria-hidden="true"></i>' if icono else ''
+def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_scripts: str = "", icono: str = "",
+                    subtitulo: str = "", header_derecha: str = "") -> str:
+    sub_html = f'<div class="app-header-sub" id="appHeaderSub">{subtitulo}</div>' if subtitulo else ''
     return f"""
     <!DOCTYPE html>
     <html lang="es">
@@ -260,8 +350,8 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
         <div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
         <div class="sidebar" id="sidebar">
             <div style="text-align:center; margin-bottom:24px;">
-                <img src="https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo.jpg" style="width:150px; border-radius:8px;">
-                <p style="color:#c3d4f0; font-size:0.8rem; margin-top:4px;">Sistema Operativo</p>
+                <span class="brand-chip"><img src="https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo.jpg" alt="Carrier"></span>
+                <p style="color:#c3d4f0; font-size:0.8rem; margin-top:8px;">Sistema Operativo</p>
             </div>
             <div style="margin-bottom:20px;padding:14px 12px;background:rgba(255,255,255,0.07);border-radius:14px;">
                 <!-- Foto de perfil -->
@@ -287,20 +377,26 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     <span id="themeToggleIcon">🌙</span> <span id="themeToggleLabel">Modo oscuro</span>
                 </button>
                 <button onclick="logout()" class="logout-btn">🚪 Cerrar Sesión</button>
+                <p class="side-tag">Turn to the experts</p>
             </div>
         </div>
 
         <div class="main-content">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; flex-wrap:wrap; gap:12px;">
-                <h1 class="main-header">{icono_html}{titulo}</h1>
-                <div style="display:flex; align-items:center; gap:10px;">
+            <header class="app-header">
+                <div>
+                    <h1>{titulo}</h1>
+                    {sub_html}
+                </div>
+                <div class="app-header-r">
                     <button id="globalSearchBtn" onclick="abrirBusquedaGlobal()" class="global-search-trigger" title="Buscar en todo el sistema">
                         🔍 <span class="global-search-trigger-label">Buscar</span>
                         <span class="global-search-trigger-kbd">Ctrl K</span>
                     </button>
                     <div id="liveClock" class="time-badge"></div>
+                    {header_derecha}
                 </div>
-            </div>
+            </header>
+            <div class="app-body">
 
             <!-- ── Búsqueda global (Ctrl+K) ─────────────────────────────── -->
             <div id="globalSearchOverlay" class="global-search-overlay" onclick="if(event.target===this)cerrarBusquedaGlobal()">
@@ -312,6 +408,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
             <div id="visorBanner" style="display:none" class="visor-banner">👁 Modo solo lectura — No tienes permisos para editar</div>
             <script>if(window.role==='visor') document.getElementById('visorBanner').style.display='block';</script>
             {contenido}
+            </div>
         </div>
 
 
@@ -343,6 +440,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
 
                 const adminMenu = [
                     {{ href: '/app/dashboard', icon: 'chart-bar', label: 'Dashboard ejecutivo' }},
+                    {{ href: '/app/reporte-mensual', icon: 'report-analytics', label: 'Reporte mensual' }},
                     {{ href: '/app/asignaciones', icon: 'target-arrow', label: 'Control de asignaciones' }},
                     {{ href: '/app/tickets', icon: 'ticket', label: 'Tickets' }},
                     {{ href: '/app/inventario', icon: 'package', label: 'Inventarios' }},
@@ -359,6 +457,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 ];
                 const visorMenu = [
                     {{ href: '/app/dashboard', icon: 'chart-bar', label: 'Dashboard ejecutivo' }},
+                    {{ href: '/app/reporte-mensual', icon: 'report-analytics', label: 'Reporte mensual' }},
                     {{ href: '/app/asignaciones', icon: 'target-arrow', label: 'Control de asignaciones' }},
                     {{ href: '/app/tickets', icon: 'ticket', label: 'Tickets' }},
                     {{ href: '/app/inventario', icon: 'package', label: 'Inventarios' }},
@@ -377,6 +476,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                 ];
                 const liderMenu = [
                     {{ href: '/app/dashboard', icon: 'chart-bar', label: 'Dashboard ejecutivo' }},
+                    {{ href: '/app/reporte-mensual', icon: 'report-analytics', label: 'Reporte mensual' }},
                     {{ href: '/app/asignaciones', icon: 'target-arrow', label: 'Control de asignaciones' }},
                     {{ href: '/app/mis-tareas', icon: 'circle-check', label: 'Mis tareas asignadas' }},
                     {{ href: '/app/tickets', icon: 'ticket', label: 'Tickets' }},
@@ -10604,6 +10704,18 @@ ADSENSE_UNIT = """
      data-full-width-responsive="true"></ins>
 <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
 """
+
+
+@router.get("/app/reporte-mensual", response_class=HTMLResponse)
+async def reporte_mensual():
+    total_header = (
+        '<div class="app-header-total"><i class="ti ti-calendar-check" aria-hidden="true"></i>'
+        '<div><span>Total de registros</span><b id="appHeaderTotal">–</b></div></div>'
+    )
+    return HTMLResponse(content=pagina_con_menu(
+        "Indicadores por Técnico", CONTENIDO_REPORTE_MENSUAL, "reporte-mensual",
+        subtitulo="Reporte final mensual", header_derecha=total_header,
+    ))
 
 
 @router.get("/ads.txt", response_class=PlainTextResponse)
