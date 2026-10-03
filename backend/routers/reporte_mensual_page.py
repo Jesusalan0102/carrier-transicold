@@ -23,19 +23,28 @@ CONTENIDO_REPORTE_MENSUAL = r"""
     .rm-btn:hover { filter:brightness(1.12); }
     .rm-btn:focus-visible, .rm-toolbar input:focus-visible { outline:3px solid #7fb2ff; outline-offset:2px; }
 
-    .rm-kpis { display:grid; grid-template-columns:repeat(9, minmax(0,1fr)); gap:10px; margin-bottom:16px; }
+    .rm-kpis { display:grid; grid-template-columns:repeat(var(--rm-cols-d, 9), minmax(0,1fr)); gap:10px; margin-bottom:16px; }
     .rm-kpi { background:var(--bg-surface-2); border:1px solid var(--rm-line); border-radius:10px; padding:14px 12px;
               display:flex; align-items:center; gap:10px; min-width:0; box-shadow:0 1px 3px var(--shadow-soft); }
     .rm-kpi-ico { flex:0 0 42px; height:42px; border-radius:50%; background:var(--carrier-blue); color:#fff;
                   display:flex; align-items:center; justify-content:center; font-size:21px; }
     .rm-kpi-txt { min-width:0; }
-    .rm-kpi-lbl { font-size:.74rem; font-weight:600; color:var(--text-primary); line-height:1.15; min-height:2.3em;
+    .rm-kpis.compact .rm-kpi { padding:12px 8px; gap:7px; }
+    .rm-kpis.compact .rm-kpi-ico { flex-basis:34px; height:34px; font-size:18px; }
+    .rm-kpis.compact .rm-kpi-lbl { font-size:.67rem; }
+    .rm-kpis.compact .rm-kpi-num { font-size:1.7rem; }
+    .rm-kpi-lbl { overflow-wrap:anywhere; font-size:.74rem; font-weight:600; color:var(--text-primary); line-height:1.15; min-height:2.3em;
                   display:flex; align-items:flex-end; }
     .rm-kpi-num { font-size:1.9rem; font-weight:700; line-height:1.05; color:var(--carrier-blue); letter-spacing:-.02em; }
     body.theme-dark .rm-kpi-num { color:#cfe0ff; }
 
     .rm-grid { display:grid; gap:16px; margin-bottom:16px; }
     .rm-grid.g1 { grid-template-columns:minmax(0,1.62fr) minmax(0,1fr); }
+    .rm-grid.wide { grid-template-columns:1fr; }
+    .rm-grid.wide .rm-sum { grid-template-columns:repeat(4, 1fr); }
+    .rm-grid.wide .rm-sum-i, .rm-grid.wide .rm-sum-i:nth-child(odd), .rm-grid.wide .rm-sum-i:nth-child(-n+2) { border:none; border-right:1px solid var(--border-color-soft); }
+    .rm-grid.wide .rm-sum-i:last-child { border-right:none; }
+    .rm-grid.wide .rm-note { margin:4px 14px 6px; }
     .rm-panel { background:var(--bg-surface); border:1px solid var(--rm-line); border-radius:10px; overflow:hidden;
                 box-shadow:0 1px 3px var(--shadow-soft); min-width:0; display:flex; flex-direction:column; }
     .rm-panel-h { background:var(--carrier-blue); color:#fff; font-weight:700; font-size:1.02rem; padding:9px 14px; }
@@ -66,6 +75,10 @@ CONTENIDO_REPORTE_MENSUAL = r"""
                        font-variant-numeric:tabular-nums; color:var(--text-primary); }
     .rm-tbl tbody td:first-child { text-align:left; padding-left:10px; font-weight:600; white-space:nowrap; font-size:.68rem; }
     .rm-tbl tbody tr:nth-child(even) td { background:var(--rm-zebra); }
+    .rm-tbl.dense { font-size:.6rem; }
+    .rm-tbl.dense thead th { font-size:.56rem; padding:6px 2px; }
+    .rm-tbl.dense tbody td, .rm-tbl.dense tfoot td { padding:4px 2px; }
+    .rm-tbl.dense tbody td:first-child { font-size:.62rem; }
     .rm-tbl td.z { color:var(--text-secondary); opacity:.7; }
     .rm-tbl td.tot, .rm-tbl th.tot { font-weight:700; border-left:2px solid var(--rm-line); }
     .rm-tbl tfoot td { padding:7px 3px; text-align:center; font-weight:700; border-top:2px solid var(--carrier-blue);
@@ -96,6 +109,7 @@ CONTENIDO_REPORTE_MENSUAL = r"""
 
     @media (max-width: 1280px) { .rm-kpis { grid-template-columns:repeat(5, minmax(0,1fr)); } }
     @media (max-width: 1100px) { .rm-grid.g1 { grid-template-columns:1fr; } }
+    @media (max-width: 900px)  { .rm-grid.wide .rm-sum { grid-template-columns:1fr 1fr; } .rm-grid.wide .rm-sum-i { border-bottom:1px solid var(--border-color-soft); } }
     @media (max-width: 640px)  { .rm-kpis { grid-template-columns:repeat(2, minmax(0,1fr)); } .rm-donut { grid-template-columns:1fr; } .rm-sum { grid-template-columns:1fr; }
         .rm-sum-i:nth-child(odd) { border-right:none; } .rm-sum-i:nth-child(-n+3) { border-bottom:1px solid var(--border-color-soft); } }
 
@@ -104,11 +118,12 @@ CONTENIDO_REPORTE_MENSUAL = r"""
         .sidebar, .hamburger, .overlay, .rm-toolbar, .global-search-trigger, #globalSearchOverlay, #visorBanner, #liveClock { display:none !important; }
         .main-content { margin:0 !important; padding:0 !important; }
         .app-body { padding:8px 0 0 !important; }
-        .rm-kpis { grid-template-columns:repeat(9, minmax(0,1fr)); gap:6px; }
+        .rm-kpis { grid-template-columns:repeat(var(--rm-cols-d, 9), minmax(0,1fr)); gap:6px; }
         .rm-kpi { padding:8px 6px; gap:6px; }
         .rm-kpi-ico { flex-basis:30px; height:30px; font-size:16px; }
         .rm-kpi-num { font-size:1.35rem; }
         .rm-grid.g1 { grid-template-columns:minmax(0,1.62fr) minmax(0,1fr); gap:10px; }
+        .rm-grid.g1.wide { grid-template-columns:1fr; }
         .rm-panel, .rm-kpi, .rm-grid { break-inside:avoid; page-break-inside:avoid; }
         .rm-sum-i { padding:10px 10px; }
         .app-header, .app-body { zoom:.85; }   /* A4 horizontal: hoja 1 = indicadores y gráficas, hoja 2 = detalle y resumen */
@@ -131,15 +146,22 @@ CONTENIDO_REPORTE_MENSUAL = r"""
 
 <script>
 (function () {
-    // Misma paleta en barras, dona y tarjetas para que cada actividad se reconozca por color.
-    const COLORES = {
-        cableado:'#3B82F6', cerrado:'#0EA5E9', accesorios:'#7CC4CF', soldadura:'#F4A259', vacios:'#8B6FD6',
-        corrida:'#F5C542',  series:'#4F5FD9',  evidencia:'#0F9FA8',  video:'#0B2A63'
+    // Las categorías vienen del catálogo real de actividades (cambian si el admin agrega o quita alguna).
+    // Las actividades del tablero de referencia conservan su color; el resto toma uno de la paleta
+    // según su posición en el catálogo, así cada actividad mantiene siempre el mismo color entre meses.
+    const COLOR_FIJO = {
+        cableado:'#3B82F6', cerrado:'#0EA5E9', accesorios:'#7CC4CF', soldadura:'#F4A259', vacio:'#8B6FD6',
+        horas_corridas:'#F5C542', toma_de_series:'#4F5FD9', evidencia:'#0F9FA8', video_liberacion:'#0B2A63'
     };
+    const PALETA = ['#E85D75','#2DBE8A','#94A3B8','#B45309','#EC4899','#84CC16','#166534','#9F1239','#78716C','#CA8A04','#6B7F2A','#C2410C'];
     const ICONOS = {
-        cableado:'plug', cerrado:'clipboard-check', accesorios:'settings', soldadura:'flame', vacios:'wind',
-        corrida:'run',   series:'barcode',          evidencia:'camera',   video:'video'
+        cableado:'plug', programacion:'code', soldadura:'flame', check_de_fugas:'droplet', vacio:'wind', cerrado:'clipboard-check',
+        pre_viaje:'truck', horas_corridas:'run', standby:'player-pause', gps:'map-pin', corriendo:'run', inspeccion:'search',
+        accesorios:'settings', toma_de_valores:'gauge', evidencia:'camera', toma_de_series:'barcode', extra_electrico:'bolt',
+        extra_soldador:'flame', retrabajo_electrico:'refresh', retrabajo_soldador:'refresh', tickets:'ticket', video_liberacion:'video'
     };
+    const colorDe = c => COLOR_FIJO[c.clave] || PALETA[(c.orden || 0) % PALETA.length];
+    const iconoDe = c => ICONOS[c.clave] || 'checklist';
     const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 
     const $ = id => document.getElementById(id);
@@ -153,7 +175,7 @@ CONTENIDO_REPORTE_MENSUAL = r"""
         const r = $('rmRoot').parentElement.style;
         r.setProperty('--rm-line',  dark ? '#283854' : '#D5E4F8');
         r.setProperty('--rm-zebra', dark ? '#182338' : '#F4F7FD');
-        COLORES.video = dark ? '#5B8DD9' : '#0B2A63';   // el azul marino no se distingue sobre fondo oscuro
+        COLOR_FIJO.video_liberacion = dark ? '#5B8DD9' : '#0B2A63';   // el azul marino no se distingue sobre fondo oscuro
     }
     function colorTexto() { return getComputedStyle(document.body).getPropertyValue('--text-primary').trim() || '#1f2937'; }
 
@@ -199,14 +221,14 @@ CONTENIDO_REPORTE_MENSUAL = r"""
 
         const cats = d.categorias;
         const kpis = cats.map(c =>
-            '<div class="rm-kpi"><div class="rm-kpi-ico" aria-hidden="true"><i class="ti ti-' + ICONOS[c.clave] + '"></i></div>' +
+            '<div class="rm-kpi"><div class="rm-kpi-ico" aria-hidden="true"><i class="ti ti-' + iconoDe(c) + '"></i></div>' +
             '<div class="rm-kpi-txt"><div class="rm-kpi-lbl">' + esc(c.etiqueta) + '</div><div class="rm-kpi-num">' + fmt(c.total) + '</div></div></div>'
         ).join('');
 
-        const leyendaBarras = cats.map(c => '<span><i class="rm-sw" style="background:' + COLORES[c.clave] + '"></i>' + esc(c.etiqueta) + '</span>').join('');
+        const leyendaBarras = cats.map(c => '<span><i class="rm-sw" style="background:' + colorDe(c) + '"></i>' + esc(c.etiqueta) + '</span>').join('');
 
         const leyendaDona = cats.map(c =>
-            '<li><span class="dot" style="background:' + COLORES[c.clave] + '"></span><span class="nm">' + esc(c.etiqueta) +
+            '<li><span class="dot" style="background:' + colorDe(c) + '"></span><span class="nm">' + esc(c.etiqueta) +
             '</span><span class="pc">' + pct(c.porcentaje) + '</span></li>').join('');
 
         const head = '<th>Técnico</th>' + cats.map(c => '<th>' + esc(c.etiqueta) + '</th>').join('') + '<th class="tot">Total</th>';
@@ -220,23 +242,21 @@ CONTENIDO_REPORTE_MENSUAL = r"""
         let nota = 'La actividad “' + esc(am.etiqueta) + '” es la de mayor volumen (' + pct(cats.find(c => c.etiqueta === am.etiqueta).porcentaje) +
             ' de los registros del mes). ' + (cn.n_tecnicos_mitad === 1 ? 'Un solo técnico concentra' : cn.n_tecnicos_mitad + ' técnicos concentran') +
             ' más de la mitad de los registros.';
-        if (d.otras_actividades > 0) {
-            nota += ' Además se completaron ' + fmt(d.otras_actividades) + ' actividades de otros tipos que no forman parte de este tablero.';
-        }
+        const sinReg = (d.sin_registros || []).join(', ');
 
         const hoy = new Date().toLocaleString('es-MX', {timeZone:'America/Tijuana', dateStyle:'long', timeStyle:'short'});
 
         $('rmRoot').innerHTML =
-            '<div class="rm-kpis">' + kpis + '</div>' +
+            '<div class="rm-kpis' + (cats.length > 9 ? ' compact' : '') + '" style="--rm-cols-d:' + Math.min(cats.length, 9) + '">' + kpis + '</div>' +
             '<div class="rm-grid g1">' +
                 '<section class="rm-panel"><div class="rm-panel-h">Actividades por Técnico</div><div class="rm-panel-b">' +
                     '<div class="rm-legend">' + leyendaBarras + '</div><div class="rm-cell"><div id="rmBar" style="height:' + (window.innerWidth < 640 ? 420 : 370) + 'px"></div></div></div></section>' +
                 '<section class="rm-panel"><div class="rm-panel-h">Distribución general de actividades</div><div class="rm-panel-b">' +
                     '<div class="rm-donut"><div class="rm-cell"><div id="rmPie" style="height:330px"></div></div><ul class="rm-dlegend">' + leyendaDona + '</ul></div></div></section>' +
             '</div>' +
-            '<div class="rm-grid g1">' +
+            '<div class="rm-grid g1' + (cats.length > 9 ? ' wide' : '') + '">' +
                 '<section class="rm-panel"><div class="rm-panel-h">Detalle por Técnico</div><div class="rm-panel-b" style="padding:0">' +
-                    '<div class="rm-tblwrap"><table class="rm-tbl"><thead><tr>' + head + '</tr></thead><tbody>' + filas + '</tbody><tfoot>' + pie + '</tfoot></table></div></div></section>' +
+                    '<div class="rm-tblwrap"><table class="rm-tbl' + (cats.length > 12 ? ' dense' : '') + '"><thead><tr>' + head + '</tr></thead><tbody>' + filas + '</tbody><tfoot>' + pie + '</tfoot></table></div></div></section>' +
                 '<section class="rm-panel"><div class="rm-panel-h">Resumen</div><div class="rm-panel-b" style="padding:0 10px 12px">' +
                     '<div class="rm-sum">' +
                         '<div class="rm-sum-i"><div class="rm-sum-ico"><i class="ti ti-users"></i></div><div><div class="rm-sum-l">Técnicos</div><div class="rm-sum-v">' + fmt(d.n_tecnicos) + '</div></div></div>' +
@@ -247,7 +267,8 @@ CONTENIDO_REPORTE_MENSUAL = r"""
                     '<div class="rm-note"><i class="ti ti-bulb"></i><div><b>Nota:</b>' + esc(nota) + '</div></div>' +
                 '</div></section>' +
             '</div>' +
-            '<div class="rm-foot"><span>Registro = actividad completada en el mes o video de evidencia subido (Video liberación).</span><span>Generado el ' + esc(hoy) + '</span></div>';
+            '<div class="rm-foot"><span>Registro = tarea completada por el técnico en el mes (catálogo de actividades y tickets) o video de evidencia subido.' +
+                (sinReg ? ' Sin registros este mes: ' + esc(sinReg) + '.' : '') + '</span><span>Generado el ' + esc(hoy) + '</span></div>';
 
         dibujar(d);
     }
@@ -261,7 +282,7 @@ CONTENIDO_REPORTE_MENSUAL = r"""
 
         const trazas = cats.map(c => ({
             type:'bar', name:c.etiqueta, x:nombres, y:d.tecnicos.map(t => t[c.clave]),
-            marker:{color:COLORES[c.clave]}, hovertemplate:'%{x}<br>' + c.etiqueta + ': %{y}<extra></extra>'
+            marker:{color:colorDe(c)}, hovertemplate:'%{x}<br>' + c.etiqueta + ': %{y}<extra></extra>'
         }));
         trazas.push({   // total sobre cada barra (también el 0, como en el tablero de referencia)
             type:'scatter', mode:'text', x:nombres, y:d.tecnicos.map(t => t.total),
@@ -279,7 +300,7 @@ CONTENIDO_REPORTE_MENSUAL = r"""
         const p2 = Plotly.newPlot('rmPie', [{
             type:'pie', hole:.6, sort:false, direction:'clockwise', rotation:90,
             labels:con.map(c => c.etiqueta), values:con.map(c => c.total),
-            marker:{colors:con.map(c => COLORES[c.clave]), line:{color:'#fff', width:1.5}},
+            marker:{colors:con.map(colorDe), line:{color:'#fff', width:1.5}},
             text:con.map(c => pct(c.porcentaje)), textinfo:'text', textposition:'inside', insidetextorientation:'horizontal',
             textfont:{size:11, color:'#fff'}, hovertemplate:'%{label}: %{value} registros<extra></extra>', showlegend:false
         }], {
