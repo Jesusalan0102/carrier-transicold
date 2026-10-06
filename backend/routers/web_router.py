@@ -4917,6 +4917,7 @@ async def admin():
             ['Evaporador 2', [u.evaporator_model_2, u.evaporator_serial_mjd22].filter(Boolean).join(' — ')],
             ['Motor', u.engine_serial], ['Compresor', u.compressor_serial],
             ['Generador', u.generator_serial], ['Cargador Batería', u.battery_charger_serial],
+            ['Controlador (CTD)', u.controller_serial], ['Display Module', u.display_serial], ['Módulo CTD', u.ctd_module_serial],
         ].filter(([,v]) => v).map(([k,v]) => `<tr><td style="color:#6b7280;padding:4px 10px 4px 0;white-space:nowrap;">${k}</td><td style="font-family:monospace;font-size:13px;">${v}</td></tr>`).join('');
 
         const asnRows = (data.asignaciones || []).slice(0,15).map(a => `
@@ -6252,13 +6253,149 @@ async def mis_tareas():
             if (modelSel.value === 'N/A') { input.value = 'N/A'; input.disabled = true; }
             else { if (input.value === 'N/A') input.value = ''; input.disabled = false; }
         }
+        // ---------- LECTURA DE SERIES POR FOTO ----------
+        // Cada foto se manda al servidor (/api/series/leer-foto), que lee los códigos de barras / DataMatrix
+        // y, si hace falta, el texto impreso. Aquí solo se precargan los campos: nada se guarda
+        // hasta que el técnico revisa y pulsa "Guardar Series".
+        const _ETIQUETAS_CAMPO = {
+            vin_number: 'VIN Number', reefer_serial: 'Serie del Reefer', reefer_model: 'Modelo del Reefer',
+            evaporator_serial_mjs11: 'Evaporador 1 (serie)', evaporator_serial_mjd22: 'Evaporador 2 (serie)',
+            engine_serial: 'Motor', compressor_serial: 'Compresor', generator_serial: 'Generador',
+            battery_charger_serial: 'Cargador de Batería', controller_serial: 'Controlador (CTD)',
+            display_serial: 'Display Module', ctd_module_serial: 'Módulo CTD'
+        };
+        function _inputDeCampo(campo) {
+            const oculto = [...document.querySelectorAll('[id^="serie_key_"]')].find(el => el.value === campo);
+            return oculto ? document.getElementById('serie_' + oculto.id.replace('serie_key_', '')) : null;
+        }
+        function _elFoto(tag, estilo, texto) {
+            const e = document.createElement(tag);
+            if (estilo) e.style.cssText = estilo;
+            if (texto != null) e.textContent = texto;
+            return e;
+        }
+        async function _reducirFotoLector(file, maxLado) {
+            const url = URL.createObjectURL(file);
+            try {
+                const img = await new Promise((ok, err) => {
+                    const i = new Image();
+                    i.onload = () => ok(i);
+                    i.onerror = () => err(new Error('No se pudo abrir la imagen'));
+                    i.src = url;
+                });
+                const k = Math.min(1, maxLado / Math.max(img.naturalWidth, img.naturalHeight));
+                const c = document.createElement('canvas');
+                c.width = Math.max(1, Math.round(img.naturalWidth * k));
+                c.height = Math.max(1, Math.round(img.naturalHeight * k));
+                c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+                const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
+                return blob || file;
+            } catch (e) {
+                return file;               // si el navegador no puede reducirla, se manda tal cual
+            } finally { URL.revokeObjectURL(url); }
+        }
+        function _ponerSerieLeida(campo, valor, confianza) {
+            const inp = _inputDeCampo(campo);
+            if (!inp) return false;
+            inp.value = valor;
+            if (!inp.dataset.cap) {       // etiqueta visible: al llenarse, el placeholder desaparece
+                inp.dataset.cap = '1';
+                inp.setAttribute('aria-label', _ETIQUETAS_CAMPO[campo] || campo);
+                inp.insertAdjacentElement('beforebegin', _elFoto('div', 'font-size:.72rem;color:var(--text-secondary,#6b7280);margin:4px 2px -2px;', _ETIQUETAS_CAMPO[campo] || campo));
+            }
+            inp.style.outline = confianza === 'alta' ? '2px solid #16a34a' : '2px solid #f59e0b';
+            inp.title = confianza === 'alta' ? 'Leído del código de la etiqueta' : 'Leído del texto de la etiqueta: revísalo';
+            inp.addEventListener('input', () => { inp.style.outline = ''; inp.title = ''; }, { once: true });
+            return true;
+        }
+        function _tarjetaResultadoFoto(nombre, r) {
+            const ok = r.ok;
+            const card = _elFoto('div', 'margin-top:8px;background:var(--bg-surface,#fff);border:1px solid ' + (ok ? '#86efac' : '#fcd34d') + ';border-radius:8px;padding:8px 10px;font-size:.84rem;');
+            card.appendChild(_elFoto('div', 'font-weight:700;', (ok ? '✅ ' : '⚠️ ') + (r.titulo || 'Etiqueta') + '  ·  ' + nombre));
+            (r.detalles || []).forEach(d => {
+                const fila = _elFoto('div', 'margin-top:3px;display:flex;gap:6px;flex-wrap:wrap;align-items:baseline;');
+                fila.appendChild(_elFoto('span', 'color:var(--text-secondary,#6b7280);', d.etiqueta + ':'));
+                fila.appendChild(_elFoto('b', 'font-family:monospace;word-break:break-all;', d.valor));
+                fila.appendChild(_elFoto('span', 'font-size:.72rem;padding:1px 7px;border-radius:999px;' + (d.confianza === 'alta' ? 'background:#dcfce7;color:#166534;' : 'background:#fef3c7;color:#92400e;'),
+                    d.confianza === 'alta' ? 'del código' : 'revisar'));
+                if (d.campo) {
+                    const inp = _inputDeCampo(d.campo);
+                    if (inp && inp.value.trim() && inp.value.trim() !== d.valor) {
+                        const b = _elFoto('button', 'font-size:.75rem;padding:2px 8px;border-radius:6px;border:1px solid #93c5fd;background:transparent;cursor:pointer;color:inherit;', 'Usar este valor');
+                        b.type = 'button';
+                        b.onclick = () => { _ponerSerieLeida(d.campo, d.valor, d.confianza); b.remove(); };
+                        fila.appendChild(b);
+                    }
+                }
+                card.appendChild(fila);
+            });
+            (r.avisos || []).forEach(a => card.appendChild(_elFoto('div', 'margin-top:4px;color:#92400e;font-size:.78rem;', 'ℹ️ ' + a)));
+            // Etiqueta no reconocida: se ofrecen los códigos leídos para asignarlos a mano
+            if (!ok && (r.codigos || []).length) {
+                r.codigos.forEach(c => {
+                    const fila = _elFoto('div', 'margin-top:5px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;');
+                    fila.appendChild(_elFoto('b', 'font-family:monospace;word-break:break-all;', c.texto));
+                    const sel = document.createElement('select');
+                    sel.style.cssText = 'width:auto;margin:0;padding:3px 6px;font-size:.78rem;';
+                    sel.appendChild(new Option('Asignar a…', ''));
+                    Object.keys(_ETIQUETAS_CAMPO).forEach(k => { if (_inputDeCampo(k)) sel.appendChild(new Option(_ETIQUETAS_CAMPO[k], k)); });
+                    sel.onchange = () => { if (sel.value) { _ponerSerieLeida(sel.value, c.texto, 'revisar'); sel.value = ''; } };
+                    fila.appendChild(sel);
+                    card.appendChild(fila);
+                });
+            }
+            return card;
+        }
+        async function leerSeriesDeFotos(inputEl) {
+            const archivos = [...inputEl.files];
+            inputEl.value = '';
+            if (!archivos.length) return;
+            const estado = document.getElementById('lectorFotoEstado');
+            const caja = document.getElementById('lectorFotoResultados');
+            let leidas = 0, falladas = 0;
+            for (let i = 0; i < archivos.length; i++) {
+                const nombre = 'foto ' + (i + 1) + ' de ' + archivos.length;
+                estado.style.color = '#1d4ed8';
+                estado.textContent = '🔎 Leyendo ' + nombre + '… (puede tardar unos segundos)';
+                try {
+                    const blob = await _reducirFotoLector(archivos[i], 2000);
+                    const fd = new FormData();
+                    fd.append('archivo', blob, 'etiqueta.jpg');
+                    const ctrl = new AbortController();
+                    const timer = setTimeout(() => ctrl.abort(), 90000);
+                    let res;
+                    try { res = await fetchAuth('/api/series/leer-foto', { method: 'POST', body: fd, signal: ctrl.signal }); }
+                    finally { clearTimeout(timer); }
+                    const r = await res.json().catch(() => ({}));
+                    if (!res.ok) throw new Error(r.detail || ('Error ' + res.status));
+                    Object.keys(r.campos || {}).forEach(campo => {
+                        const d = (r.detalles || []).find(x => x.campo === campo);
+                        const inp = _inputDeCampo(campo);
+                        if (inp && (!inp.value.trim() || inp.value.trim() === r.campos[campo])) {
+                            _ponerSerieLeida(campo, r.campos[campo], d ? d.confianza : 'revisar');
+                        }
+                    });
+                    caja.appendChild(_tarjetaResultadoFoto(nombre, r));
+                    if (r.ok) leidas++; else falladas++;
+                } catch (e) {
+                    falladas++;
+                    const msg = e.name === 'AbortError' ? 'La lectura tardó demasiado. Intenta de nuevo con la foto más cerca.' : e.message;
+                    caja.appendChild(_elFoto('div', 'margin-top:8px;color:#b91c1c;font-size:.84rem;', '❌ ' + nombre + ': ' + msg));
+                }
+            }
+            estado.style.color = falladas ? '#92400e' : '#166534';
+            estado.textContent = (leidas ? '✅ ' + leidas + ' etiqueta(s) leída(s). ' : '') + (falladas ? '⚠️ ' + falladas + ' sin leer. ' : '') +
+                'Revisa los campos marcados (verde = del código, naranja = revisar) antes de guardar.';
+        }
+
         async function tomarSeries(tareaId) {
             const camposSeries = [
                 { key: 'vin_number', label: 'VIN Number' },{ key: 'reefer_serial', label: 'Serie del Reefer' },{ key: 'reefer_model', label: 'Modelo del Reefer' },
                 { key: 'evaporator_serial_mjs11', label: 'Evaporador 1', na: true, modelKey: 'evaporator_model_1' },
                 { key: 'evaporator_serial_mjd22', label: 'Evaporador 2', na: true, modelKey: 'evaporator_model_2' },
                 { key: 'engine_serial', label: 'Motor' },{ key: 'compressor_serial', label: 'Compresor' },{ key: 'generator_serial', label: 'Generador' },
-                { key: 'battery_charger_serial', label: 'Cargador de Batería' }
+                { key: 'battery_charger_serial', label: 'Cargador de Batería' },
+                { key: 'controller_serial', label: 'Controlador (CTD)' },{ key: 'display_serial', label: 'Display Module' },{ key: 'ctd_module_serial', label: 'Módulo CTD' }
             ];
             const opcionesEvap = ['','MJD 1100','MJS 1100','MJD 2200','MJS 2200','N/A']
                 .map(o => `<option value="${o}">${o || 'Modelo'}</option>`).join('');
@@ -6270,7 +6407,14 @@ async def mis_tareas():
                    </div>`
                 : `<input type="text" id="serie_${i}" placeholder="${c.label}"><input type="hidden" id="serie_key_${i}" value="${c.key}">`
             ).join('');
-            const modal = mostrarModal(`<div class="modal-content"><h3><i class="ti ti-hash" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Toma de Series</h3><div id="camposSeries">${inputs}</div><button class="btn-primary" id="btnGuardarSeries"><i class="ti ti-device-floppy" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Guardar Series</button><button class="btn-danger" onclick="cerrarModal()">Cancelar</button></div>`);
+            const modal = mostrarModal(`<div class="modal-content"><h3><i class="ti ti-hash" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Toma de Series</h3>
+                <div id="lectorFotoBox" style="margin:0 0 12px;padding:10px 12px;background:#eff6ff;border:1px dashed #93c5fd;border-radius:10px;">
+                    <label for="lectorFotoInput" class="btn-primary" style="cursor:pointer;margin:0;display:inline-flex;align-items:center;gap:6px;"><i class="ti ti-camera-search" aria-hidden="true"></i>Leer series con foto</label>
+                    <input type="file" id="lectorFotoInput" accept="image/*" multiple style="display:none;" onchange="leerSeriesDeFotos(this)">
+                    <div id="lectorFotoEstado" style="font-size:.82rem;color:#374151;margin-top:6px;">Toma o elige la foto de cada etiqueta (placa de la unidad, controlador, display, módulo CTD). Acércate, sin reflejos y con la etiqueta derecha. Siempre podrás corregir antes de guardar.</div>
+                    <div id="lectorFotoResultados"></div>
+                </div>
+                <div id="camposSeries">${inputs}</div><button class="btn-primary" id="btnGuardarSeries"><i class="ti ti-device-floppy" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"></i>Guardar Series</button><button class="btn-danger" onclick="cerrarModal()">Cancelar</button></div>`);
             document.getElementById('btnGuardarSeries').onclick = async () => {
                 const tareasRes = await fetchAuth('/api/asignaciones/?tecnico=' + username + '&estado=en_proceso'); const tareas = await tareasRes.json();
                 const tarea = Array.isArray(tareas) ? tareas.find(t => t.id == tareaId) : null; if (!tarea) return alert('Tarea no encontrada');

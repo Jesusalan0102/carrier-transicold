@@ -1,0 +1,24 @@
+# ============================================================
+# requirements-ocr.txt — Lector de TEXTO (OCR) OPCIONAL para "Leer series con foto"
+# ============================================================
+# Sin este archivo la app sigue leyendo códigos de barras y DataMatrix (zxing-cpp, que ya está en
+# requirements.txt). Con él además lee el texto impreso (p. ej. el modelo de la placa X4) y
+# rescata etiquetas cuyo código salió borroso o con la foto inclinada (se endereza sola).
+#
+# INSTALAR EN DOS PASOS. rapidocr-onnxruntime exige "opencv-python", que necesita librerías
+# gráficas (libGL) y suele fallar en servidores; por eso se instala sin sus dependencias y se usa
+# la versión headless de OpenCV:
+#
+#   pip install -r requirements-ocr.txt
+#   pip install --no-deps rapidocr-onnxruntime==1.4.4
+#
+# Si estas dependencias no están, el servidor lo detecta solo y responde únicamente con lo que
+# pueda leer de los códigos (no se cae). Verificado en un entorno limpio con Python 3.12.
+numpy>=1.26
+opencv-python-headless>=4.8
+onnxruntime>=1.17
+pyclipper>=1.3
+shapely>=2.0
+PyYAML
+tqdm
+six

@@ -58,6 +58,7 @@ from routers.push_router        import router as push_router
 from routers.search_router      import router as search_router
 from routers.reportes_unidad_router import router as reportes_unidad_router
 from routers.reporte_mensual_router import router as reporte_mensual_router
+from routers.series_lector_router import router as series_lector_router
 
 # ── Asistencia / QR ──────────────────────────────────────────────────────────
 from asistencia.routes          import router as asistencia_router
@@ -133,6 +134,7 @@ app.include_router(push_router)
 app.include_router(search_router)
 app.include_router(reportes_unidad_router)
 app.include_router(reporte_mensual_router)
+app.include_router(series_lector_router)
 
 app.include_router(asistencia_router,    prefix="/api")
 app.include_router(horarios_router)

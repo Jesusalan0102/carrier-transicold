@@ -153,6 +153,9 @@ def _sheet_unidades(wb, conn):
             compressor_serial        AS `Serie Compresor`,
             generator_serial         AS `Serie Generador`,
             battery_charger_serial   AS `Serie Cargador Batería`,
+            controller_serial       AS `Serie Controlador (CTD)`,
+            display_serial          AS `Serie Display Module`,
+            ctd_module_serial       AS `Serie Módulo CTD`,
             fecha_registro           AS `Fecha y Hora de Registro`
         FROM unidades
         WHERE oculto = 0
@@ -669,6 +672,9 @@ def _sheet_lote_unidades(wb, conn, id_lote):
             compressor_serial        AS `Serie Compresor`,
             generator_serial         AS `Serie Generador`,
             battery_charger_serial   AS `Serie Cargador Batería`,
+            controller_serial       AS `Serie Controlador (CTD)`,
+            display_serial          AS `Serie Display Module`,
+            ctd_module_serial       AS `Serie Módulo CTD`,
             fecha_registro           AS `Fecha y Hora de Registro`,
             oculto                   AS `Oculto`
         FROM unidades
@@ -861,6 +867,9 @@ def exportar_reporte_unidades_seleccionadas(
                 compressor_serial        AS `Serie Compresor`,
                 generator_serial         AS `Serie Generador`,
                 battery_charger_serial   AS `Serie Cargador Batería`,
+                controller_serial       AS `Serie Controlador (CTD)`,
+                display_serial          AS `Serie Display Module`,
+                ctd_module_serial       AS `Serie Módulo CTD`,
                 fecha_registro           AS `Fecha y Hora de Registro`
             FROM unidades
             WHERE unit_number IN ({placeholders})

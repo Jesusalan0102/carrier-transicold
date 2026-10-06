@@ -67,6 +67,10 @@ class SeriesUpdate(BaseModel):
     compressor_serial: Optional[str] = ""
     generator_serial: Optional[str] = ""
     battery_charger_serial: Optional[str] = ""
+    # Series que se leen por foto. Default None: un cliente viejo que no los envía NO los borra.
+    controller_serial: Optional[str] = None
+    display_serial: Optional[str] = None
+    ctd_module_serial: Optional[str] = None
 
 # ═══════════════════════════════════════════════════════════════════════════
 # ── GESTIÓN DE LOTES — helper y endpoints (ANTES de /{unidad_id}) ──────────
@@ -684,7 +688,7 @@ CAMPOS_SERIE_BUSCABLES = [
     "unit_number", "id_lote", "vin_number", "reefer_serial", "reefer_model",
     "evaporator_serial_mjs11", "evaporator_serial_mjd22",
     "engine_serial", "compressor_serial", "generator_serial",
-    "battery_charger_serial",
+    "battery_charger_serial", "controller_serial", "display_serial", "ctd_module_serial",
 ]
 
 @router.get("/ficha")

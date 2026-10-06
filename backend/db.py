@@ -309,6 +309,23 @@ def _run_migrations():
                     conn.commit()
                     print(f"✅ Migración: columna {col} añadida a unidades")
 
+            # ── series leídas por foto: controlador, display y módulo CTD ─────────
+            for col in ("controller_serial", "display_serial", "ctd_module_serial"):
+                cur.execute("""
+                    SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME   = 'unidades'
+                      AND COLUMN_NAME  = %s
+                """, (col,))
+                row_cs = cur.fetchone()
+                count_cs = row_cs[0] if isinstance(row_cs, tuple) else list(row_cs.values())[0]
+                if count_cs == 0:
+                    cur.execute(
+                        f"ALTER TABLE unidades ADD COLUMN {col} VARCHAR(60) DEFAULT NULL"
+                    )
+                    conn.commit()
+                    print(f"✅ Migración: columna {col} añadida a unidades")
+
             # ── nombre_completo en users ───────────────────────────────────────
             cur.execute("""
                 SELECT COUNT(*) FROM information_schema.COLUMNS

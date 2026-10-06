@@ -78,3 +78,7 @@ DBUtils==3.1.2
 Pillow>=10.0.0
 reportlab>=4.0.0
 pymupdf>=1.24.0
+
+# --- Lectura de series por foto (códigos de barras / DataMatrix) ---
+# El lector de TEXTO (OCR) es opcional: ver requirements-ocr.txt
+zxing-cpp==3.1.1
