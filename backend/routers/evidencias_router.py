@@ -974,3 +974,96 @@ def copiar_videos_a_onedrive(aplicar: bool = False, limite: int = 2, desde_id: i
     informe["pendientes_restantes"] = max(0, pendientes - len(migrados))
     informe["siguiente_desde_id"] = ultimo_id
     return informe
+
+
+# ── VERIFICAR VIDEOS POR UNIDAD Y TAREA — solo admin ──────────────────────
+# Solo lectura. Para cada video dice dónde está (DB / OneDrive / PERDIDO) y si
+# la app lo puede mostrar donde se subió (unidad + tarea), con la razón exacta
+# cuando no. Usa las mismas reglas que el visor de evidencias:
+#  - la lista de unidades con evidencias solo incluye unidades que EXISTEN y no
+#    están ocultas (ver /unidades-con-fotos);
+#  - dentro de una tarea solo salen las filas con asignacion_id de esa tarea;
+#  - un tipo distinto de 'video' se intenta pintar como imagen.
+def _evaluar_video(r: dict) -> dict:
+    """Devuelve ubicación, problemas (impiden verlo), avisos y si es reparable."""
+    if r.get("en_db"):
+        ubicacion = "base_de_datos"
+    elif r.get("onedrive_item_id"):
+        ubicacion = "onedrive"
+    else:
+        ubicacion = "PERDIDO"
+    problemas, avisos = [], []
+    if ubicacion == "PERDIDO":
+        problemas.append("La fila no tiene archivo (ni en la base ni en OneDrive).")
+    if (r.get("tipo") or "") != "video":
+        problemas.append("Está guardado como foto: la app intenta mostrarlo como imagen.")
+    if r.get("u_unit") is None:
+        problemas.append("La unidad no existe en Registro de unidades: no sale en la lista de evidencias.")
+    elif r.get("u_oculto"):
+        problemas.append("La unidad está oculta (lote oculto): no sale en la lista de evidencias.")
+    if r.get("asignacion_id") is None:
+        problemas.append("No está ligado a ninguna tarea: no aparece dentro de una tarea.")
+    elif r.get("a_id") is None:
+        problemas.append("La tarea a la que pertenece ya no existe.")
+    elif r.get("a_unidad") and r["a_unidad"] != r.get("unit_number"):
+        avisos.append(f"La tarea es de la unidad {r['a_unidad']}, pero el video está en {r.get('unit_number')}.")
+    return {
+        "ubicacion": ubicacion,
+        "visible": not problemas,
+        "problemas": problemas,
+        "avisos": avisos,
+        # 'Reparar' arregla: tipo incorrecto y filas sin archivo que sí están en OneDrive
+        "reparable": (r.get("tipo") or "") != "video" or ubicacion == "PERDIDO",
+    }
+
+
+@router.get("/verificar-videos")
+def verificar_videos(solo_problemas: bool = False, current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    rows = execute_read(
+        """SELECT e.id, e.unit_number, e.nombre_archivo, e.tecnico, e.asignacion_id, e.tipo,
+                  e.onedrive_item_id, (e.contenido IS NOT NULL) AS en_db,
+                  LENGTH(e.contenido) AS bytes_db, COALESCE(e.created_at, '') AS fecha,
+                  u.unit_number AS u_unit, u.oculto AS u_oculto, u.id_lote AS id_lote,
+                  a.id AS a_id, a.unidad AS a_unidad, a.actividad_id AS actividad, a.estado AS estado_tarea
+           FROM evidencias e
+           LEFT JOIN unidades u ON u.unit_number = e.unit_number
+           LEFT JOIN asignaciones a ON a.id = e.asignacion_id
+           WHERE e.tipo='video' OR LOWER(e.nombre_archivo) REGEXP %s
+           ORDER BY e.unit_number, e.asignacion_id, e.id
+           LIMIT 2000""",
+        (_VIDEO_REGEX,),
+    ) or []
+
+    resumen = {"total": 0, "visibles": 0, "con_problema": 0,
+               "base_de_datos": 0, "onedrive": 0, "PERDIDO": 0}
+    unidades: dict = {}
+    for r in rows:
+        ev = _evaluar_video(r)
+        resumen["total"] += 1
+        resumen["visibles" if ev["visible"] else "con_problema"] += 1
+        resumen[ev["ubicacion"]] += 1
+        if solo_problemas and ev["visible"]:
+            continue
+        u = unidades.setdefault(r["unit_number"], {
+            "unit_number": r["unit_number"], "id_lote": r.get("id_lote") or "",
+            "unidad_existe": r.get("u_unit") is not None, "unidad_oculta": bool(r.get("u_oculto")),
+            "tareas": {},
+        })
+        clave = r["asignacion_id"] if r["asignacion_id"] is not None else 0
+        t = u["tareas"].setdefault(clave, {
+            "asignacion_id": r["asignacion_id"], "actividad": r.get("actividad") or "",
+            "estado": r.get("estado_tarea") or "", "videos": [],
+        })
+        t["videos"].append({
+            "id": r["id"], "nombre": r["nombre_archivo"] or f"video_{r['id']}", "tecnico": r.get("tecnico") or "",
+            "fecha": str(r["fecha"]) if r["fecha"] else "", "tipo": r.get("tipo") or "foto",
+            "mb": round(float(r["bytes_db"]) / 1048576, 1) if r.get("bytes_db") else 0,
+            **ev,
+        })
+    lista = []
+    for u in unidades.values():
+        u["tareas"] = list(u["tareas"].values())
+        lista.append(u)
+    return {"resumen": resumen, "unidades": lista}

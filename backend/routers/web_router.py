@@ -450,6 +450,7 @@ def pagina_con_menu(titulo: str, contenido: str, pagina_activa: str = "", extra_
                     {{ href: '/app/cluster', icon: 'bolt', label: 'Asignación por cluster' }},
                     {{ href: '/app/reporte-lote', icon: 'clipboard-list', label: 'Reportes de lote' }},
                     {{ href: '/app/asistencia', icon: 'map-pin', label: 'Control de asistencia' }},
+                    {{ href: '/app/verificar-videos', icon: 'video', label: 'Verificar videos' }},
                     {{ href: '/app/checkin', icon: 'clock', label: 'Registrar mi asistencia' }},
                     {{ href: '/app/alarmas', icon: 'bell', label: 'Alarm troubleshooting' }},
                     {{ href: '/app/juegos', icon: 'device-gamepad-2', label: 'Juegos' }},
@@ -10662,6 +10663,130 @@ async def checkin_tecnico():
     </script>
     """
     return HTMLResponse(content=pagina_con_menu("Registrar Asistencia", contenido, "checkin", icono="map-pin"))
+
+# ------------------------------------------------------------
+# VERIFICAR VIDEOS POR UNIDAD Y TAREA (solo admin)
+# ------------------------------------------------------------
+@router.get("/app/verificar-videos", response_class=HTMLResponse)
+async def verificar_videos_page():
+    contenido = """
+    <script> if (window.role !== 'admin') { window.location.href = '/app/mis-tareas'; } </script>
+    <style>
+        .vv-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; margin-bottom:14px; }
+        .vv-card { background:white; border-radius:12px; padding:12px 14px; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
+        .vv-card b { display:block; font-size:1.5rem; color:var(--carrier-blue); }
+        .vv-bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
+        .vv-bar button { width:auto; padding:8px 14px; }
+        .vv-bar label { display:flex; align-items:center; gap:6px; }
+        .vv-bar input[type=checkbox] { width:auto; margin:0; }
+        .vv-unit { background:white; border-radius:12px; margin-bottom:10px; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
+        .vv-unit > summary { cursor:pointer; padding:12px 14px; font-weight:700; color:var(--carrier-blue); }
+        .vv-task { margin:0 14px 12px; padding:8px 12px; border-left:4px solid var(--carrier-accent); background:#f5f8fc; border-radius:0 8px 8px 0; }
+        .vv-video { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:6px 0; border-top:1px solid #e3e9f2; font-size:.9rem; }
+        .vv-video:first-of-type { border-top:none; }
+        .vv-ok { color:var(--carrier-success); font-weight:700; }
+        .vv-bad { color:var(--carrier-danger); font-weight:700; }
+        .vv-warn { color:var(--carrier-warn); }
+        .vv-tag { font-size:.75rem; padding:2px 8px; border-radius:10px; background:#e3e9f2; }
+        .vv-probs { flex-basis:100%; margin:0 0 0 18px; padding:0; font-size:.82rem; }
+        #vvSalida { background:#0b1c33; color:#d6e4ff; padding:12px; border-radius:10px; max-height:320px; overflow:auto; white-space:pre-wrap; font-size:.8rem; display:none; }
+    </style>
+    <div class="vv-cards" id="vvResumen"></div>
+    <div class="vv-bar">
+        <button class="btn-primary" onclick="vvCargar()">🔄 Actualizar</button>
+        <label><input type="checkbox" id="vvSoloProblemas" onchange="vvCargar()"> Solo con problemas</label>
+        <button class="btn-primary" onclick="vvReparar(false)">🔍 Simular reparación</button>
+        <button class="btn-danger" onclick="vvReparar(true)">🛠️ Aplicar reparación</button>
+        <button class="btn-primary" onclick="vvCopiar(false)">☁️ Copiar a OneDrive (simular)</button>
+        <button class="btn-primary" onclick="vvCopiar(true)">☁️ Copiar siguiente tanda a OneDrive</button>
+    </div>
+    <pre id="vvSalida"></pre>
+    <div id="vvLista"><p>Cargando…</p></div>
+    <script>
+        const fetchAuth = window.fetchAuth;
+        let vvDesdeId = 0;
+        function esc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+        function vvSalida(obj) {
+            const el = document.getElementById('vvSalida');
+            el.style.display = 'block';
+            el.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+        }
+        async function vvCargar() {
+            const solo = document.getElementById('vvSoloProblemas').checked;
+            const lista = document.getElementById('vvLista');
+            lista.innerHTML = '<p>Cargando…</p>';
+            try {
+                const res = await fetchAuth('/api/evidencias/verificar-videos?solo_problemas=' + solo);
+                if (!res.ok) { lista.innerHTML = '<p class="vv-bad">No se pudo cargar (' + res.status + ')</p>'; return; }
+                const d = await res.json();
+                const r = d.resumen;
+                document.getElementById('vvResumen').innerHTML =
+                    '<div class="vv-card"><b>' + r.total + '</b>Videos</div>' +
+                    '<div class="vv-card"><b class="vv-ok">' + r.visibles + '</b>Se ven en la app</div>' +
+                    '<div class="vv-card"><b class="vv-bad">' + r.con_problema + '</b>Con problema</div>' +
+                    '<div class="vv-card"><b>' + r.base_de_datos + '</b>En la base de datos</div>' +
+                    '<div class="vv-card"><b>' + r.onedrive + '</b>En OneDrive</div>' +
+                    '<div class="vv-card"><b class="vv-bad">' + r.PERDIDO + '</b>Sin archivo</div>';
+                if (!d.unidades.length) { lista.innerHTML = '<p>✅ No hay videos para mostrar con ese filtro.</p>'; return; }
+                lista.innerHTML = d.unidades.map(u => {
+                    const nota = !u.unidad_existe ? ' <span class="vv-bad">(unidad inexistente)</span>' : (u.unidad_oculta ? ' <span class="vv-warn">(unidad oculta)</span>' : '');
+                    const tareas = u.tareas.map(t => {
+                        const titulo = t.asignacion_id == null ? 'Sin tarea asociada'
+                            : 'Tarea #' + t.asignacion_id + (t.actividad ? ' · ' + esc(t.actividad) : '') + (t.estado ? ' · ' + esc(t.estado) : '');
+                        const vids = t.videos.map(v => {
+                            const probs = v.problemas.map(x => '<li class="vv-bad">' + esc(x) + '</li>').join('') +
+                                          v.avisos.map(x => '<li class="vv-warn">' + esc(x) + '</li>').join('');
+                            return '<div class="vv-video">' +
+                                (v.visible ? '<span class="vv-ok">✅</span>' : '<span class="vv-bad">❌</span>') +
+                                '<b>' + esc(v.nombre) + '</b>' +
+                                '<span class="vv-tag">' + esc(v.ubicacion) + '</span>' +
+                                (v.mb ? '<span class="vv-tag">' + v.mb + ' MB</span>' : '') +
+                                '<span>' + esc(v.tecnico) + ' · ' + esc(v.fecha) + '</span>' +
+                                '<button class="btn-primary" style="width:auto;padding:4px 10px;" onclick="vvProbar(' + v.id + ', this)">▶ Probar</button>' +
+                                (probs ? '<ul class="vv-probs">' + probs + '</ul>' : '') +
+                                '</div>';
+                        }).join('');
+                        return '<div class="vv-task"><div style="font-weight:600;margin-bottom:4px;">' + titulo + '</div>' + vids + '</div>';
+                    }).join('');
+                    return '<details class="vv-unit" open><summary>🚛 ' + esc(u.unit_number) + (u.id_lote ? ' · ' + esc(u.id_lote) : '') + nota + '</summary>' + tareas + '</details>';
+                }).join('');
+            } catch (e) { lista.innerHTML = '<p class="vv-bad">Error de conexión</p>'; }
+        }
+        // Pide los primeros bytes igual que el visor de evidencias: si responde 200/206 con tipo video, la app lo puede reproducir
+        async function vvProbar(id, btn) {
+            btn.disabled = true; btn.textContent = '…';
+            try {
+                const res = await fetchAuth('/api/evidencias/foto/' + id, { headers: { Range: 'bytes=0-1023' } });
+                const tipo = res.headers.get('Content-Type') || '';
+                const ok = (res.status === 200 || res.status === 206) && tipo.indexOf('video') === 0;
+                btn.textContent = ok ? '✅ Se reproduce' : '❌ ' + res.status + (tipo ? ' ' + tipo : '');
+            } catch (e) { btn.textContent = '❌ Error'; }
+            btn.disabled = false;
+        }
+        async function vvReparar(aplicar) {
+            if (aplicar && !confirm('¿Aplicar la reparación? Reclasifica y re-enlaza videos; no borra nada.')) return;
+            vvSalida('Procesando…');
+            try {
+                const res = await fetchAuth('/api/evidencias/reparar?aplicar=' + aplicar, { method: 'POST' });
+                vvSalida(await res.json());
+                if (aplicar) vvCargar();
+            } catch (e) { vvSalida('Error de conexión'); }
+        }
+        async function vvCopiar(aplicar) {
+            if (aplicar && !confirm('¿Copiar la siguiente tanda de videos a OneDrive? No se borra nada de la base.')) return;
+            vvSalida('Procesando… (puede tardar hasta 1–2 minutos)');
+            try {
+                const res = await fetchAuth('/api/evidencias/copiar-videos-a-onedrive?aplicar=' + aplicar + '&desde_id=' + vvDesdeId, { method: 'POST' });
+                const d = await res.json();
+                if (aplicar && d.siguiente_desde_id != null) vvDesdeId = d.siguiente_desde_id;
+                vvSalida(d);
+                if (aplicar) vvCargar();
+            } catch (e) { vvSalida('Error de conexión'); }
+        }
+        vvCargar();
+    </script>
+    """
+    return HTMLResponse(content=pagina_con_menu("Verificar videos", contenido, "verificar-videos", icono="video"))
 
 # ------------------------------------------------------------
 # ALARM TROUBLESHOOTING (admin, visor, tecnico)
