@@ -1,4 +1,4 @@
-"""Migración de videos de la DB a OneDrive, con DB y OneDrive simulados."""
+"""Copia de videos de la DB a OneDrive (sin borrar de la DB), con DB y OneDrive simulados."""
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -45,17 +45,20 @@ def env(monkeypatch):
 
 
 def test_simulacion_no_sube_ni_escribe(env):
-    j = env.post("/api/evidencias/migrar-videos-onedrive?limite=5").json()
+    j = env.post("/api/evidencias/copiar-videos-a-onedrive?limite=5").json()
     assert env.log == [] and env.subidas == []
     assert j["pendientes_en_db"] == 3 and len(j["tanda"]) == 3
     assert "migrados" not in j
 
 
-def test_aplicar_sube_enlaza_y_libera_el_blob(env):
-    j = env.post("/api/evidencias/migrar-videos-onedrive?aplicar=true&limite=5").json()
+def test_aplicar_sube_y_enlaza_sin_borrar_el_blob(env):
+    j = env.post("/api/evidencias/copiar-videos-a-onedrive?aplicar=true&limite=5").json()
     assert len(j["migrados"]) == 3 and j["errores"] == []
     assert len(env.subidas) == 3
-    assert all("contenido=NULL" in sql and "onedrive_item_id=%s" in sql for sql, _ in env.log)
+    # Enlaza la fila pero NUNCA toca el blob (contenido) ni borra filas
+    assert len(env.log) == 3
+    assert all("onedrive_item_id=%s" in sql and "contenido" not in sql and "DELETE" not in sql.upper()
+               for sql, _ in env.log)
     assert j["pendientes_restantes"] == 0 and j["siguiente_desde_id"] == 3
     # nombre único (prefijo A<asignación>_<id corto>_) para que OneDrive no pise archivos
     assert all(n.startswith("A7_") for n in env.subidas)
@@ -63,7 +66,7 @@ def test_aplicar_sube_enlaza_y_libera_el_blob(env):
 
 def test_si_el_tamano_no_coincide_no_borra_de_la_db(env, monkeypatch):
     monkeypatch.setattr(od, "tamano_item", lambda item_id: 1)   # OneDrive dice 1 byte
-    j = env.post("/api/evidencias/migrar-videos-onedrive?aplicar=true&limite=5").json()
+    j = env.post("/api/evidencias/copiar-videos-a-onedrive?aplicar=true&limite=5").json()
     assert j["migrados"] == [] and len(j["errores"]) == 3
     assert env.log == []                                        # ninguna fila tocada
     assert "tamaño distinto" in j["errores"][0]["error"]
@@ -78,7 +81,7 @@ def test_error_de_onedrive_en_un_video_no_detiene_los_demas(env, monkeypatch):
         return original(unit, nombre, contenido)
 
     monkeypatch.setattr(er, "sync_video_evidencia", falla_el_segundo, raising=False)
-    j = env.post("/api/evidencias/migrar-videos-onedrive?aplicar=true&limite=5").json()
+    j = env.post("/api/evidencias/copiar-videos-a-onedrive?aplicar=true&limite=5").json()
     assert [m["id"] for m in j["migrados"]] == [1, 3]
     assert [e["id"] for e in j["errores"]] == [2]
     assert len(env.log) == 2                                    # solo 1 y 3 se actualizaron
@@ -86,9 +89,9 @@ def test_error_de_onedrive_en_un_video_no_detiene_los_demas(env, monkeypatch):
 
 def test_sin_onedrive_responde_503(env, monkeypatch):
     monkeypatch.setattr(er, "ONEDRIVE_ENABLED", False)
-    assert env.post("/api/evidencias/migrar-videos-onedrive").status_code == 503
+    assert env.post("/api/evidencias/copiar-videos-a-onedrive").status_code == 503
 
 
 def test_solo_admin(env):
     env.app.dependency_overrides[verify_token] = lambda: {"username": "t", "role": "tecnico"}
-    assert env.post("/api/evidencias/migrar-videos-onedrive").status_code == 403
+    assert env.post("/api/evidencias/copiar-videos-a-onedrive").status_code == 403

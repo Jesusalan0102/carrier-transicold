@@ -888,19 +888,21 @@ def reparar_videos(aplicar: bool = False, current_user=Depends(verify_token)):
     return informe
 
 
-# ── MIGRAR VIDEOS DE LA DB A ONEDRIVE — solo admin ────────────────────────
+# ── COPIAR VIDEOS DE LA DB A ONEDRIVE — solo admin ────────────────────────
 # Videos que hoy viven como blob en la base de datos (respaldo cuando OneDrive
-# falló al subirlos). Se suben a OneDrive y, SOLO si OneDrive confirma el mismo
-# tamaño en bytes, se enlaza la fila y se libera el blob de la DB. Si algo falla
-# la fila queda intacta con su video en la DB.
+# falló al subirlos). Se COPIAN a OneDrive y, SOLO si OneDrive confirma el mismo
+# tamaño en bytes, se enlaza la fila (onedrive_item_id / onedrive_url).
+# NO SE BORRA NADA DE LA DB: el blob (contenido) se conserva intacto, así que
+# el video sigue disponible en la base aunque algo falle después. Liberar el
+# espacio de la DB sería un paso aparte, que hoy no existe a propósito.
 # Se procesa por tandas (limite) para no agotar la RAM de la instancia ni topar
 # con el timeout del gateway; se llama varias veces hasta que pendientes = 0.
 MIGRACION_PRESUPUESTO_SEG = 90   # corta la tanda antes del timeout del gateway
 
 
-@router.post("/migrar-videos-onedrive")
-def migrar_videos_onedrive(aplicar: bool = False, limite: int = 2, desde_id: int = 0,
-                           current_user=Depends(verify_token)):
+@router.post("/copiar-videos-a-onedrive")
+def copiar_videos_a_onedrive(aplicar: bool = False, limite: int = 2, desde_id: int = 0,
+                             current_user=Depends(verify_token)):
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo administradores")
     if not ONEDRIVE_ENABLED:
@@ -957,12 +959,12 @@ def migrar_videos_onedrive(aplicar: bool = False, limite: int = 2, desde_id: int
                 raise Exception(f"tamaño distinto en OneDrive ({subido} vs {len(contenido)} bytes); se conserva en la DB")
             execute_write(
                 "UPDATE evidencias SET onedrive_item_id=%s, onedrive_url=%s, tipo='video', "
-                "mime_type=COALESCE(NULLIF(mime_type,''), %s), contenido=NULL WHERE id=%s",
+                "mime_type=COALESCE(NULLIF(mime_type,''), %s) WHERE id=%s",
                 (item_id, res.get("webUrl", ""), MIME_MAP.get(_extension(nombre), "video/mp4"), r["id"]),
             )
             migrados.append({"id": r["id"], "archivo": nombre})
         except Exception as e:
-            logger.error(f"[migrar-videos] id={r['id']}: {e}")
+            logger.error(f"[copiar-videos] id={r['id']}: {e}")
             errores.append({"id": r["id"], "archivo": r["nombre_archivo"], "error": str(e)[:200]})
         finally:
             contenido = None            # liberar RAM antes del siguiente video
