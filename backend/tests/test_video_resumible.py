@@ -170,3 +170,10 @@ def test_validaciones(env):
     j = iniciar(c, CH * 2, cid="h").json()
     r = c.put(f"/api/evidencias/video/{j['upload_id']}/parte", content=b"x" * 1000, headers={"X-Offset": "0"})
     assert r.status_code == 400                       # trozo intermedio no múltiplo de 320 KiB
+
+
+def test_onedrive_caido_pide_respaldo_en_db(env):
+    c, _, fod = env
+    def falla(_): raise RuntimeError("token vencido")
+    fod.crear_sesion_video = falla
+    assert iniciar(c, CH, cid="z").status_code == 503     # el cliente cae al método clásico

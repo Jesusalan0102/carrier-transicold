@@ -185,8 +185,10 @@ async def iniciar(data: IniciarVideo, current_user=Depends(verify_token)):
         ruta = f"{carpeta}/{_nombre_unico(data.nombre, data.asignacion_id)}"
         upload_url = await run_in_threadpool(od.crear_sesion_video, ruta)
     except Exception as e:
-        logger.error(f"[video] no se pudo abrir sesión en OneDrive: {e}")
-        raise HTTPException(status_code=502, detail="OneDrive no respondió, reintenta")
+        # OneDrive caído / token vencido: 503 hace que la app use el método clásico, que
+        # guarda el video en la base de datos como respaldo. El video nunca se queda sin guardar.
+        logger.error(f"[video] no se pudo abrir sesión en OneDrive, se usará respaldo en DB: {e}")
+        raise HTTPException(status_code=503, detail="OneDrive no disponible; se guardará de forma directa")
 
     upload_id = str(uuid.uuid4())
     mime = MIME_MAP.get(ext) or data.mime or "application/octet-stream"
