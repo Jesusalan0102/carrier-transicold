@@ -381,6 +381,33 @@ def _run_migrations():
                 conn.commit()
                 print("✅ Migración: tabla corriendo_tracking creada")
 
+            # ── video_uploads: sesiones de subida de video por partes ─────────
+            # Permite reanudar una subida cortada y evita duplicados si el
+            # celular reintenta (client_id es único por técnico).
+            try:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS video_uploads (
+                        upload_id        VARCHAR(36)  PRIMARY KEY,
+                        client_id        VARCHAR(120) NOT NULL,
+                        tecnico          VARCHAR(100) NOT NULL,
+                        unidad           VARCHAR(50)  NOT NULL,
+                        asignacion_id    INT DEFAULT NULL,
+                        equipo           VARCHAR(500) DEFAULT NULL,
+                        nombre_archivo   VARCHAR(255) NOT NULL,
+                        mime_type        VARCHAR(60)  DEFAULT NULL,
+                        tamano           BIGINT NOT NULL,
+                        onedrive_path    VARCHAR(600) NOT NULL,
+                        upload_url       TEXT NOT NULL,
+                        evidencia_id     INT DEFAULT NULL,
+                        creado_en        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE KEY uk_tecnico_client (tecnico, client_id)
+                    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+                """)
+                conn.commit()
+            except Exception as e_vu:
+                print(f"⚠️  Migración video_uploads omitida: {e_vu}")
+                conn.rollback()
+
             # ── evidencias: columna contenido con tamaño suficiente ───────────
             # Si la columna es un BLOB normal (límite 64KB), las fotos comprimidas
             # (hasta ~800KB antes de comprimir) se truncan/corrompen en silencio,

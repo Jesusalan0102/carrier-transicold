@@ -846,3 +846,121 @@ def enviar_correo(destinatarios: list[str], asunto: str, cuerpo_html: str,
     if resp.status_code not in (200, 202):
         raise Exception(f"Graph sendMail falló: {resp.status_code} {resp.text[:300]}")
     return {"enviado": True, "destinatarios": destinatarios}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SUBIDA DE VIDEO POR PARTES (reanudable)
+# El celular manda el video en trozos; el backend solo retransmite cada trozo a
+# una "upload session" de OneDrive. Así nunca hay un video completo en RAM ni
+# una petición larga que el gateway pueda cortar, y si se cae la señal se
+# continúa desde el último byte confirmado.
+# ═══════════════════════════════════════════════════════════════════════════
+VIDEO_CHUNK_BYTES = 12 * 320 * 1024   # 3_932_160 — OneDrive exige múltiplos de 320 KiB
+
+
+def carpeta_evidencia_unidad(unit_number: str) -> str:
+    """Crea (si no existe) y devuelve la carpeta de evidencias de la unidad.
+    Misma estructura que fotos/videos: Evidencias/<lote>/<unidad>_<serie reefer>/"""
+    try:
+        from db import execute_read
+        rows = execute_read(
+            "SELECT id_lote, reefer_serial FROM unidades WHERE unit_number=%s LIMIT 1",
+            (unit_number,),
+        )
+        meta = rows[0] if rows else {}
+    except Exception as e:
+        logger.warning(f"[OneDrive] No se pudo leer metadata de {unit_number}: {e}")
+        meta = {}
+    id_lote = (meta.get("id_lote") or "").strip()
+    reefer_serial = (meta.get("reefer_serial") or "").strip()
+    sub = f"{unit_number}_{reefer_serial}" if reefer_serial else unit_number
+    folder = f"{EVIDENCIAS_DIR}/{id_lote}/{sub}" if id_lote else f"{EVIDENCIAS_DIR}/{sub}"
+    return _upload_with_retry(_ensure_folder, folder)
+
+
+def crear_sesion_video(onedrive_path: str) -> str:
+    """Abre una upload session y devuelve su uploadUrl (pre-autenticada, ~días de vida)."""
+    def _crear():
+        r = requests.post(
+            f"{GRAPH_BASE}/me/drive/root:/{onedrive_path}:/createUploadSession",
+            headers={"Authorization": f"Bearer {_get_token()}", "Content-Type": "application/json"},
+            json={"item": {"@microsoft.graph.conflictBehavior": "replace"}},
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r.json()["uploadUrl"]
+    return _upload_with_retry(_crear)
+
+
+def subir_parte_video(upload_url: str, start: int, data: bytes, total: int) -> requests.Response:
+    """Envía un trozo a la sesión. NO lleva Authorization (la URL ya está firmada)."""
+    end = start + len(data) - 1
+    return requests.put(
+        upload_url,
+        headers={
+            "Content-Length": str(len(data)),
+            "Content-Range": f"bytes {start}-{end}/{total}",
+        },
+        data=data,
+        timeout=(10, 120),
+    )
+
+
+def estado_sesion_video(upload_url: str):
+    """Devuelve el siguiente byte esperado, o None si la sesión ya no existe."""
+    r = requests.get(upload_url, timeout=20)
+    if r.status_code in (404, 410):
+        return None
+    r.raise_for_status()
+    rangos = r.json().get("nextExpectedRanges") or []
+    if not rangos:
+        return 0
+    return int(str(rangos[0]).split("-")[0])
+
+
+def buscar_item_por_ruta(onedrive_path: str):
+    """Devuelve el item (id, size, webUrl) si el archivo ya existe en esa ruta."""
+    r = requests.get(
+        f"{GRAPH_BASE}/me/drive/root:/{onedrive_path}?select=id,size,webUrl",
+        headers={"Authorization": f"Bearer {_get_token()}"},
+        timeout=20,
+    )
+    if r.status_code == 404:
+        return None
+    r.raise_for_status()
+    return r.json()
+
+
+def listar_videos_evidencias() -> list[dict]:
+    """Recorre Evidencias/ (lote/unidad/archivos) y devuelve TODOS los videos que
+    existen realmente en OneDrive: {id, name, size, webUrl, modificado, carpeta, ruta}.
+    Solo lectura. 'carpeta' es la carpeta inmediata (p. ej. 'UNIT123_RF98765')."""
+    exts = (".mp4", ".mov", ".webm", ".m4v", ".3gp", ".avi", ".mkv")
+    encontrados: list[dict] = []
+
+    def _hijos(url):
+        while url:
+            r = requests.get(url, headers={"Authorization": f"Bearer {_get_token()}"}, timeout=30)
+            if r.status_code == 404:
+                return
+            r.raise_for_status()
+            data = r.json()
+            for it in data.get("value", []):
+                yield it
+            url = data.get("@odata.nextLink")
+
+    sel = "$top=999&$select=id,name,size,webUrl,file,folder,lastModifiedDateTime"
+
+    def _recorrer(url, ruta, profundidad):
+        for it in _hijos(url):
+            if "folder" in it and profundidad < 4:
+                _recorrer(f"{GRAPH_BASE}/me/drive/items/{it['id']}/children?{sel}", ruta + [it["name"]], profundidad + 1)
+            elif "file" in it and it["name"].lower().endswith(exts):
+                encontrados.append({
+                    "id": it["id"], "name": it["name"], "size": it.get("size", 0),
+                    "webUrl": it.get("webUrl", ""), "modificado": it.get("lastModifiedDateTime", ""),
+                    "carpeta": ruta[-1] if ruta else "", "ruta": "/".join(ruta),
+                })
+
+    _recorrer(f"{GRAPH_BASE}/me/drive/root:/{EVIDENCIAS_DIR}:/children?{sel}", [], 0)
+    return encontrados

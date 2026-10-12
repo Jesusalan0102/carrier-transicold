@@ -4254,10 +4254,21 @@ async def admin():
                         card.insertBefore(ph, card.firstChild);
                     }
                 };
-                fetchAuth(`/api/evidencias/foto/${f.id}`)
-                    .then(r => r.ok ? r.blob() : Promise.reject())
-                    .then(blob => { img.src = URL.createObjectURL(blob); })
-                    .catch(() => { img.onerror(); });
+                if (esVideo) {
+                    // Antes cada video se descargaba completo (hasta 80MB) solo para la
+                    // miniatura: con 20 por página el navegador/servidor se ahogaban y
+                    // los videos "no aparecían". Ahora es un placeholder; se baja al abrirlo.
+                    img.style.display = 'none';
+                    const ph = document.createElement('div');
+                    ph.style.cssText = 'width:100%;height:130px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;background:#111827;color:#fff;font-size:12px;';
+                    ph.innerHTML = '🎥<br>Toca para reproducir';
+                    card.insertBefore(ph, card.firstChild);
+                } else {
+                    fetchAuth(`/api/evidencias/foto/${f.id}`)
+                        .then(r => r.ok ? r.blob() : Promise.reject())
+                        .then(blob => { img.src = URL.createObjectURL(blob); })
+                        .catch(() => { img.onerror(); });
+                }
 
                 const playBadge = document.createElement('div');
                 if (esVideo) {
@@ -5090,6 +5101,7 @@ async def mis_tareas():
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
     <script src="/static/video_compress.js?v=1"></script>
+    <script src="/static/video_upload.js?v=1"></script>
     <div style="margin-bottom:14px;">
         <button class="btn-primary" onclick="mostrarMiCodigo()">🔖 Mi código para recibir actividades</button>
     </div>
@@ -5635,6 +5647,33 @@ async def mis_tareas():
                             });
                         }
                         try {
+                            // VIDEO: subida por partes y reanudable (no se pierde aunque se corte la señal)
+                            if (record.tipo === 'video' && window.subirVideoResumible) {
+                                try {
+                                    await window.subirVideoResumible(record.blob, {
+                                        clientId: record.id, unidad, asignacionId, nombre: record.filename, mime: record.mime,
+                                        onProgress: p => { estadoEl.style.color = '#facc15'; estadoEl.textContent = `⬆️ Subiendo video… ${Math.round(p * 100)}%`; },
+                                        onEstado: t => { estadoEl.style.color = '#facc15'; estadoEl.textContent = t; }
+                                    });
+                                    subidasOk++;
+                                    window._camaraFotosConfirmadas[asignacionId] = (window._camaraFotosConfirmadas[asignacionId] || 0) + 1;
+                                    await _evidDelete(record.id);   // solo se borra la copia local cuando OneDrive confirmó el archivo completo
+                                    if (imgEl) { imgEl.style.border = '2px solid #22c55e'; imgEl.style.opacity = '1'; }
+                                    estadoEl.textContent = '';
+                                    subiendoAhora--; enCola--;
+                                    return;
+                                } catch (eVid) {
+                                    if (eVid && eVid.permanente) {
+                                        if (imgEl) imgEl.style.border = '2px solid #ef4444';
+                                        estadoEl.style.color = '#f87171';
+                                        estadoEl.textContent = eVid.message || 'No se pudo subir el video.';
+                                        subiendoAhora--; enCola--;
+                                        return;
+                                    }
+                                    if (!(eVid && eVid.fallback)) throw eVid;   // sin señal: la ronda de reintentos de abajo lo vuelve a intentar
+                                    // fallback: el servidor no soporta partes -> método clásico
+                                }
+                            }
                             const fd = new FormData();
                             fd.append('unidad', unidad);
                             fd.append('tecnico', window.username);
@@ -5752,9 +5791,9 @@ async def mis_tareas():
                     const blob = new Blob(videoChunks, { type: tipoBlob });
                     videoChunks = [];
                     if (blob.size < 5000) return; // toque accidental, casi sin datos
-                    if (blob.size > 80 * 1024 * 1024) {
+                    if (blob.size > 200 * 1024 * 1024) {
                         estadoEl.style.color = '#f87171';
-                        estadoEl.textContent = 'El video quedó muy pesado (más de 80MB) y no se guardó. Graba clips más cortos.';
+                        estadoEl.textContent = 'El video quedó muy pesado (más de 200MB) y no se guardó. Graba clips más cortos.';
                         return;
                     }
                     capturadas++;
@@ -6133,13 +6172,14 @@ async def mis_tareas():
 
             // 1) Subir evidencia (si hay archivos nuevos), vinculada a esta actividad exacta
             if (archivosNuevos.length > 0) {
-                const MAX_VIDEO_MB = 80;   // tope del servidor
+                const MAX_VIDEO_MB = 200;  // tope del servidor (subida por partes)
                 const _esVideoArchivo = f => f.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|3gp|avi|mkv)$/i.test(f.name);
 
                 btn.textContent = '⏳ Preparando archivos...';
                 const nVideosTotal = archivosNuevos.filter(_esVideoArchivo).length;
                 let videoIdx = 0;
                 const procesados = [];
+                const videosParaSubir = [];
                 // Se procesan en serie: comprimir varios videos a la vez satura la memoria del celular.
                 for (const f of archivosNuevos) {
                     if (!_esVideoArchivo(f)) {
@@ -6178,8 +6218,34 @@ async def mis_tareas():
                     if (r.comprimido) {
                         console.log(`[video] ${f.name}: ${mbOrig} MB → ${(r.file.size / (1024 * 1024)).toFixed(1)} MB`);
                     }
-                    procesados.push(r.file);
+                    videosParaSubir.push({ original: f, file: r.file });
                 }
+                // 1) VIDEOS primero, por partes. clientId sale del archivo ORIGINAL (no del comprimido):
+                // si hay que reintentar, el servidor reconoce la misma subida y nunca duplica ni re-sube.
+                window._videosGaleriaOk = window._videosGaleriaOk || {};
+                for (let vi = 0; vi < videosParaSubir.length; vi++) {
+                    const v = videosParaSubir[vi];
+                    const clientId = `g_${id}_${v.original.size}_${v.original.lastModified}_${v.original.name}`.slice(0, 110);
+                    if (window._videosGaleriaOk[clientId]) continue;
+                    const et = videosParaSubir.length > 1 ? ` ${vi + 1}/${videosParaSubir.length}` : '';
+                    try {
+                        if (!window.subirVideoResumible) { const f0 = new Error('sin cliente'); f0.fallback = true; throw f0; }
+                        await window.subirVideoResumible(v.file, {
+                            clientId, unidad, asignacionId: id, equipo: _equipoSeleccionado(), nombre: v.original.name,
+                            onProgress: p => { btn.textContent = `📤 Subiendo video${et}… ${Math.round(p * 100)}%`; },
+                            onEstado: t => { btn.textContent = t; }
+                        });
+                        window._videosGaleriaOk[clientId] = true;
+                    } catch (eV) {
+                        if (eV && eV.fallback) { procesados.push(v.file); continue; }   // método clásico
+                        errorEl.textContent = (eV && eV.permanente)
+                            ? `El video "${v.original.name}" no se pudo subir: ${eV.message}`
+                            : `Se interrumpió la subida de "${v.original.name}". No se perdió nada: pulsa de nuevo y continúa donde se quedó. La actividad NO se finalizó.`;
+                        btn.textContent = '✅ Confirmar y Finalizar'; btn.disabled = false;
+                        return;
+                    }
+                }
+                if (procesados.length === 0) { /* solo había videos: nada más que subir */ } else {
                 btn.textContent = '📤 Subiendo evidencia...';
                 const fd = new FormData();
                 fd.append('unidad', unidad);
@@ -6203,6 +6269,17 @@ async def mis_tareas():
                     errorEl.textContent = detail || `No se pudieron subir las fotos (error ${upRes.status}). Intenta de nuevo.`;
                     btn.textContent = '✅ Confirmar y Finalizar'; btn.disabled = false;
                     return;
+                }
+                // El servidor responde 200 aunque algún archivo falle: hay que revisar
+                // 'fallidas' o la actividad se cerraba sin que el video se hubiera guardado.
+                let upData = {};
+                try { upData = await upRes.json(); } catch (e) {}
+                if (upData.fallidas && upData.fallidas.length) {
+                    const det = upData.errores ? Object.entries(upData.errores).map(([n, m]) => `${n}: ${m}`).join(' · ') : upData.fallidas.join(', ');
+                    errorEl.textContent = `No se guardaron ${upData.fallidas.length} archivo(s): ${det}. La actividad NO se finalizó; vuelve a intentarlo.`;
+                    btn.textContent = '✅ Confirmar y Finalizar'; btn.disabled = false;
+                    return;
+                }
                 }
             }
 
