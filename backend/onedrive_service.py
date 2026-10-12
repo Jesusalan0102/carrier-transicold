@@ -929,3 +929,38 @@ def buscar_item_por_ruta(onedrive_path: str):
         return None
     r.raise_for_status()
     return r.json()
+
+
+def listar_videos_evidencias() -> list[dict]:
+    """Recorre Evidencias/ (lote/unidad/archivos) y devuelve TODOS los videos que
+    existen realmente en OneDrive: {id, name, size, webUrl, modificado, carpeta, ruta}.
+    Solo lectura. 'carpeta' es la carpeta inmediata (p. ej. 'UNIT123_RF98765')."""
+    exts = (".mp4", ".mov", ".webm", ".m4v", ".3gp", ".avi", ".mkv")
+    encontrados: list[dict] = []
+
+    def _hijos(url):
+        while url:
+            r = requests.get(url, headers={"Authorization": f"Bearer {_get_token()}"}, timeout=30)
+            if r.status_code == 404:
+                return
+            r.raise_for_status()
+            data = r.json()
+            for it in data.get("value", []):
+                yield it
+            url = data.get("@odata.nextLink")
+
+    sel = "$top=999&$select=id,name,size,webUrl,file,folder,lastModifiedDateTime"
+
+    def _recorrer(url, ruta, profundidad):
+        for it in _hijos(url):
+            if "folder" in it and profundidad < 4:
+                _recorrer(f"{GRAPH_BASE}/me/drive/items/{it['id']}/children?{sel}", ruta + [it["name"]], profundidad + 1)
+            elif "file" in it and it["name"].lower().endswith(exts):
+                encontrados.append({
+                    "id": it["id"], "name": it["name"], "size": it.get("size", 0),
+                    "webUrl": it.get("webUrl", ""), "modificado": it.get("lastModifiedDateTime", ""),
+                    "carpeta": ruta[-1] if ruta else "", "ruta": "/".join(ruta),
+                })
+
+    _recorrer(f"{GRAPH_BASE}/me/drive/root:/{EVIDENCIAS_DIR}:/children?{sel}", [], 0)
+    return encontrados

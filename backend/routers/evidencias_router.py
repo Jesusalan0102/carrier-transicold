@@ -759,3 +759,129 @@ def diagnostico_evidencias(current_user=Depends(verify_token)):
             {**r, "fecha_fin": str(r["fecha_fin"]) if r.get("fecha_fin") else ""} for r in (sin_evid or [])
         ],
     }
+
+
+# ── REPARAR VIDEOS "ATORADOS" — solo admin ────────────────────────────────
+# Casos que hacen que un video exista pero no se vea en la app:
+#  A) La fila quedó con tipo='foto' (el INSERT de respaldo no guardaba 'tipo'),
+#     así que la app intenta pintarla como imagen y falla.
+#  B) La fila no tiene archivo (contenido NULL y sin onedrive_item_id) pero el
+#     video SÍ está en OneDrive -> se vuelve a enlazar por unidad + nombre.
+#  C) El video está en OneDrive pero no hay NINGUNA fila en la DB -> se registra.
+# Con aplicar=false (por defecto) NO modifica nada: solo informa lo que haría.
+_VIDEO_REGEX = "[.](mp4|mov|webm|m4v|3gp|avi|mkv)$"
+
+
+@router.post("/reparar")
+def reparar_videos(aplicar: bool = False, current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    informe = {"modo": "APLICADO" if aplicar else "SIMULACIÓN (no se cambió nada)"}
+
+    # A) videos clasificados como foto / sin mime
+    mal = execute_read(
+        "SELECT id, nombre_archivo FROM evidencias "
+        "WHERE (tipo IS NULL OR tipo<>'video') AND LOWER(nombre_archivo) REGEXP %s", (_VIDEO_REGEX,)
+    ) or []
+    sin_mime = execute_read(
+        "SELECT id, nombre_archivo FROM evidencias WHERE tipo='video' AND (mime_type IS NULL OR mime_type='')"
+    ) or []
+    if aplicar:
+        for r in list(mal) + list(sin_mime):
+            execute_write(
+                "UPDATE evidencias SET tipo='video', mime_type=%s WHERE id=%s",
+                (MIME_MAP.get(_extension(r["nombre_archivo"]), "video/mp4"), r["id"]),
+            )
+    informe["A_reclasificados_como_video"] = len(mal) + len(sin_mime)
+    informe["A_ejemplos"] = [r["nombre_archivo"] for r in (list(mal) + list(sin_mime))[:20]]
+
+    # Videos que la app no muestra por la unidad (lote oculto o unidad inexistente)
+    invisibles = execute_read(
+        "SELECT e.id, e.unit_number, e.nombre_archivo FROM evidencias e "
+        "LEFT JOIN unidades u ON u.unit_number = e.unit_number "
+        "WHERE LOWER(e.nombre_archivo) REGEXP %s AND (u.unit_number IS NULL OR u.oculto=1) LIMIT 50",
+        (_VIDEO_REGEX,),
+    ) or []
+    informe["videos_en_unidad_oculta_o_inexistente"] = [
+        {"id": r["id"], "unidad": r["unit_number"], "archivo": r["nombre_archivo"]} for r in invisibles
+    ]
+
+    if not ONEDRIVE_ENABLED:
+        informe["onedrive"] = "no configurado: no se pudieron revisar los casos B y C"
+        return informe
+
+    from onedrive_service import listar_videos_evidencias, re_split_unit_number
+    try:
+        archivos = listar_videos_evidencias()
+    except Exception as e:
+        informe["onedrive_error"] = str(e)[:300]
+        return informe
+    informe["videos_encontrados_en_onedrive"] = len(archivos)
+
+    usados = {r["onedrive_item_id"] for r in (execute_read(
+        "SELECT onedrive_item_id FROM evidencias WHERE onedrive_item_id IS NOT NULL AND onedrive_item_id<>''") or [])}
+    unidades = {r["unit_number"] for r in (execute_read("SELECT unit_number FROM unidades") or [])}
+
+    def _unidad_de(f):
+        c = f["carpeta"]
+        for cand in (re_split_unit_number(c), c):
+            if cand in unidades:
+                return cand
+        return None
+
+    # B) filas sin archivo -> enlazar con el video de OneDrive
+    vacias = execute_read(
+        "SELECT id, unit_number, nombre_archivo FROM evidencias "
+        "WHERE contenido IS NULL AND (onedrive_item_id IS NULL OR onedrive_item_id='') "
+        "AND LOWER(nombre_archivo) REGEXP %s", (_VIDEO_REGEX,)
+    ) or []
+    reenlazadas, sin_archivo = [], []
+    for r in vacias:
+        nombre = r["nombre_archivo"] or ""
+        cand = next((f for f in archivos
+                     if f["id"] not in usados and _unidad_de(f) == r["unit_number"]
+                     and (f["name"] == nombre or f["name"].endswith("_" + nombre))), None)
+        if cand:
+            usados.add(cand["id"])
+            reenlazadas.append(r["id"])
+            if aplicar:
+                execute_write(
+                    "UPDATE evidencias SET onedrive_item_id=%s, onedrive_url=%s, tipo='video', "
+                    "mime_type=COALESCE(NULLIF(mime_type,''), %s) WHERE id=%s",
+                    (cand["id"], cand["webUrl"], MIME_MAP.get(_extension(cand["name"]), "video/mp4"), r["id"]),
+                )
+        else:
+            sin_archivo.append({"id": r["id"], "unidad": r["unit_number"], "archivo": nombre})
+    informe["B_filas_reenlazadas_a_onedrive"] = len(reenlazadas)
+    informe["B_filas_SIN_archivo_irrecuperables"] = sin_archivo[:50]
+
+    # C) videos en OneDrive sin fila -> registrarlos
+    huerfanos, ignorados = [], []
+    for f in archivos:
+        if f["id"] in usados:
+            continue
+        unidad = _unidad_de(f)
+        if not unidad:
+            ignorados.append(f["ruta"] + "/" + f["name"])
+            continue
+        m = re.match(r"^A(\d+)_[0-9a-f]{8}_", f["name"])
+        asig_id = int(m.group(1)) if m and int(m.group(1)) > 0 else None
+        tecnico = ""
+        if asig_id:
+            a = execute_read("SELECT tecnico FROM asignaciones WHERE id=%s", (asig_id,))
+            if a: tecnico = a[0]["tecnico"] or ""
+            else: asig_id = None
+        huerfanos.append({"archivo": f["name"], "unidad": unidad, "asignacion_id": asig_id})
+        if aplicar:
+            fecha = (f["modificado"] or "").replace("T", " ").rstrip("Z") or None
+            execute_write(
+                "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico, asignacion_id, "
+                "tipo, mime_type, onedrive_item_id, onedrive_url, created_at) "
+                "VALUES (%s,%s,NULL,%s,%s,'video',%s,%s,%s,COALESCE(%s, NOW()))",
+                (unidad, f["name"], tecnico, asig_id, MIME_MAP.get(_extension(f["name"]), "video/mp4"),
+                 f["id"], f["webUrl"], fecha),
+            )
+    informe["C_videos_en_onedrive_sin_fila_registrados"] = len(huerfanos)
+    informe["C_ejemplos"] = huerfanos[:20]
+    informe["C_ignorados_carpeta_no_reconocida"] = ignorados[:20]
+    return informe
