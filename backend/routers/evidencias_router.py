@@ -10,6 +10,7 @@ import io
 import logging
 import asyncio
 import re
+import time
 import uuid
 import requests
 from PIL import Image
@@ -884,4 +885,90 @@ def reparar_videos(aplicar: bool = False, current_user=Depends(verify_token)):
     informe["C_videos_en_onedrive_sin_fila_registrados"] = len(huerfanos)
     informe["C_ejemplos"] = huerfanos[:20]
     informe["C_ignorados_carpeta_no_reconocida"] = ignorados[:20]
+    return informe
+
+
+# ── MIGRAR VIDEOS DE LA DB A ONEDRIVE — solo admin ────────────────────────
+# Videos que hoy viven como blob en la base de datos (respaldo cuando OneDrive
+# falló al subirlos). Se suben a OneDrive y, SOLO si OneDrive confirma el mismo
+# tamaño en bytes, se enlaza la fila y se libera el blob de la DB. Si algo falla
+# la fila queda intacta con su video en la DB.
+# Se procesa por tandas (limite) para no agotar la RAM de la instancia ni topar
+# con el timeout del gateway; se llama varias veces hasta que pendientes = 0.
+MIGRACION_PRESUPUESTO_SEG = 90   # corta la tanda antes del timeout del gateway
+
+
+@router.post("/migrar-videos-onedrive")
+def migrar_videos_onedrive(aplicar: bool = False, limite: int = 2, desde_id: int = 0,
+                           current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    if not ONEDRIVE_ENABLED:
+        raise HTTPException(status_code=503, detail="OneDrive no está configurado")
+    limite = max(1, min(int(limite), 10))
+
+    filtro = ("contenido IS NOT NULL AND (onedrive_item_id IS NULL OR onedrive_item_id='') "
+              "AND (tipo='video' OR LOWER(nombre_archivo) REGEXP %s) AND id > %s")
+    tot = execute_read(
+        f"SELECT COUNT(*) AS n, COALESCE(SUM(LENGTH(contenido)),0) AS bytes FROM evidencias WHERE {filtro}",
+        (_VIDEO_REGEX, desde_id),
+    )
+    pendientes = int(tot[0]["n"]) if tot else 0
+    mb_pendientes = round(float(tot[0]["bytes"]) / 1048576, 1) if tot else 0.0
+    informe = {
+        "modo": "APLICADO" if aplicar else "SIMULACIÓN (no se cambió nada)",
+        "pendientes_en_db": pendientes,
+        "mb_pendientes_en_db": mb_pendientes,
+    }
+
+    # Sin cargar los blobs: solo metadatos y tamaño
+    cand = execute_read(
+        "SELECT id, unit_number, nombre_archivo, asignacion_id, mime_type, LENGTH(contenido) AS bytes "
+        f"FROM evidencias WHERE {filtro} ORDER BY id LIMIT %s",
+        (_VIDEO_REGEX, desde_id, limite),
+    ) or []
+    informe["tanda"] = [{"id": r["id"], "unidad": r["unit_number"], "archivo": r["nombre_archivo"],
+                         "mb": round(float(r["bytes"]) / 1048576, 1)} for r in cand]
+    if not aplicar:
+        return informe
+
+    from onedrive_service import tamano_item
+    inicio = time.monotonic()
+    migrados, errores = [], []
+    ultimo_id = desde_id
+    for r in cand:
+        if time.monotonic() - inicio > MIGRACION_PRESUPUESTO_SEG:
+            break                       # el resto va en la siguiente llamada
+        ultimo_id = r["id"]
+        contenido = None
+        try:
+            fila = execute_read("SELECT contenido FROM evidencias WHERE id=%s", (r["id"],))
+            contenido = fila[0]["contenido"] if fila else None
+            if not contenido:
+                raise Exception("la fila ya no tiene contenido en la DB")
+            contenido = bytes(contenido) if not isinstance(contenido, bytes) else contenido
+            nombre = r["nombre_archivo"] or f"video_{r['id']}.mp4"
+            res = sync_video_evidencia(r["unit_number"], _nombre_unico_onedrive(nombre, r["asignacion_id"]), contenido)
+            item_id = res.get("item_id")
+            if not item_id:
+                raise Exception("OneDrive no devolvió el id del archivo")
+            subido = tamano_item(item_id)
+            if subido != len(contenido):
+                raise Exception(f"tamaño distinto en OneDrive ({subido} vs {len(contenido)} bytes); se conserva en la DB")
+            execute_write(
+                "UPDATE evidencias SET onedrive_item_id=%s, onedrive_url=%s, tipo='video', "
+                "mime_type=COALESCE(NULLIF(mime_type,''), %s), contenido=NULL WHERE id=%s",
+                (item_id, res.get("webUrl", ""), MIME_MAP.get(_extension(nombre), "video/mp4"), r["id"]),
+            )
+            migrados.append({"id": r["id"], "archivo": nombre})
+        except Exception as e:
+            logger.error(f"[migrar-videos] id={r['id']}: {e}")
+            errores.append({"id": r["id"], "archivo": r["nombre_archivo"], "error": str(e)[:200]})
+        finally:
+            contenido = None            # liberar RAM antes del siguiente video
+
+    informe["migrados"] = migrados
+    informe["errores"] = errores
+    informe["pendientes_restantes"] = max(0, pendientes - len(migrados))
+    informe["siguiente_desde_id"] = ultimo_id
     return informe

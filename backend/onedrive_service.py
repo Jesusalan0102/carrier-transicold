@@ -931,6 +931,18 @@ def buscar_item_por_ruta(onedrive_path: str):
     return r.json()
 
 
+def tamano_item(item_id: str) -> int:
+    """Tamaño en bytes que OneDrive reporta para un item (para confirmar que la
+    subida quedó completa antes de borrar la copia local)."""
+    r = requests.get(
+        f"{GRAPH_BASE}/me/drive/items/{item_id}?select=id,size",
+        headers={"Authorization": f"Bearer {_get_token()}"},
+        timeout=20,
+    )
+    r.raise_for_status()
+    return int(r.json().get("size") or 0)
+
+
 def listar_videos_evidencias() -> list[dict]:
     """Recorre Evidencias/ (lote/unidad/archivos) y devuelve TODOS los videos que
     existen realmente en OneDrive: {id, name, size, webUrl, modificado, carpeta, ruta}.
