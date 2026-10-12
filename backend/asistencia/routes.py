@@ -29,6 +29,10 @@ TZ_TJ = zoneinfo.ZoneInfo("America/Tijuana")
 router = APIRouter(prefix="/asistencia", tags=["Asistencia"])
 
 GPS_ACCURACY_LIMIT = 50
+# Antigüedad máxima (segundos) de la lectura GPS enviada por el cliente.
+# El cliente pide una lectura nueva en cada registro (maximumAge: 0), así que
+# una lectura más vieja que esto se considera reutilizada y se rechaza.
+GPS_MAX_AGE_SEG = 30
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
@@ -41,9 +45,15 @@ class GeofenceConfig(BaseModel):
 
 class RegistroAsistenciaBody(BaseModel):
     tipo: str
-    lat: float          # obligatorio: ubicación real requerida
-    lon: float           # obligatorio: ubicación real requerida
+    # lat/lon son obligatorios a nivel de negocio, pero se declaran Optional
+    # para poder responder con un mensaje claro (en vez del 422 genérico de
+    # pydantic) cuando el dispositivo no entregó ubicación.
+    lat: Optional[float] = None
+    lon: Optional[float] = None
     accuracy: Optional[float] = None
+    # Segundos transcurridos entre que el dispositivo tomó la lectura GPS y el
+    # momento del envío. Permite rechazar ubicaciones reutilizadas/en caché.
+    gps_edad_seg: Optional[float] = None
     foto_base64: Optional[str] = None
 
 
@@ -385,6 +395,31 @@ async def registrar_asistencia(
 
     if tipo not in ("entrada", "salida"):
         raise HTTPException(400, "Tipo debe ser 'entrada' o 'salida'")
+
+    # 0. Ubicación presente y válida — se pide una lectura GPS nueva en cada
+    #    registro, por lo que sin coordenadas no se puede continuar.
+    if body.lat is None or body.lon is None:
+        raise HTTPException(
+            422,
+            "❌ No se recibió tu ubicación GPS. Activa el GPS, acepta el "
+            "permiso de ubicación e inténtalo de nuevo."
+        )
+    if not (-90 <= body.lat <= 90 and -180 <= body.lon <= 180):
+        raise HTTPException(422, "❌ Coordenadas GPS inválidas.")
+
+    # 0b. La lectura debe ser reciente (tomada al momento de registrar).
+    if body.gps_edad_seg is None:
+        raise HTTPException(
+            422,
+            "❌ No se pudo comprobar la frescura de tu ubicación. Recarga la "
+            "página para actualizar la aplicación e inténtalo de nuevo."
+        )
+    if body.gps_edad_seg < 0 or body.gps_edad_seg > GPS_MAX_AGE_SEG:
+        raise HTTPException(
+            422,
+            "❌ Tu ubicación no está actualizada. Vuelve a intentar para "
+            "obtener una lectura GPS nueva."
+        )
 
     # 1. Validar precisión GPS — bloqueante: se exige ubicación real y precisa.
     gps_ok, gps_msg = es_gps_preciso(body.accuracy, limite_metros=GPS_ACCURACY_LIMIT)

@@ -10081,7 +10081,9 @@ async def checkin_tecnico():
     var _ctSelfieB64   = null;   // foto base64
     var _ctGeocoords   = null;   // { lat, lon, accuracy }
     var _ctGpsWatchId  = null;   // watchPosition ID para limpiar al salir
+    var _ctGpsErr      = null;   // código de error GPS de la última lectura (1 = permiso denegado)
     var _ctGeocerca    = null;   // { lat_fija, lon_fija, radio_metros }
+    var CT_GPS_MAX_ACC = 50;     // metros; mismo límite que valida el servidor
 
     // ── Toast ──────────────────────────────────────────────────────────────────
     function ctToast(msg, type) {
@@ -10212,6 +10214,61 @@ async def checkin_tecnico():
       }
     }
 
+    // ── GPS: se pide una ubicación NUEVA en cada registro ──────────────────────
+    function _ctDetenerGPS() {
+      if (_ctGpsWatchId !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(_ctGpsWatchId);
+      }
+      _ctGpsWatchId = null;
+    }
+
+    function _ctOnGPSUpdate(pos) {
+      _ctGpsErr = null;
+      var acc = pos.coords.accuracy;
+      // Dentro de esta captura, conservar la lectura más precisa
+      if (!_ctGeocoords || acc < _ctGeocoords.accuracy) {
+        _ctGeocoords = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: acc, ts: pos.timestamp };
+      }
+      _ctGPSBadge(_ctGeocoords.accuracy);
+      // Con buena precisión, cancelar el watch para ahorrar batería
+      if (_ctGeocoords.accuracy <= CT_GPS_MAX_ACC) _ctDetenerGPS();
+    }
+
+    function _ctOnGPSError(err) {
+      _ctGpsErr = err.code;
+      var dot   = document.getElementById('ct-gps-dot');
+      var label = document.getElementById('ct-gps-label');
+      if (dot)   dot.className   = 'dot bad';
+      if (label) label.textContent = err.code === 1 ? 'Sin permiso de ubicación' : 'GPS no disponible';
+      // Permiso denegado con el modal abierto: no se puede registrar asistencia
+      var overlay = document.getElementById('ct-modal-overlay');
+      if (err.code === 1 && overlay && overlay.classList.contains('open')) {
+        cerrarModalQR();
+        ctToast('❌ Debes permitir el acceso a tu ubicación para registrar asistencia', 'red');
+      }
+    }
+
+    // Inicia una captura de GPS desde cero. Descarta cualquier lectura previa
+    // para que nunca se reutilice una ubicación de un registro anterior.
+    function _ctIniciarGPS() {
+      _ctDetenerGPS();
+      _ctGeocoords = null;
+      _ctGpsErr    = null;
+      var dot   = document.getElementById('ct-gps-dot');
+      var label = document.getElementById('ct-gps-label');
+      if (dot)   dot.className = 'dot';
+      if (label) label.textContent = 'Obteniendo ubicación...';
+      if (!navigator.geolocation) {
+        _ctGpsErr = 0;
+        if (dot)   dot.className = 'dot bad';
+        if (label) label.textContent = 'GPS no disponible en este dispositivo';
+        return;
+      }
+      var opts = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
+      navigator.geolocation.getCurrentPosition(_ctOnGPSUpdate, _ctOnGPSError, opts);
+      _ctGpsWatchId = navigator.geolocation.watchPosition(_ctOnGPSUpdate, _ctOnGPSError, opts);
+    }
+
     // ── Init ───────────────────────────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function() {
       _ctCargarHorarioHoy();
@@ -10233,33 +10290,9 @@ async def checkin_tecnico():
         }
       });
 
-      if (navigator.geolocation) {
-        // ── watchPosition: actualiza continuamente, conserva la mejor lectura ──
-        function _ctOnGPSUpdate(pos) {
-          var acc = pos.coords.accuracy;
-          // Guardar siempre la lectura más precisa que hayamos visto
-          if (!_ctGeocoords || acc < _ctGeocoords.accuracy) {
-            _ctGeocoords = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: acc };
-          }
-          _ctGPSBadge(_ctGeocoords.accuracy);
-          // Si ya tenemos buena precisión, cancelar el watch para ahorrar batería
-          if (_ctGeocoords.accuracy <= 50 && _ctGpsWatchId !== null) {
-            navigator.geolocation.clearWatch(_ctGpsWatchId);
-            _ctGpsWatchId = null;
-          }
-        }
-        function _ctOnGPSError(err) {
-          var dot   = document.getElementById('ct-gps-dot');
-          var label = document.getElementById('ct-gps-label');
-          if (dot)   dot.className   = 'dot bad';
-          if (label) label.textContent = err.code === 1 ? 'Sin permiso de ubicación' : 'GPS no disponible';
-        }
-        var _gpsOpts = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
-        // Primera lectura rápida (puede ser de red, no importa, irá mejorando)
-        navigator.geolocation.getCurrentPosition(_ctOnGPSUpdate, _ctOnGPSError, _gpsOpts);
-        // Watch para ir refinando hasta alcanzar ≤50m o hasta que se cierre el modal
-        _ctGpsWatchId = navigator.geolocation.watchPosition(_ctOnGPSUpdate, _ctOnGPSError, _gpsOpts);
-      }
+      // Lectura inicial para mostrar el estado del GPS en la tarjeta.
+      // Cada registro vuelve a pedir una ubicación nueva (ver abrirModalQR).
+      _ctIniciarGPS();
     });
 
     // ── Modal QR ───────────────────────────────────────────────────────────────
@@ -10269,6 +10302,11 @@ async def checkin_tecnico():
 
       var label = tipo === 'entrada' ? 'Entrada' : 'Salida';
       document.getElementById('ct-modal-overlay').classList.add('open');
+
+      // Validación GPS: en cada intento de registro se descarta la ubicación
+      // anterior y se pide una nueva (si el permiso está pendiente o se negó,
+      // el navegador vuelve a preguntar / se avisa al usuario).
+      _ctIniciarGPS();
 
       // Si la geocerca ya está cargada (QR fijo del PDF o QR dinámico con params URL)
       // → saltar el scanner y ir directo a selfie
@@ -10289,10 +10327,7 @@ async def checkin_tecnico():
       document.getElementById('ct-modal-overlay').classList.remove('open');
       _ctDetenerCamara();
       // Liberar el watchPosition al cerrar el modal
-      if (_ctGpsWatchId !== null && navigator.geolocation) {
-        navigator.geolocation.clearWatch(_ctGpsWatchId);
-        _ctGpsWatchId = null;
-      }
+      _ctDetenerGPS();
     }
 
     // ── Paso 1: Scanner QR ─────────────────────────────────────────────────────
@@ -10403,31 +10438,58 @@ async def checkin_tecnico():
         if (_ctGeocoords) {
           document.getElementById('ct-paso3-gps').textContent = '±' + Math.round(_ctGeocoords.accuracy || 0) + 'm';
         } else {
-          document.getElementById('ct-paso3-gps').textContent = 'Sin GPS';
+          document.getElementById('ct-paso3-gps').textContent = 'Se verifica al confirmar';
         }
     }
 
-    // ── GPS: obtener lectura fresca con timeout ────────────────────────────────
-    function _ctGetFreshGPS(maxAccuracy, timeoutMs) {
+    // ── GPS: captura NUEVA al confirmar (nunca reutiliza lecturas previas) ─────
+    // Espera hasta timeoutMs a una lectura con precisión <= CT_GPS_MAX_ACC; si
+    // no la logra, entrega la mejor de ESTA captura. Rechaza (reject) con
+    // { code, message } si no hay permiso, no hay GPS o no llegó ninguna lectura.
+    function _ctCapturarGPSFresco(timeoutMs) {
       return new Promise(function(resolve, reject) {
-        if (!navigator.geolocation) { resolve(null); return; }
-        var done = false;
-        var timer = setTimeout(function() {
-          if (!done) { done = true; resolve(_ctGeocoords); } // usar lo que tengamos
+        if (!navigator.geolocation) {
+          reject({ code: 0, message: 'Tu dispositivo no soporta geolocalización.' });
+          return;
+        }
+        _ctDetenerGPS();   // detener cualquier watch previo
+        var best = null, lastErr = null, done = false, watchId = null, timer = null;
+
+        function terminar(fn, valor) {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+          fn(valor);
+        }
+
+        function onPos(pos) {
+          var c = { lat: pos.coords.latitude, lon: pos.coords.longitude,
+                    accuracy: pos.coords.accuracy, ts: pos.timestamp };
+          if (!best || c.accuracy < best.accuracy) best = c;
+          _ctGPSBadge(best.accuracy);
+          if (best.accuracy <= CT_GPS_MAX_ACC) terminar(resolve, best);
+        }
+
+        function onErr(err) {
+          lastErr = err;
+          // Permiso denegado: no tiene sentido seguir esperando
+          if (err.code === 1) {
+            terminar(reject, { code: 1, message: 'Debes permitir el acceso a tu ubicación para registrar asistencia.' });
+          }
+        }
+
+        timer = setTimeout(function() {
+          if (best) { terminar(resolve, best); }
+          else {
+            terminar(reject, { code: lastErr ? lastErr.code : 3,
+                               message: 'No se pudo obtener tu ubicación GPS. Verifica que el GPS esté activo e inténtalo de nuevo.' });
+          }
         }, timeoutMs);
-        navigator.geolocation.getCurrentPosition(
-          function(pos) {
-            if (done) return; done = true; clearTimeout(timer);
-            var candidate = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy };
-            // Conservar la mejor entre la nueva y la acumulada por watchPosition
-            var best = (!_ctGeocoords || candidate.accuracy < _ctGeocoords.accuracy) ? candidate : _ctGeocoords;
-            _ctGeocoords = best;
-            _ctGPSBadge(best.accuracy);
-            resolve(best);
-          },
-          function() { if (!done) { done = true; clearTimeout(timer); resolve(_ctGeocoords); } },
-          { enableHighAccuracy: true, timeout: timeoutMs - 500, maximumAge: 0 }
-        );
+
+        var opts = { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 };
+        navigator.geolocation.getCurrentPosition(onPos, onErr, opts);
+        watchId = navigator.geolocation.watchPosition(onPos, onErr, opts);
       });
     }
 
@@ -10435,34 +10497,48 @@ async def checkin_tecnico():
     async function ct_confirmarRegistro() {
       var btn = document.getElementById('ct-btn-confirmar');
       btn.disabled = true;
-      btn.textContent = '⏳ Obteniendo GPS...';
+      btn.textContent = '⏳ Verificando ubicación GPS...';
 
-      // Si la precisión actual es mala, intentar una lectura fresca (hasta 12s)
-      var currentAcc = _ctGeocoords ? _ctGeocoords.accuracy : 9999;
-      if (currentAcc > 80) {
-        var fresh = await _ctGetFreshGPS(80, 12000);
-        if (fresh) _ctGeocoords = fresh;
+      // Validación GPS en cada registro: lectura nueva, sin usar la de la carga
+      // de la página ni la de un registro anterior.
+      var gps;
+      try {
+        gps = await _ctCapturarGPSFresco(15000);
+      } catch (e) {
+        ctToast('❌ ' + ((e && e.message) || 'No se pudo obtener tu ubicación GPS.'), 'red');
+        _ctGpsErr = e && e.code;
+        btn.disabled = false;
+        btn.textContent = '✅ Confirmar registro';
+        return;
+      }
+      _ctGeocoords = gps;
+      document.getElementById('ct-paso3-gps').textContent = '±' + Math.round(gps.accuracy || 0) + 'm';
+
+      // Pre-chequeo de precisión para no enviar la selfie si el servidor la va a rechazar
+      if (!gps.accuracy || gps.accuracy > CT_GPS_MAX_ACC) {
+        ctToast('❌ Precisión GPS baja (±' + Math.round(gps.accuracy || 0) + 'm, máximo ' + CT_GPS_MAX_ACC +
+                'm). Sal a un lugar más despejado e inténtalo de nuevo.', 'red');
+        btn.disabled = false;
+        btn.textContent = '✅ Confirmar registro';
+        return;
       }
 
       btn.textContent = '⏳ Enviando...';
 
-      var lat = null, lon = null, accuracy = null;
-      if (_ctGeocoords) {
-        lat      = _ctGeocoords.lat;
-        lon      = _ctGeocoords.lon;
-        accuracy = _ctGeocoords.accuracy || null;
-      }
+      // Antigüedad de la lectura al momento de enviar (el servidor la valida)
+      var gpsEdadSeg = Math.max(0, (Date.now() - gps.ts) / 1000);
 
       try {
         var res = await window.fetchAuth('/api/asistencia/registrar', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            tipo:       _ctTipo,
-            lat:        lat,
-            lon:        lon,
-            accuracy:   accuracy,
-            foto_base64: _ctSelfieB64 || null
+            tipo:         _ctTipo,
+            lat:          gps.lat,
+            lon:          gps.lon,
+            accuracy:     gps.accuracy,
+            gps_edad_seg: gpsEdadSeg,
+            foto_base64:  _ctSelfieB64 || null
           })
         });
         var data = await res.json();
