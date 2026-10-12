@@ -381,6 +381,22 @@ def _run_migrations():
                 conn.commit()
                 print("✅ Migración: tabla corriendo_tracking creada")
 
+            # ── evidencia_partes: archivos grandes guardados en trozos de 4 MB ─
+            # TiDB rechaza filas > 6 MB; así el respaldo en la DB admite videos grandes.
+            try:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS evidencia_partes (
+                        evidencia_id  BIGINT NOT NULL,
+                        orden         INT    NOT NULL,
+                        contenido     LONGBLOB,
+                        PRIMARY KEY (evidencia_id, orden)
+                    )
+                """)
+                conn.commit()
+            except Exception as e_ep:
+                print(f"⚠️  Migración evidencia_partes omitida: {e_ep}")
+                conn.rollback()
+
             # ── video_uploads: sesiones de subida de video por partes ─────────
             # Permite reanudar una subida cortada y evita duplicados si el
             # celular reintenta (client_id es único por técnico).

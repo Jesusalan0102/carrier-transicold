@@ -27,6 +27,15 @@ except ImportError:
     ONEDRIVE_ENABLED = False
     _od_download_item_bytes = None
 
+def _leer_partes_evidencia(evidencia_id):
+    """Archivo grande que se guardó en trozos (evidencia_partes); None si no aplica."""
+    try:
+        from evidencia_partes import leer_partes
+        return leer_partes(evidencia_id)
+    except Exception:
+        return None
+
+
 router = APIRouter(prefix="/api/unidades", tags=["unidades"])
 
 CAMPOS_SERIES = [
@@ -135,6 +144,8 @@ def _generar_zip_backup_lote(id_lote: str) -> bytes:
                         nombres_vistos = {}
                         for m in meta:
                             contenido = contenidos.get(m["id"])
+                            if not contenido:
+                                contenido = _leer_partes_evidencia(m["id"])   # archivo grande guardado en partes
                             if not contenido:
                                 continue
                             nombre = m["nombre_archivo"] or f"foto_{m['id']}.jpg"
@@ -339,6 +350,8 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list) -> str:
 
                     for m in meta:
                         contenido = contenidos.get(m["id"]) or onedrive_contenidos.get(m["id"])
+                        if not contenido:
+                            contenido = _leer_partes_evidencia(m["id"])   # archivo grande guardado en partes
                         if not contenido:
                             continue
 
