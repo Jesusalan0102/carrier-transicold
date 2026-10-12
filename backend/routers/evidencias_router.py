@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Header
 from fastapi.responses import StreamingResponse, Response
+from starlette.background import BackgroundTask
 from fastapi.concurrency import run_in_threadpool
 from auth import verify_token
 from db import execute_read, execute_write
@@ -8,6 +9,9 @@ import zipfile
 import io
 import logging
 import asyncio
+import re
+import uuid
+import requests
 from PIL import Image
 
 
@@ -32,6 +36,7 @@ MAX_DIMENSION    = 1280          # px — lado más largo
 JPEG_QUALITY     = 72            # 0-95; 72 es un buen balance calidad/tamaño
 MAX_BYTES_BEFORE = 800_000       # solo comprimir si pesa más de 800 KB
 MAX_CONCURRENT   = 5             # fotos que se procesan en paralelo a la vez
+MAX_CONCURRENT_VIDEO = 1         # videos a la vez (cada uno puede pesar hasta 80MB en RAM)
 
 # ── Video ───────────────────────────────────────────────────────────────
 VIDEO_EXTENSIONS = {"mp4", "mov", "webm", "m4v", "3gp", "avi", "mkv"}
@@ -48,6 +53,14 @@ MIME_MAP = {
 
 def _extension(filename: str) -> str:
     return (filename.rsplit(".", 1)[-1].lower() if filename and "." in filename else "")
+
+
+def _nombre_unico_onedrive(filename: str, asignacion_id=None) -> str:
+    """Prefija el nombre con asignación + id corto. OneDrive usa conflictBehavior=replace,
+    así que dos videos con el mismo nombre (ej. 'video.mp4' de galería) se pisaban entre sí
+    y ambas filas de la DB acababan apuntando al mismo archivo."""
+    base = re.sub(r"[^\w.\- ]", "_", filename or "video.mp4")
+    return f"A{asignacion_id or 0}_{uuid.uuid4().hex[:8]}_{base}"
 
 
 def _tipo_de_archivo(filename: str) -> str:
@@ -126,7 +139,9 @@ async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_
 
         if tipo == "video" and ONEDRIVE_ENABLED:
             try:
-                resultado_od = await run_in_threadpool(sync_video_evidencia, unidad, file.filename, contenido)
+                resultado_od = await run_in_threadpool(
+                    sync_video_evidencia, unidad, _nombre_unico_onedrive(file.filename, asignacion_id), contenido
+                )
                 onedrive_item_id = resultado_od.get("item_id") or None
                 onedrive_url = resultado_od.get("webUrl") or None
                 if onedrive_item_id:
@@ -167,7 +182,9 @@ async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_
         if ok and tipo == "foto" and ONEDRIVE_ENABLED:
             asyncio.create_task(_sync_onedrive_bg(unidad, file.filename, contenido))
 
-        return {"filename": file.filename, "ok": bool(ok), "error": None}
+        if not ok:
+            return {"filename": file.filename, "ok": False, "error": "No se pudo guardar en la base de datos"}
+        return {"filename": file.filename, "ok": True, "error": None}
     except Exception as e:
         logger.error(f"[upload] Error procesando {file.filename}: {e}")
         return {"filename": file.filename, "ok": False, "error": str(e)}
@@ -341,9 +358,11 @@ async def subir_evidencias(
 
     # ── Procesar en paralelo con semáforo para no saturar DB/red ──────────
     semaforo = asyncio.Semaphore(MAX_CONCURRENT)
+    semaforo_video = asyncio.Semaphore(MAX_CONCURRENT_VIDEO)
 
     async def procesar_con_limite(file):
-        async with semaforo:
+        sem = semaforo_video if _tipo_de_archivo(file.filename) == "video" else semaforo
+        async with sem:
             return await procesar_foto(file, unidad, tecnico, asignacion_id, equipo_normalizado)
 
     resultados = await asyncio.gather(
@@ -354,13 +373,24 @@ async def subir_evidencias(
     guardadas = sum(1 for r in resultados if r["ok"])
     fallidas  = [r["filename"] for r in resultados if not r["ok"]]
 
+    if guardadas == 0 and resultados:
+        errores = "; ".join(f"{r['filename']}: {r['error']}" for r in resultados if r["error"])
+        # 400 = error permanente (ej. video muy pesado): el cliente NO reintenta.
+        # 500 = fallo transitorio: el cliente reintenta y conserva su copia local.
+        permanente = any("pesa más de" in (r["error"] or "") for r in resultados)
+        raise HTTPException(
+            status_code=400 if permanente else 500,
+            detail=errores or "No se pudo guardar la evidencia",
+        )
+
     respuesta = {
-        "mensaje"  : f"{guardadas} foto(s) guardada(s)",
+        "mensaje"  : f"{guardadas} archivo(s) guardado(s)",
         "guardadas": guardadas,
         "total_enviadas": len(files_a_guardar),
     }
     if fallidas:
         respuesta["fallidas"] = fallidas
+        respuesta["errores"] = {r["filename"]: r["error"] for r in resultados if not r["ok"]}
     if ONEDRIVE_ENABLED:
         respuesta["onedrive"] = "sincronización en segundo plano"
 
@@ -580,17 +610,36 @@ def ver_foto(foto_id: int, range: Optional[str] = Header(None), current_user=Dep
     media_type = row.get("mime_type") or MIME_MAP.get(ext, "application/octet-stream")
     es_video = (row.get("tipo") == "video")
 
-    # ── Video que vive solo en OneDrive (no se guardó el blob en la DB) ───
+    # ── Archivo que vive solo en OneDrive (no se guardó el blob en la DB) ───
+    # Antes se hacía RedirectResponse a la URL de descarga de Microsoft. El visor
+    # usa fetch() con Authorization, y esa URL no devuelve cabeceras CORS, así que
+    # el navegador bloqueaba el video y aparecía "Error al cargar este video"
+    # aunque el archivo SÍ existía en OneDrive. Ahora el backend lo transmite
+    # (streaming + Range) para que funcione en fetch(), <video> y móviles.
     if not row["contenido"] and row.get("onedrive_item_id"):
         try:
             download_url = get_download_url(row["onedrive_item_id"])
             if not download_url:
                 raise Exception("OneDrive no devolvió URL de descarga")
-            from fastapi.responses import RedirectResponse
-            return RedirectResponse(url=download_url, status_code=302)
+            req_headers = {"Range": range} if range else {}
+            upstream = requests.get(download_url, headers=req_headers, stream=True, timeout=(10, 60))
+            if upstream.status_code not in (200, 206):
+                upstream.close()
+                raise Exception(f"OneDrive respondió {upstream.status_code}")
+            headers = {"Accept-Ranges": "bytes", "Cache-Control": "private, max-age=3600"}
+            for h in ("Content-Length", "Content-Range"):
+                if upstream.headers.get(h):
+                    headers[h] = upstream.headers[h]
+            return StreamingResponse(
+                upstream.iter_content(chunk_size=256 * 1024),
+                status_code=upstream.status_code,
+                media_type=media_type,
+                headers=headers,
+                background=BackgroundTask(upstream.close),
+            )
         except Exception as e:
-            logger.error(f"[OneDrive] No se pudo obtener URL de descarga para evidencia {foto_id}: {e}")
-            raise HTTPException(status_code=502, detail="No se pudo obtener el video desde OneDrive")
+            logger.error(f"[OneDrive] No se pudo obtener el archivo de evidencia {foto_id}: {e}")
+            raise HTTPException(status_code=502, detail="No se pudo obtener el archivo desde OneDrive")
 
     if not row["contenido"]:
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
@@ -668,3 +717,45 @@ def eliminar_evidencias(data: dict, current_user=Depends(verify_token)):
         f"DELETE FROM evidencias WHERE id IN ({placeholders})", tuple(ids)
     )
     return {"mensaje": f"{len(ids)} foto(s) eliminada(s)", "ids": ids}
+
+
+# ── DIAGNÓSTICO: ¿dónde quedaron los videos? — solo admin ─────────────────
+@router.get("/diagnostico")
+def diagnostico_evidencias(current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    rows = execute_read(
+        """SELECT e.id, e.unit_number, e.nombre_archivo, e.tecnico, e.asignacion_id,
+                  e.onedrive_item_id, e.onedrive_url,
+                  (e.contenido IS NOT NULL) AS en_db,
+                  COALESCE(e.created_at, '') AS fecha,
+                  a.estado AS estado_actividad, a.actividad_id AS actividad
+           FROM evidencias e
+           LEFT JOIN asignaciones a ON a.id = e.asignacion_id
+           WHERE e.tipo='video'
+           ORDER BY e.id DESC LIMIT 500"""
+    )
+    def _dest(r):
+        if r["en_db"]: return "base_de_datos"
+        if r["onedrive_item_id"]: return "onedrive"
+        return "PERDIDO"          # fila sin archivo en ningún lado
+    videos = [{**{k: (str(v) if k == "fecha" else v) for k, v in r.items() if k != "en_db"},
+               "ubicacion": _dest(r), "sin_actividad": r["asignacion_id"] is None} for r in (rows or [])]
+    resumen = {}
+    for v in videos:
+        resumen[v["ubicacion"]] = resumen.get(v["ubicacion"], 0) + 1
+    # actividades completadas sin ninguna evidencia (foto o video)
+    sin_evid = execute_read(
+        """SELECT a.id, a.unidad, a.actividad_id, a.tecnico, a.fecha_fin
+           FROM asignaciones a
+           LEFT JOIN evidencias e ON e.asignacion_id = a.id
+           WHERE a.estado='completada' AND e.id IS NULL
+           ORDER BY a.id DESC LIMIT 200"""
+    )
+    return {
+        "resumen_videos": resumen,
+        "videos": videos,
+        "actividades_completadas_sin_evidencia": [
+            {**r, "fecha_fin": str(r["fecha_fin"]) if r.get("fecha_fin") else ""} for r in (sin_evid or [])
+        ],
+    }

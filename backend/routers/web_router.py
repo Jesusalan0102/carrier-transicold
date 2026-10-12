@@ -4254,10 +4254,21 @@ async def admin():
                         card.insertBefore(ph, card.firstChild);
                     }
                 };
-                fetchAuth(`/api/evidencias/foto/${f.id}`)
-                    .then(r => r.ok ? r.blob() : Promise.reject())
-                    .then(blob => { img.src = URL.createObjectURL(blob); })
-                    .catch(() => { img.onerror(); });
+                if (esVideo) {
+                    // Antes cada video se descargaba completo (hasta 80MB) solo para la
+                    // miniatura: con 20 por página el navegador/servidor se ahogaban y
+                    // los videos "no aparecían". Ahora es un placeholder; se baja al abrirlo.
+                    img.style.display = 'none';
+                    const ph = document.createElement('div');
+                    ph.style.cssText = 'width:100%;height:130px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;background:#111827;color:#fff;font-size:12px;';
+                    ph.innerHTML = '🎥<br>Toca para reproducir';
+                    card.insertBefore(ph, card.firstChild);
+                } else {
+                    fetchAuth(`/api/evidencias/foto/${f.id}`)
+                        .then(r => r.ok ? r.blob() : Promise.reject())
+                        .then(blob => { img.src = URL.createObjectURL(blob); })
+                        .catch(() => { img.onerror(); });
+                }
 
                 const playBadge = document.createElement('div');
                 if (esVideo) {
@@ -6201,6 +6212,16 @@ async def mis_tareas():
                     let detail = '';
                     try { detail = JSON.parse(rawText).detail; } catch(e) {}
                     errorEl.textContent = detail || `No se pudieron subir las fotos (error ${upRes.status}). Intenta de nuevo.`;
+                    btn.textContent = '✅ Confirmar y Finalizar'; btn.disabled = false;
+                    return;
+                }
+                // El servidor responde 200 aunque algún archivo falle: hay que revisar
+                // 'fallidas' o la actividad se cerraba sin que el video se hubiera guardado.
+                let upData = {};
+                try { upData = await upRes.json(); } catch (e) {}
+                if (upData.fallidas && upData.fallidas.length) {
+                    const det = upData.errores ? Object.entries(upData.errores).map(([n, m]) => `${n}: ${m}`).join(' · ') : upData.fallidas.join(', ');
+                    errorEl.textContent = `No se guardaron ${upData.fallidas.length} archivo(s): ${det}. La actividad NO se finalizó; vuelve a intentarlo.`;
                     btn.textContent = '✅ Confirmar y Finalizar'; btn.disabled = false;
                     return;
                 }
