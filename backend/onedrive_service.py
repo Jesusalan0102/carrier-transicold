@@ -251,6 +251,19 @@ def download_item_bytes(item_id: str) -> bytes:
     return resp.content
 
 
+def iter_item_bytes(item_id: str, chunk_size: int = 1024 * 1024):
+    """Descarga un item de OneDrive POR TROZOS (generador de bytes) sin tenerlo
+    completo en RAM. Pensado para exportaciones grandes (ZIP de evidencias)."""
+    download_url = get_download_url(item_id)
+    if not download_url:
+        raise Exception("No se pudo obtener la URL de descarga de OneDrive")
+    with requests.get(download_url, stream=True, timeout=(10, 120)) as resp:
+        resp.raise_for_status()
+        for trozo in resp.iter_content(chunk_size=chunk_size):
+            if trozo:
+                yield trozo
+
+
 def sync_reporte_ticket(ticket_num: int, nombre_archivo: str, contenido: bytes) -> dict:
     """
     Sube el reporte final (Word/PDF) que el técnico adjunta al cerrar un

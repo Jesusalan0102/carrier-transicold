@@ -14,6 +14,8 @@ import re
 import zipfile
 import asyncio
 import logging
+import tempfile
+import time
 import concurrent.futures
 
 TZ = ZoneInfo("America/Tijuana")
@@ -22,10 +24,12 @@ logger = logging.getLogger(__name__)
 # ── Importación opcional de OneDrive ────────────────────────────────────────
 try:
     from onedrive_service import sync_zip_lote, download_item_bytes as _od_download_item_bytes
+    from onedrive_service import iter_item_bytes as _od_iter_item_bytes
     ONEDRIVE_ENABLED = True
 except ImportError:
     ONEDRIVE_ENABLED = False
     _od_download_item_bytes = None
+    _od_iter_item_bytes = None
 
 router = APIRouter(prefix="/api/unidades", tags=["unidades"])
 
@@ -192,6 +196,61 @@ def _nombre_seguro(valor, fallback: str = "SIN_DATO") -> str:
     return texto or fallback
 
 
+ZIP_TROZO_BYTES = 4 * 1024 * 1024          # tamaño de trozo al leer blobs grandes de la DB
+_EXT_VIDEO = {"mp4", "mov", "webm", "m4v", "3gp", "avi", "mkv"}
+
+
+def _leer_blob_por_trozos(cur, evidencia_id, total):
+    """Devuelve el blob de una evidencia en trozos de ZIP_TROZO_BYTES (SUBSTRING),
+    para no traer a RAM un video completo de golpe."""
+    pos = 1                                  # SUBSTRING en MySQL es base 1
+    while pos <= total:
+        cur.execute(
+            "SELECT SUBSTRING(contenido, %s, %s) AS t FROM evidencias WHERE id=%s",
+            (pos, ZIP_TROZO_BYTES, evidencia_id),
+        )
+        fila = cur.fetchone()
+        trozo = fila["t"] if fila else None
+        if not trozo:
+            raise RuntimeError(f"La evidencia {evidencia_id} cambió o se truncó mientras se exportaba")
+        yield bytes(trozo)
+        pos += len(trozo)
+
+
+def _escribir_stream_en_zip(zf, ruta, trozos, almacenar):
+    """Escribe un archivo en el ZIP recibiendo el contenido por trozos.
+    almacenar=True guarda sin comprimir (video: ya viene comprimido, y comprimirlo
+    solo gasta CPU)."""
+    if almacenar:
+        info = zipfile.ZipInfo(ruta, date_time=time.localtime()[:6])
+        info.compress_type = zipfile.ZIP_STORED
+        destino = zf.open(info, "w", force_zip64=True)
+    else:
+        destino = zf.open(ruta, "w", force_zip64=True)
+    with destino:
+        for t in trozos:
+            destino.write(t)
+
+
+def _bajar_onedrive_a_temporal(item_id):
+    """Baja un item de OneDrive por trozos a un archivo temporal en DISCO y
+    devuelve su ruta. Si falla, no deja el temporal huérfano."""
+    tmp = tempfile.NamedTemporaryFile(prefix="evid_od_", delete=False)
+    ruta = tmp.name
+    try:
+        for trozo in _od_iter_item_bytes(item_id):
+            tmp.write(trozo)
+        tmp.close()
+        return ruta
+    except Exception:
+        tmp.close()
+        try:
+            os.remove(ruta)
+        except OSError:
+            pass
+        raise
+
+
 def _generar_zip_evidencias_por_lotes(id_lotes: list) -> str:
     """
     ZIP en DISCO (archivo temporal) con estructura LOTE/VIN/ACTIVIDAD/evidencia,
@@ -272,6 +331,8 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list) -> str:
                         cur.execute(
                             f"""SELECT e.id, e.unit_number, e.nombre_archivo, e.tecnico, e.equipo,
                                        e.asignacion_id, e.tipo, e.onedrive_item_id,
+                                       (e.contenido IS NOT NULL) AS en_db,
+                                       LENGTH(e.contenido) AS bytes_db,
                                        COALESCE(e.created_at, NOW()) AS fecha_hora,
                                        a.actividad_id AS actividad
                                 FROM evidencias e
@@ -287,6 +348,8 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list) -> str:
                             f"""SELECT e.id, e.unit_number, e.nombre_archivo, e.tecnico,
                                        NULL AS equipo, e.asignacion_id, 'foto' AS tipo,
                                        NULL AS onedrive_item_id,
+                                       (e.contenido IS NOT NULL) AS en_db,
+                                       LENGTH(e.contenido) AS bytes_db,
                                        COALESCE(e.created_at, NOW()) AS fecha_hora,
                                        a.actividad_id AS actividad
                                 FROM evidencias e
@@ -300,46 +363,19 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list) -> str:
                     if not meta:
                         continue
 
-                    # Contenido de los blobs en bloques (pueden pesar bastante)
-                    BLOQUE = 15
-                    contenidos = {}
-                    ids_lista = [m["id"] for m in meta]
-                    for i in range(0, len(ids_lista), BLOQUE):
-                        trozo = ids_lista[i:i + BLOQUE]
-                        ph2 = ",".join(["%s"] * len(trozo))
-                        cur.execute(f"SELECT id, contenido FROM evidencias WHERE id IN ({ph2})", tuple(trozo))
-                        for fila in cur.fetchall():
-                            if fila["contenido"]:
-                                contenidos[fila["id"]] = fila["contenido"]
-
-                    # Videos que solo viven en OneDrive (sin blob en la BD): se bajan
-                    # en paralelo (antes era uno por uno y era el cuello de botella
-                    # real en lotes con varios videos). La conexión MySQL (cur/conn)
-                    # NO se toca desde estos hilos, solo se usa para I/O de red.
-                    onedrive_pendientes = {
-                        m["id"]: m["onedrive_item_id"] for m in meta
-                        if m["id"] not in contenidos and m.get("onedrive_item_id")
-                    }
-                    onedrive_contenidos = {}
-                    if onedrive_pendientes and ONEDRIVE_ENABLED and _od_download_item_bytes:
-                        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                            futuros = {
-                                executor.submit(_od_download_item_bytes, item_id): eid
-                                for eid, item_id in onedrive_pendientes.items()
-                            }
-                            for fut in concurrent.futures.as_completed(futuros):
-                                eid = futuros[fut]
-                                try:
-                                    onedrive_contenidos[eid] = fut.result()
-                                except Exception as e_od:
-                                    logger.error(f"[evidencias_lotes] No se pudo bajar de OneDrive id={eid}: {e_od}")
+                    # NO se cargan los archivos aquí: antes se acumulaban en RAM TODOS los
+                    # blobs/videos del lote a la vez y eso tumbaba el servidor (502/503 por
+                    # falta de memoria). Ahora cada evidencia se lee y se escribe al ZIP de
+                    # una en una, por trozos, y se descarta.
 
                     contadores = {}       # (vin_safe, actividad_safe) -> consecutivo
                     filas_csv = {}        # (vin_safe, actividad_safe) -> [filas]
 
                     for m in meta:
-                        contenido = contenidos.get(m["id"]) or onedrive_contenidos.get(m["id"])
-                        if not contenido:
+                        en_db = bool(m.get("en_db")) and (m.get("bytes_db") or 0) > 0
+                        en_od = (not en_db) and bool(m.get("onedrive_item_id")) \
+                            and ONEDRIVE_ENABLED and _od_iter_item_bytes is not None
+                        if not (en_db or en_od):
                             continue
 
                         vin_safe = vin_por_unidad.get(m["unit_number"])
@@ -367,6 +403,14 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list) -> str:
                         )
                         ext = _nombre_seguro(ext, "jpg")
 
+                        ruta_temp = None
+                        if en_od:
+                            try:
+                                ruta_temp = _bajar_onedrive_a_temporal(m["onedrive_item_id"])
+                            except Exception as e_od:
+                                logger.error(f"[evidencias_lotes] No se pudo bajar de OneDrive id={m['id']}: {e_od}")
+                                continue    # igual que antes: sin archivo no hay consecutivo ni fila en el CSV
+
                         clave = (vin_safe, actividad_safe)
                         contadores[clave] = contadores.get(clave, 0) + 1
                         idx = contadores[clave]
@@ -382,7 +426,27 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list) -> str:
                             ruta_final = f"{lote_safe}/{vin_safe}/{actividad_safe}/{base}_{sufijo}.{ext}"
                         rutas_usadas.add(ruta_final)
 
-                        zf.writestr(ruta_final, contenido)
+                        es_video = (m.get("tipo") == "video") or ext in _EXT_VIDEO
+                        try:
+                            if ruta_temp:                                  # video que vive en OneDrive
+                                zf.write(ruta_temp, ruta_final,
+                                         compress_type=zipfile.ZIP_STORED if es_video else None)
+                            elif (m.get("bytes_db") or 0) <= ZIP_TROZO_BYTES:   # foto / video chico
+                                cur.execute("SELECT contenido FROM evidencias WHERE id=%s", (m["id"],))
+                                fila_c = cur.fetchone()
+                                datos = bytes(fila_c["contenido"]) if fila_c and fila_c["contenido"] else b""
+                                zf.writestr(ruta_final, datos,
+                                            compress_type=zipfile.ZIP_STORED if es_video else None)
+                            else:                                          # blob grande en la DB: por trozos
+                                _escribir_stream_en_zip(
+                                    zf, ruta_final,
+                                    _leer_blob_por_trozos(cur, m["id"], m["bytes_db"]), es_video)
+                        finally:
+                            if ruta_temp:
+                                try:
+                                    os.remove(ruta_temp)
+                                except OSError:
+                                    pass
 
                         filas_csv.setdefault(clave, []).append([
                             id_lote, vin_safe, actividad_original, tecnico_original,
