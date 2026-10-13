@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Header
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import StreamingResponse, Response, FileResponse
 from starlette.background import BackgroundTask
 from fastapi.concurrency import run_in_threadpool
 from auth import verify_token
@@ -8,6 +8,9 @@ import evidencia_partes as ep
 from typing import List, Optional
 import zipfile
 import io
+import os
+import csv
+import tempfile
 import logging
 import asyncio
 import re
@@ -1205,3 +1208,90 @@ def resumen_por_actividad(unit_number: str, current_user=Depends(require_admin_o
         "videos": int(r["videos"] or 0),
         "ultima": str(r["ultima"]) if r["ultima"] else "",
     } for r in (rows or [])]
+
+
+# ── DESCARGAR LOS VIDEOS QUE VIVEN EN LA BASE DE DATOS — solo admin ─────────
+# Rescate: saca TODOS los videos guardados en la DB (blob único o en partes),
+# se vean o no en la app (unidad oculta/inexistente, sin tarea, guardados como
+# 'foto', etc.). No depende de ninguna de esas reglas de visibilidad.
+# Va por tandas (limite) para no agotar RAM ni topar con el timeout del gateway:
+# cada llamada devuelve un ZIP y las cabeceras X-Siguiente-Desde / X-Pendientes
+# dicen cómo pedir la siguiente. Estructura: Unidad / Tarea_<id>_<actividad> / archivo.
+# Incluye LEEME.csv con unidad, tarea, técnico y fecha de cada video. Solo lectura.
+def _seguro(txt, defecto="x"):
+    t = re.sub(r"[^\w.\-]+", "_", str(txt or "")).strip("._")
+    return (t or defecto)[:80]
+
+
+@router.get("/descargar-videos")
+def descargar_videos(desde_id: int = 0, limite: int = 20, unidad: Optional[str] = None,
+                     current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    limite = max(1, min(int(limite), 50))
+    filtro = ("(e.tipo='video' OR LOWER(e.nombre_archivo) REGEXP %s) "
+              "AND (e.contenido IS NOT NULL OR EXISTS "
+              "(SELECT 1 FROM evidencia_partes p WHERE p.evidencia_id = e.id)) AND e.id > %s")
+    params = [_VIDEO_REGEX, desde_id]
+    if unidad:
+        filtro += " AND e.unit_number=%s"
+        params.append(unidad)
+    filas = execute_read(
+        "SELECT e.id, e.unit_number, e.nombre_archivo, e.tecnico, e.asignacion_id, e.created_at, "
+        "a.actividad_id AS actividad, LENGTH(e.contenido) AS bytes_db "
+        f"FROM evidencias e LEFT JOIN asignaciones a ON a.id = e.asignacion_id WHERE {filtro} "
+        "ORDER BY e.id LIMIT %s", tuple(params) + (limite,)
+    ) or []
+    if not filas:
+        raise HTTPException(status_code=404, detail="No hay más videos en la base de datos")
+    ultimo_id = filas[-1]["id"]
+    restantes = execute_read(
+        f"SELECT COUNT(*) AS n FROM evidencias e WHERE {filtro} AND e.id > %s", tuple(params) + (ultimo_id,)
+    )
+    pendientes = int(restantes[0]["n"]) if restantes else 0
+
+    tmp = tempfile.NamedTemporaryFile(prefix="videos_db_", suffix=".zip", delete=False)
+    tmp.close()
+    manifiesto = [["id", "unidad", "tarea_id", "actividad", "tecnico", "fecha", "archivo_original", "bytes", "ruta_en_zip", "estado"]]
+    try:
+        with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_STORED, allowZip64=True) as zf:
+            for r in filas:
+                nombre = r["nombre_archivo"] or f"video_{r['id']}.mp4"
+                carpeta = f"{_seguro(r['unit_number'], 'sin_unidad')}/" + (
+                    f"Tarea_{r['asignacion_id']}_{_seguro(r['actividad'], 'sin_actividad')}"
+                    if r["asignacion_id"] is not None else "Sin_tarea")
+                ruta = f"{carpeta}/{r['id']}_{_seguro(nombre, 'video.mp4')}"
+                try:
+                    total_partes = 0 if r.get("bytes_db") else ep.tamano_total(r["id"])
+                    if total_partes:                                    # archivo grande guardado en trozos
+                        with zf.open(ruta, "w", force_zip64=True) as dest:
+                            for trozo in ep.iterar_rango(r["id"], 0, total_partes - 1):
+                                dest.write(trozo)
+                        tam = total_partes
+                    else:
+                        fila = execute_read("SELECT contenido FROM evidencias WHERE id=%s", (r["id"],))
+                        datos = bytes(fila[0]["contenido"]) if fila and fila[0]["contenido"] else b""
+                        if not datos:
+                            raise Exception("sin contenido")
+                        zf.writestr(ruta, datos)
+                        tam = len(datos)
+                    estado = "ok"
+                except Exception as e:
+                    logger.error(f"[descargar-videos] id={r['id']}: {e}")
+                    ruta, tam, estado = "", 0, f"ERROR: {str(e)[:80]}"
+                manifiesto.append([r["id"], r["unit_number"], r["asignacion_id"] or "", r["actividad"] or "",
+                                   r["tecnico"] or "", str(r["created_at"] or ""), nombre, tam, ruta, estado])
+            buf = io.StringIO()
+            csv.writer(buf).writerows(manifiesto)
+            zf.writestr("LEEME.csv", "\ufeff" + buf.getvalue())      # BOM: Excel lo abre con acentos
+    except Exception:
+        try: os.remove(tmp.name)
+        except OSError: pass
+        raise
+    return FileResponse(
+        tmp.name, media_type="application/zip",
+        filename=f"videos_base_de_datos_{filas[0]['id']}_a_{ultimo_id}.zip",
+        headers={"X-Siguiente-Desde": str(ultimo_id), "X-Pendientes": str(pendientes),
+                 "X-En-Esta-Tanda": str(len(filas)), "Access-Control-Expose-Headers": "X-Siguiente-Desde, X-Pendientes, X-En-Esta-Tanda"},
+        background=BackgroundTask(lambda: os.path.exists(tmp.name) and os.remove(tmp.name)),
+    )

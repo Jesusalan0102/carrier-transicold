@@ -10865,6 +10865,7 @@ async def verificar_videos_page():
         <label><input type="checkbox" id="vvSoloProblemas" onchange="vvCargar()"> Solo con problemas</label>
         <button class="btn-primary" onclick="vvReparar(false)">🔍 Simular reparación</button>
         <button class="btn-danger" onclick="vvReparar(true)">🛠️ Aplicar reparación</button>
+        <button class="btn-primary" onclick="vvDescargarTodo()">⬇️ Descargar TODOS los videos de la base (ZIP)</button>
         <button class="btn-primary" onclick="vvCopiar(false)">☁️ Copiar a OneDrive (simular)</button>
         <button class="btn-primary" onclick="vvCopiar(true)">☁️ Copiar siguiente tanda a OneDrive</button>
     </div>
@@ -10958,6 +10959,37 @@ async def verificar_videos_page():
                 v.onerror = () => { pie.append('  ·  ⚠️ Este navegador no puede reproducirlo, pero el archivo está guardado.'); };
                 v.src = vvUrl; v.play().catch(() => {});
             } catch (e) { pie.textContent = '⚠️ No se pudo cargar el video (' + e.message + ').'; }
+        }
+        // Rescate: baja en tandas de 20 TODOS los videos que están en la base (se vean o no en la app).
+        let vvBajando = false;
+        async function vvDescargarTodo() {
+            if (vvBajando) return;
+            if (!confirm('Se descargarán, en varios ZIP de ~20 videos, todos los videos guardados en la base de datos. ' +
+                         'Si el navegador pregunta si permites varias descargas, di que SÍ. ¿Continuar?')) return;
+            vvBajando = true;
+            let desde = 0, n = 0, bajados = 0;
+            try {
+                while (true) {
+                    vvSalida('Preparando ZIP ' + (n + 1) + '… (no cierres esta pantalla)');
+                    const res = await fetchAuth('/api/evidencias/descargar-videos?limite=20&desde_id=' + desde);
+                    if (res.status === 404) break;                      // ya no hay más
+                    if (!res.ok) { vvSalida('Error ' + res.status + ' en la tanda ' + (n + 1) + '. Vuelve a pulsar el botón para reintentar.'); return; }
+                    const blob = await res.blob();
+                    n++; bajados += Number(res.headers.get('X-En-Esta-Tanda') || 0);
+                    const pend = Number(res.headers.get('X-Pendientes') || 0);
+                    desde = Number(res.headers.get('X-Siguiente-Desde') || desde);
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url; a.download = 'videos_base_de_datos_parte_' + String(n).padStart(2, '0') + '.zip';
+                    document.body.appendChild(a); a.click(); a.remove();
+                    setTimeout(() => URL.revokeObjectURL(url), 60000);
+                    vvSalida('ZIP ' + n + ' descargado (' + bajados + ' videos). Faltan ' + pend + '.');
+                    if (pend <= 0) break;
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+                vvSalida('✅ Listo: ' + n + ' ZIP, ' + bajados + ' videos. Cada ZIP trae un LEEME.csv con unidad, tarea, técnico y fecha.');
+            } catch (e) { vvSalida('Error de conexión durante la descarga. Vuelve a pulsar el botón.'); }
+            finally { vvBajando = false; }
         }
         async function vvReparar(aplicar) {
             if (aplicar && !confirm('¿Aplicar la reparación? Reclasifica y re-enlaza videos; no borra nada.')) return;
