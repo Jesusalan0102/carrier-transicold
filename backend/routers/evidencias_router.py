@@ -559,26 +559,34 @@ def listar_evidencias(
     unit_number: str,
     page: int = 1,
     per_page: int = 20,
+    tipo: Optional[str] = None,            # 'video' | 'foto' (vacío = todo)
+    asignacion_id: Optional[int] = None,   # solo los archivos de una actividad
     current_user=Depends(require_admin_or_visor)
 ):
     offset = (page - 1) * per_page
-    total_res = execute_read(
-        "SELECT COUNT(*) AS total FROM evidencias WHERE unit_number=%s",
-        (unit_number,)
-    )
+    where, params = ["e.unit_number=%s"], [unit_number]
+    if tipo in ("video", "foto"):
+        where.append("COALESCE(e.tipo,'foto')=%s")
+        params.append(tipo)
+    if asignacion_id is not None:
+        where.append("e.asignacion_id=%s")
+        params.append(asignacion_id)
+    cond = " AND ".join(where)
+    total_res = execute_read(f"SELECT COUNT(*) AS total FROM evidencias e WHERE {cond}", tuple(params))
     total = total_res[0]["total"] if total_res else 0
 
     try:
+        # Orden por FECHA (no por id): en esta base los id no crecen en orden cronológico.
         rows = execute_read(
-            """SELECT e.id, e.nombre_archivo, e.tecnico, e.asignacion_id, e.tipo, e.equipo,
+            f"""SELECT e.id, e.nombre_archivo, e.tecnico, e.asignacion_id, e.tipo, e.equipo,
                       COALESCE(e.created_at, '') AS fecha,
                       a.actividad_id AS actividad
                FROM evidencias e
                LEFT JOIN asignaciones a ON a.id = e.asignacion_id
-               WHERE e.unit_number=%s
-               ORDER BY e.id DESC
+               WHERE {cond}
+               ORDER BY e.created_at DESC, e.id DESC
                LIMIT %s OFFSET %s""",
-            (unit_number, per_page, offset)
+            tuple(params) + (per_page, offset)
         )
     except Exception as e:
         # Columnas 'tipo'/'equipo' aún no migradas en la DB (deploy reciente) —
@@ -605,6 +613,7 @@ def listar_evidencias(
             "tipo": r.get("tipo") or "foto",
             "fecha": str(r["fecha"]) if r["fecha"] else "",
             "actividad": r.get("actividad") or "",
+            "asignacion_id": r.get("asignacion_id"),
         })
 
     return {
@@ -624,14 +633,16 @@ def unidades_con_fotos(current_user=Depends(require_admin_or_visor)):
     # ordenadas por lote y luego por número de unidad para que la vista de
     # evidencias no aparezca mezclada.
     rows = execute_read(
-        """SELECT e.unit_number AS unit_number, COUNT(*) AS total, u.id_lote AS id_lote
+        """SELECT e.unit_number AS unit_number, COUNT(*) AS total, u.id_lote AS id_lote,
+                  SUM(CASE WHEN e.tipo='video' THEN 1 ELSE 0 END) AS videos
            FROM evidencias e
            INNER JOIN unidades u ON u.unit_number = e.unit_number
            WHERE u.oculto = 0
            GROUP BY e.unit_number, u.id_lote
            ORDER BY u.id_lote, e.unit_number"""
     )
-    return [{"unit_number": r["unit_number"], "total": r["total"], "id_lote": r["id_lote"]} for r in (rows or [])]
+    return [{"unit_number": r["unit_number"], "total": r["total"], "id_lote": r["id_lote"],
+             "videos": int(r.get("videos") or 0)} for r in (rows or [])]
 
 
 # ── SERVIR UNA FOTO O VIDEO INDIVIDUAL — solo admin/visor ─────────────────
@@ -987,3 +998,28 @@ def onedrive_estado(current_user=Depends(verify_token)):
                 "total_gb": gb(q.get("total")), "libre_gb": gb(q.get("remaining"))}
     except Exception as e:
         return {"ok": False, "paso": "graph", "error": str(e)[:300]}
+
+
+# ── RESUMEN POR ACTIVIDAD de una unidad: qué tarea tiene cuántas fotos/videos ──
+@router.get("/resumen/{unit_number}")
+def resumen_por_actividad(unit_number: str, current_user=Depends(require_admin_or_visor)):
+    rows = execute_read(
+        """SELECT e.asignacion_id AS asignacion_id, a.actividad_id AS actividad, a.tecnico AS tecnico_tarea,
+                  SUM(CASE WHEN COALESCE(e.tipo,'foto')='video' THEN 1 ELSE 0 END) AS videos,
+                  SUM(CASE WHEN COALESCE(e.tipo,'foto')<>'video' THEN 1 ELSE 0 END) AS fotos,
+                  MAX(e.created_at) AS ultima
+           FROM evidencias e
+           LEFT JOIN asignaciones a ON a.id = e.asignacion_id
+           WHERE e.unit_number=%s
+           GROUP BY e.asignacion_id, a.actividad_id, a.tecnico
+           ORDER BY MAX(e.created_at) DESC""",
+        (unit_number,)
+    )
+    return [{
+        "asignacion_id": r["asignacion_id"],
+        "actividad": r["actividad"] or "Sin actividad",
+        "tecnico": r["tecnico_tarea"] or "",
+        "fotos": int(r["fotos"] or 0),
+        "videos": int(r["videos"] or 0),
+        "ultima": str(r["ultima"]) if r["ultima"] else "",
+    } for r in (rows or [])]

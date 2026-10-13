@@ -3899,8 +3899,16 @@ async def admin():
       <!-- -- EVIDENCIAS -- -->
       <div id="sec-evidencias" class="section">
         <div class="toolbar">
-          <select id="ev-select-unidad" onchange="evCargarFotos(1)" style="min-width:200px;">
+          <select id="ev-select-unidad" onchange="evCambioUnidad()" style="min-width:200px;">
             <option value="">— Selecciona unidad —</option>
+          </select>
+          <select id="ev-filtro-tipo" onchange="evCargarFotos(1)" title="Tipo de archivo">
+            <option value="">Todo</option>
+            <option value="video">🎥 Solo videos</option>
+            <option value="foto">📷 Solo fotos</option>
+          </select>
+          <select id="ev-filtro-act" onchange="evCargarFotos(1)" title="Actividad" style="min-width:180px;">
+            <option value="">Todas las actividades</option>
           </select>
           <span id="ev-total-badge" style="font-size:13px;color:var(--color-text-secondary);"></span>
           <button class="btn btn-ghost" onclick="evToggleSeleccion()" id="ev-btn-seleccionar" style="display:none;">
@@ -4176,10 +4184,34 @@ async def admin():
                 }
                 const opt = document.createElement('option');
                 opt.value = u.unit_number;
-                opt.textContent = `${u.unit_number}  (${u.total} foto${u.total===1?'':'s'})`;
+                opt.textContent = `${u.unit_number}  (${u.total} archivo${u.total===1?'':'s'}${u.videos ? ' · ' + u.videos + ' 🎥' : ''})`;
                 optgroup.appendChild(opt);
             });
         } catch(e) { console.error('evInicializar', e); }
+    }
+
+    // Al cambiar de unidad: reinicia filtros y lista las TAREAS de esa unidad con su
+    // número de fotos y videos, para llegar directo a los videos de cada tarea.
+    async function evCambioUnidad() {
+        const unidad = document.getElementById('ev-select-unidad').value;
+        const selAct = document.getElementById('ev-filtro-act');
+        document.getElementById('ev-filtro-tipo').value = '';
+        selAct.innerHTML = '<option value="">Todas las actividades</option>';
+        if (unidad) {
+            try {
+                const r = await fetchAuth(`/api/evidencias/resumen/${encodeURIComponent(unidad)}`);
+                if (r.ok) {
+                    (await r.json()).forEach(a => {
+                        const o = document.createElement('option');
+                        o.value = a.asignacion_id == null ? '' : a.asignacion_id;
+                        if (a.asignacion_id == null) o.disabled = true;
+                        o.textContent = `${a.actividad} · ${a.tecnico || '—'} (${a.fotos} 📷${a.videos ? ' · ' + a.videos + ' 🎥' : ''})`;
+                        selAct.appendChild(o);
+                    });
+                }
+            } catch (e) { console.error('evCambioUnidad', e); }
+        }
+        evCargarFotos(1);
     }
 
     async function evCargarFotos(page = 1) {
@@ -4201,7 +4233,10 @@ async def admin():
 
         loading.style.display = 'block';
         try {
-            const res  = await fetchAuth(`/api/evidencias/lista/${unidad}?page=${page}&per_page=20`);
+            const fTipo = document.getElementById('ev-filtro-tipo').value;
+            const fAct  = document.getElementById('ev-filtro-act').value;
+            const res  = await fetchAuth(`/api/evidencias/lista/${encodeURIComponent(unidad)}?page=${page}&per_page=20`
+                + (fTipo ? `&tipo=${fTipo}` : '') + (fAct ? `&asignacion_id=${fAct}` : ''));
             loading.style.display = 'none';
             if (!res.ok) { grid.innerHTML = '<p style="color:red">Error al cargar evidencias.</p>'; return; }
             const data = await res.json();
@@ -4212,7 +4247,7 @@ async def admin():
             btnZip.style.display = data.total > 0 ? 'inline-flex' : 'none';
 
             if (data.fotos.length === 0) {
-                grid.innerHTML = '<p style="color:var(--color-text-secondary);padding:24px 0;">No hay fotos para esta unidad.</p>';
+                grid.innerHTML = '<p style="color:var(--color-text-secondary);padding:24px 0;">No hay archivos con este filtro para esta unidad.</p>';
                 return;
             }
 
@@ -4344,9 +4379,27 @@ async def admin():
         lb.style.display = 'flex';
         if (esVideo) {
             vid.style.display = '';
+            const base = cap.textContent;
             fetchAuth(`/api/evidencias/foto/${id}`)
                 .then(r => r.ok ? r.blob() : Promise.reject())
-                .then(blob => { vid.src = URL.createObjectURL(blob); })
+                .then(blob => {
+                    const url = URL.createObjectURL(blob);
+                    // Siempre se ofrece la descarga: así el video se puede recuperar aunque
+                    // este navegador no sepa reproducirlo (p. ej. .webm en iPhone/Safari).
+                    cap.innerHTML = '';
+                    cap.append(base + '  ·  ');
+                    const a = document.createElement('a');
+                    a.href = url; a.download = nombre; a.textContent = '⬇️ Descargar video';
+                    a.style.cssText = 'color:#93c5fd;text-decoration:underline;';
+                    cap.appendChild(a);
+                    vid.onerror = () => {
+                        const aviso = document.createElement('div');
+                        aviso.textContent = '⚠️ Este navegador no puede reproducir este video, pero el archivo está guardado. Usa «Descargar video».';
+                        aviso.style.cssText = 'color:#fca5a5;margin-top:6px;';
+                        cap.appendChild(aviso);
+                    };
+                    vid.src = url;
+                })
                 .catch(() => {
                     vid.style.display = 'none';
                     cap.textContent = `⚠️ No se pudo cargar este video (${nombre}). El archivo podría estar dañado o incompleto.`;
