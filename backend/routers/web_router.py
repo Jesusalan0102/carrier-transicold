@@ -3897,6 +3897,18 @@ async def admin():
         <div class="sql-result" id="sql-result"></div>
       </div>
 
+      <!-- Visor de evidencia de UNA tarea (se abre desde Actividades) -->
+      <div id="te-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px;">
+        <div style="background:#fff;border-radius:14px;max-width:1000px;width:100%;padding:16px 18px;box-shadow:0 10px 40px rgba(0,0,0,.3);">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+            <b id="te-titulo" style="flex:1;font-size:15px;"></b>
+            <button class="btn btn-ghost" onclick="teCerrar()">✖ Cerrar</button>
+          </div>
+          <div id="te-visor" style="display:none;margin-bottom:12px;text-align:center;background:#0b1220;border-radius:10px;padding:10px;"></div>
+          <div id="te-cuerpo" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;"></div>
+        </div>
+      </div>
+
       <!-- -- EVIDENCIAS -- -->
       <div id="sec-evidencias" class="section">
         <div class="toolbar">
@@ -4067,6 +4079,7 @@ async def admin():
               <td>${r.tecnico||''}</td>
               <td>${badgeEstado(r.estado||'')}</td>
               <td><div class="row-actions">
+                <button class="icon-btn" onclick="verEvidenciaTarea(${r.id})" title="Ver evidencia (fotos y videos) de esta tarea" style="color:#0f766e"><i class="ti ti-photo-video"></i></button>
                 <button class="icon-btn" onclick="abrirTransferirQRAdmin(${r.id})" title="Transferir a otro técnico (QR)" style="color:#4f46e5"><i class="ti ti-qrcode"></i></button>
                 <button class="icon-btn edit" onclick="editarFilaAct(${r.id})" title="Editar"><i class="ti ti-edit"></i></button>
                 <button class="icon-btn del" onclick="eliminarFilaAct(${r.id})" title="Eliminar"><i class="ti ti-trash"></i></button>
@@ -4414,6 +4427,108 @@ async def admin():
                     img.style.display = 'none';
                     cap.textContent = `⚠️ No se pudo cargar esta foto (${nombre}). El archivo podría estar dañado o incompleto.`;
                 });
+        }
+    }
+
+    // ── Evidencia de UNA tarea (botón en Actividades) ─────────────────────
+    let teUrls = [];
+    function teCerrar() {
+        document.getElementById('te-modal').style.display = 'none';
+        teUrls.forEach(u => URL.revokeObjectURL(u)); teUrls = [];
+        document.getElementById('te-visor').innerHTML = '';
+    }
+    async function teAbrirArchivo(f) {
+        const visor = document.getElementById('te-visor');
+        visor.style.display = 'block'; visor.innerHTML = '<span style="color:#cbd5e1">Cargando…</span>';
+        visor.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+        try {
+            const r = await fetchAuth(`/api/evidencias/foto/${f.id}`);
+            if (!r.ok) throw new Error(r.status);
+            const url = URL.createObjectURL(await r.blob()); teUrls.push(url);
+            const media = document.createElement(f.tipo === 'video' ? 'video' : 'img');
+            if (f.tipo === 'video') { media.controls = true; media.playsInline = true; media.autoplay = true; }
+            media.src = url;
+            media.style.cssText = 'max-width:100%;max-height:60vh;border-radius:8px;';
+            const info = document.createElement('div');
+            info.style.cssText = 'color:#e2e8f0;font-size:12px;margin-top:6px;';
+            info.append(`${f.nombre}  ·  👷 ${f.tecnico || '—'}  ·  ${(f.fecha || '').slice(0, 16)}  ·  `);
+            const a = document.createElement('a');
+            a.href = url; a.download = f.nombre; a.textContent = '⬇️ Descargar';
+            a.style.cssText = 'color:#93c5fd;text-decoration:underline;';
+            info.appendChild(a);
+            visor.innerHTML = ''; visor.append(media, info);
+            if (f.tipo === 'video') media.onerror = () => {
+                const w = document.createElement('div');
+                w.style.cssText = 'color:#fca5a5;font-size:12px;margin-top:4px;';
+                w.textContent = '⚠️ Este navegador no puede reproducir el video, pero está guardado: usa «Descargar».';
+                info.appendChild(w);
+            };
+        } catch (e) {
+            visor.innerHTML = '<span style="color:#fca5a5">⚠️ No se pudo cargar este archivo.</span>';
+        }
+    }
+    async function verEvidenciaTarea(id) {
+        const t = (DATA.act || []).find(x => x.id === id) || {};
+        const modal = document.getElementById('te-modal'), cuerpo = document.getElementById('te-cuerpo');
+        document.getElementById('te-titulo').textContent =
+            `Tarea #${id} · ${t.actividad_id || ''} · ${t.unidad || ''} · ${t.tecnico || ''}`;
+        document.getElementById('te-visor').style.display = 'none';
+        cuerpo.innerHTML = '<p style="grid-column:1/-1;color:#6b7280">Cargando evidencia…</p>';
+        modal.style.display = 'flex';
+        try {
+            const r = await fetchAuth(`/api/evidencias/por-actividad/${id}`);
+            if (!r.ok) throw new Error(r.status);
+            const d = await r.json();
+            cuerpo.innerHTML = '';
+            if (!d.fotos.length) {
+                cuerpo.innerHTML = '<div style="grid-column:1/-1;color:#374151;line-height:1.5">Esta tarea <b>no tiene archivos ligados</b>. ' +
+                    'Si el técnico subió evidencia, puede estar en otra tarea de la misma unidad.<br>' +
+                    '<button class="btn btn-navy" id="te-ver-unidad" style="margin-top:8px">Ver toda la evidencia de la unidad</button></div>';
+                document.getElementById('te-ver-unidad').onclick = () => {
+                    teCerrar(); showTab('evidencias');
+                    setTimeout(() => {
+                        const sel = document.getElementById('ev-select-unidad');
+                        if ([...sel.options].some(o => o.value === t.unidad)) { sel.value = t.unidad; evCambioUnidad(); }
+                    }, 400);
+                };
+                return;
+            }
+            const nVid = d.fotos.filter(f => f.tipo === 'video').length;
+            document.getElementById('te-titulo').textContent += `  —  ${d.fotos.length - nVid} 📷 · ${nVid} 🎥`;
+            // videos primero, luego fotos
+            const ordenados = [...d.fotos].sort((a, b) => (b.tipo === 'video') - (a.tipo === 'video'));
+            const obs = new IntersectionObserver((ents) => ents.forEach(en => {
+                if (!en.isIntersecting) return;
+                obs.unobserve(en.target);
+                const img = en.target;
+                fetchAuth(`/api/evidencias/foto/${img.dataset.id}`).then(x => x.ok ? x.blob() : Promise.reject())
+                    .then(b => { const u = URL.createObjectURL(b); teUrls.push(u); img.src = u; }).catch(() => { img.alt = '⚠️'; });
+            }), {root: null, rootMargin: '200px'});
+            ordenados.forEach(f => {
+                const card = document.createElement('div');
+                card.style.cssText = 'background:#f4f6fb;border-radius:10px;overflow:hidden;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.07);font-size:11px;';
+                card.onclick = () => teAbrirArchivo(f);
+                if (f.tipo === 'video') {
+                    const ph = document.createElement('div');
+                    ph.style.cssText = 'height:100px;display:flex;align-items:center;justify-content:center;flex-direction:column;background:#111827;color:#fff;font-size:13px;';
+                    ph.innerHTML = '🎥<br>Reproducir';
+                    card.appendChild(ph);
+                } else {
+                    const img = document.createElement('img');
+                    img.dataset.id = f.id; img.loading = 'lazy';
+                    img.style.cssText = 'width:100%;height:100px;object-fit:cover;display:block;background:#e5e7eb;';
+                    card.appendChild(img); obs.observe(img);
+                }
+                const pie = document.createElement('div');
+                pie.style.cssText = 'padding:4px 6px;color:#374151;word-break:break-all;';
+                pie.textContent = `${f.tecnico || ''} · ${(f.fecha || '').slice(5, 16)}`;
+                card.appendChild(pie);
+                cuerpo.appendChild(card);
+            });
+            const primerVideo = ordenados.find(f => f.tipo === 'video');
+            if (primerVideo) teAbrirArchivo(primerVideo);   // si hay video, se abre solo
+        } catch (e) {
+            cuerpo.innerHTML = '<p style="grid-column:1/-1;color:#b91c1c">No se pudo cargar la evidencia de esta tarea.</p>';
         }
     }
 
@@ -10755,6 +10870,11 @@ async def verificar_videos_page():
     </div>
     <pre id="vvSalida"></pre>
     <div id="vvLista"><p>Cargando…</p></div>
+    <div id="vvModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:12px;">
+        <video id="vvVideo" controls playsinline style="max-width:94vw;max-height:76vh;border-radius:10px;background:#000;"></video>
+        <div id="vvPie" style="color:#e2e8f0;font-size:.85rem;text-align:center;"></div>
+        <button class="btn-primary" style="width:auto;padding:8px 18px;" onclick="vvCerrar()">✖ Cerrar</button>
+    </div>
     <script>
         const fetchAuth = window.fetchAuth;
         let vvDesdeId = 0;
@@ -10795,6 +10915,7 @@ async def verificar_videos_page():
                                 '<span class="vv-tag">' + esc(v.ubicacion) + '</span>' +
                                 (v.mb ? '<span class="vv-tag">' + v.mb + ' MB</span>' : '') +
                                 '<span>' + esc(v.tecnico) + ' · ' + esc(v.fecha) + '</span>' +
+                                '<button class="btn-primary" style="width:auto;padding:4px 10px;" onclick="vvVer(' + v.id + ')">🎥 Ver</button>' +
                                 '<button class="btn-primary" style="width:auto;padding:4px 10px;" onclick="vvProbar(' + v.id + ', this)">▶ Probar</button>' +
                                 (probs ? '<ul class="vv-probs">' + probs + '</ul>' : '') +
                                 '</div>';
@@ -10815,6 +10936,28 @@ async def verificar_videos_page():
                 btn.textContent = ok ? '✅ Se reproduce' : '❌ ' + res.status + (tipo ? ' ' + tipo : '');
             } catch (e) { btn.textContent = '❌ Error'; }
             btn.disabled = false;
+        }
+        let vvUrl = null;
+        function vvCerrar() {
+            const v = document.getElementById('vvVideo'); v.pause(); v.removeAttribute('src'); v.load();
+            if (vvUrl) { URL.revokeObjectURL(vvUrl); vvUrl = null; }
+            document.getElementById('vvModal').style.display = 'none';
+        }
+        // Reproduce el video dentro de la app; si el navegador no puede, ofrece descargarlo.
+        async function vvVer(id) {
+            const modal = document.getElementById('vvModal'), v = document.getElementById('vvVideo'), pie = document.getElementById('vvPie');
+            modal.style.display = 'flex'; pie.textContent = 'Cargando video…'; v.removeAttribute('src');
+            try {
+                const res = await fetchAuth('/api/evidencias/foto/' + id);
+                if (!res.ok) throw new Error(res.status);
+                if (vvUrl) URL.revokeObjectURL(vvUrl);
+                vvUrl = URL.createObjectURL(await res.blob());
+                pie.innerHTML = '';
+                const a = document.createElement('a'); a.href = vvUrl; a.download = 'video_' + id; a.textContent = '⬇️ Descargar video';
+                a.style.cssText = 'color:#93c5fd;text-decoration:underline;'; pie.appendChild(a);
+                v.onerror = () => { pie.append('  ·  ⚠️ Este navegador no puede reproducirlo, pero el archivo está guardado.'); };
+                v.src = vvUrl; v.play().catch(() => {});
+            } catch (e) { pie.textContent = '⚠️ No se pudo cargar el video (' + e.message + ').'; }
         }
         async function vvReparar(aplicar) {
             if (aplicar && !confirm('¿Aplicar la reparación? Reclasifica y re-enlaza videos; no borra nada.')) return;
