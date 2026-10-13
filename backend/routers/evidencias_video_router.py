@@ -107,6 +107,11 @@ def _registrar_evidencia(row: dict, item: dict) -> int:
             (row["unidad"], row["nombre_archivo"], row["tecnico"], row["asignacion_id"],
              row["mime_type"], item.get("id"), item.get("webUrl"), row["equipo"]),
         )
+        if not eid:   # el driver no devolvió el id: buscar la fila por el item de OneDrive
+            r = execute_read("SELECT id FROM evidencias WHERE onedrive_item_id=%s ORDER BY id DESC LIMIT 1", (item.get("id"),))
+            eid = r[0]["id"] if r else None
+        if not eid:
+            raise Exception("No se pudo obtener el id de la evidencia")
         execute_write("UPDATE video_uploads SET evidencia_id=%s WHERE upload_id=%s", (eid, row["upload_id"]))
         return eid
     except Exception:

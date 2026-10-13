@@ -31,6 +31,30 @@ except ImportError:
     _od_download_item_bytes = None
     _od_iter_item_bytes = None
 
+def _tamano_partes_evidencia(evidencia_id):
+    """Tamaño total si el archivo se guardó en trozos (evidencia_partes); 0 si no aplica."""
+    try:
+        from evidencia_partes import tamano_total
+        return tamano_total(evidencia_id)
+    except Exception:
+        return 0
+
+
+def _iterar_partes_evidencia(evidencia_id, total):
+    """Entrega el archivo en trozos de <=4 MB sin juntarlo completo en RAM."""
+    from evidencia_partes import iterar_rango
+    return iterar_rango(evidencia_id, 0, total - 1)
+
+
+def _leer_partes_evidencia(evidencia_id):
+    """Archivo grande que se guardó en trozos (evidencia_partes); None si no aplica."""
+    try:
+        from evidencia_partes import leer_partes
+        return leer_partes(evidencia_id)
+    except Exception:
+        return None
+
+
 router = APIRouter(prefix="/api/unidades", tags=["unidades"])
 
 CAMPOS_SERIES = [
@@ -139,6 +163,8 @@ def _generar_zip_backup_lote(id_lote: str) -> bytes:
                         nombres_vistos = {}
                         for m in meta:
                             contenido = contenidos.get(m["id"])
+                            if not contenido:
+                                contenido = _leer_partes_evidencia(m["id"])   # archivo grande guardado en partes
                             if not contenido:
                                 continue
                             nombre = m["nombre_archivo"] or f"foto_{m['id']}.jpg"
@@ -375,7 +401,9 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list) -> str:
                         en_db = bool(m.get("en_db")) and (m.get("bytes_db") or 0) > 0
                         en_od = (not en_db) and bool(m.get("onedrive_item_id")) \
                             and ONEDRIVE_ENABLED and _od_iter_item_bytes is not None
-                        if not (en_db or en_od):
+                        # Archivo grande guardado en trozos (evidencia_partes): tercera fuente posible
+                        tam_partes = 0 if (en_db or en_od) else _tamano_partes_evidencia(m["id"])
+                        if not (en_db or en_od or tam_partes):
                             continue
 
                         vin_safe = vin_por_unidad.get(m["unit_number"])
@@ -431,6 +459,9 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list) -> str:
                             if ruta_temp:                                  # video que vive en OneDrive
                                 zf.write(ruta_temp, ruta_final,
                                          compress_type=zipfile.ZIP_STORED if es_video else None)
+                            elif tam_partes:                               # archivo grande guardado en partes
+                                _escribir_stream_en_zip(
+                                    zf, ruta_final, _iterar_partes_evidencia(m["id"], tam_partes), es_video)
                             elif (m.get("bytes_db") or 0) <= ZIP_TROZO_BYTES:   # foto / video chico
                                 cur.execute("SELECT contenido FROM evidencias WHERE id=%s", (m["id"],))
                                 fila_c = cur.fetchone()

@@ -3,7 +3,8 @@ from fastapi.responses import StreamingResponse, Response
 from starlette.background import BackgroundTask
 from fastapi.concurrency import run_in_threadpool
 from auth import verify_token
-from db import execute_read, execute_write
+from db import execute_read, execute_write, execute_write_with_id
+import evidencia_partes as ep
 from typing import List, Optional
 import zipfile
 import io
@@ -151,6 +152,12 @@ async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_
             except Exception as e:
                 logger.error(f"[OneDrive] Falló subida de video {file.filename}, se guarda en DB como respaldo: {e}")
 
+        # La DB rechaza filas > 6 MB (error 8025): los archivos grandes van en trozos.
+        if contenido_a_guardar is not None and len(contenido_a_guardar) > ep.DB_FILA_MAX:
+            return await _guardar_grande_en_partes(
+                file.filename, contenido_a_guardar, unidad, tecnico, asignacion_id, tipo, mime_type, equipo
+            )
+
         # execute_write es una llamada SÍNCRONA a MySQL; si se llama directo
         # dentro de un endpoint async bloquea TODO el event loop (la app corre
         # con 1 solo worker en Clever Cloud). Con varias fotos subiendo a la
@@ -189,6 +196,48 @@ async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_
     except Exception as e:
         logger.error(f"[upload] Error procesando {file.filename}: {e}")
         return {"filename": file.filename, "ok": False, "error": str(e)}
+
+
+def _insertar_fila_sin_contenido(filename, unidad, tecnico, asignacion_id, tipo, mime_type, equipo) -> int:
+    """Crea la fila de `evidencias` con contenido NULL y devuelve su id."""
+    try:
+        eid = execute_write_with_id(
+            "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico, asignacion_id, tipo, mime_type, equipo) "
+            "VALUES (%s,%s,NULL,%s,%s,%s,%s,%s)",
+            (unidad, filename, tecnico, asignacion_id, tipo, mime_type, equipo),
+        )
+    except Exception as e:
+        logger.warning(f"[evidencias] INSERT sin columnas nuevas (partes): {e}")
+        eid = execute_write_with_id(
+            "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico, asignacion_id) VALUES (%s,%s,NULL,%s,%s)",
+            (unidad, filename, tecnico, asignacion_id),
+        )
+    if not eid:   # por si el driver no devuelve el id: buscar la fila recién creada
+        r = execute_read(
+            "SELECT id FROM evidencias WHERE unit_number=%s AND nombre_archivo=%s AND tecnico=%s "
+            "AND contenido IS NULL ORDER BY id DESC LIMIT 1", (unidad, filename, tecnico))
+        eid = r[0]["id"] if r else None
+    if not eid:
+        raise Exception("No se pudo obtener el id de la evidencia")
+    return eid
+
+
+async def _guardar_grande_en_partes(filename, contenido, unidad, tecnico, asignacion_id, tipo, mime_type, equipo) -> dict:
+    eid = None
+    try:
+        eid = await run_in_threadpool(_insertar_fila_sin_contenido, filename, unidad, tecnico, asignacion_id, tipo, mime_type, equipo)
+        await run_in_threadpool(ep.guardar_partes, eid, contenido)
+        logger.info(f"[evidencias] {filename} ({len(contenido)//1024}KB) guardado en partes, id={eid}")
+        return {"filename": filename, "ok": True, "error": None}
+    except Exception as e:
+        logger.error(f"[evidencias] No se pudo guardar en partes {filename}: {e}")
+        if eid:   # no dejar una fila sin archivo
+            try:
+                await run_in_threadpool(ep.borrar_partes, [eid])
+                await run_in_threadpool(execute_write, "DELETE FROM evidencias WHERE id=%s", (eid,))
+            except Exception:
+                pass
+        return {"filename": filename, "ok": False, "error": str(e)}
 
 
 async def _sync_onedrive_bg(unidad: str, filename: str, contenido: bytes):
@@ -430,6 +479,8 @@ async def descargar_evidencias(unit_number: str, current_user=Depends(require_ad
                 except Exception as e:
                     logger.error(f"[OneDrive] No se pudo incluir en el ZIP la evidencia {m['id']}: {e}")
                     continue
+            if contenido is None:
+                contenido = await run_in_threadpool(ep.leer_partes, m["id"])   # archivo grande guardado en partes
             if not contenido:
                 continue
             nombre = m["nombre_archivo"] or f"foto_{m['id']}.jpg"
@@ -509,26 +560,34 @@ def listar_evidencias(
     unit_number: str,
     page: int = 1,
     per_page: int = 20,
+    tipo: Optional[str] = None,            # 'video' | 'foto' (vacío = todo)
+    asignacion_id: Optional[int] = None,   # solo los archivos de una actividad
     current_user=Depends(require_admin_or_visor)
 ):
     offset = (page - 1) * per_page
-    total_res = execute_read(
-        "SELECT COUNT(*) AS total FROM evidencias WHERE unit_number=%s",
-        (unit_number,)
-    )
+    where, params = ["e.unit_number=%s"], [unit_number]
+    if tipo in ("video", "foto"):
+        where.append("COALESCE(e.tipo,'foto')=%s")
+        params.append(tipo)
+    if asignacion_id is not None:
+        where.append("e.asignacion_id=%s")
+        params.append(asignacion_id)
+    cond = " AND ".join(where)
+    total_res = execute_read(f"SELECT COUNT(*) AS total FROM evidencias e WHERE {cond}", tuple(params))
     total = total_res[0]["total"] if total_res else 0
 
     try:
+        # Orden por FECHA (no por id): en esta base los id no crecen en orden cronológico.
         rows = execute_read(
-            """SELECT e.id, e.nombre_archivo, e.tecnico, e.asignacion_id, e.tipo, e.equipo,
+            f"""SELECT e.id, e.nombre_archivo, e.tecnico, e.asignacion_id, e.tipo, e.equipo,
                       COALESCE(e.created_at, '') AS fecha,
                       a.actividad_id AS actividad
                FROM evidencias e
                LEFT JOIN asignaciones a ON a.id = e.asignacion_id
-               WHERE e.unit_number=%s
-               ORDER BY e.id DESC
+               WHERE {cond}
+               ORDER BY e.created_at DESC, e.id DESC
                LIMIT %s OFFSET %s""",
-            (unit_number, per_page, offset)
+            tuple(params) + (per_page, offset)
         )
     except Exception as e:
         # Columnas 'tipo'/'equipo' aún no migradas en la DB (deploy reciente) —
@@ -555,6 +614,7 @@ def listar_evidencias(
             "tipo": r.get("tipo") or "foto",
             "fecha": str(r["fecha"]) if r["fecha"] else "",
             "actividad": r.get("actividad") or "",
+            "asignacion_id": r.get("asignacion_id"),
         })
 
     return {
@@ -574,14 +634,16 @@ def unidades_con_fotos(current_user=Depends(require_admin_or_visor)):
     # ordenadas por lote y luego por número de unidad para que la vista de
     # evidencias no aparezca mezclada.
     rows = execute_read(
-        """SELECT e.unit_number AS unit_number, COUNT(*) AS total, u.id_lote AS id_lote
+        """SELECT e.unit_number AS unit_number, COUNT(*) AS total, u.id_lote AS id_lote,
+                  SUM(CASE WHEN e.tipo='video' THEN 1 ELSE 0 END) AS videos
            FROM evidencias e
            INNER JOIN unidades u ON u.unit_number = e.unit_number
            WHERE u.oculto = 0
            GROUP BY e.unit_number, u.id_lote
            ORDER BY u.id_lote, e.unit_number"""
     )
-    return [{"unit_number": r["unit_number"], "total": r["total"], "id_lote": r["id_lote"]} for r in (rows or [])]
+    return [{"unit_number": r["unit_number"], "total": r["total"], "id_lote": r["id_lote"],
+             "videos": int(r.get("videos") or 0)} for r in (rows or [])]
 
 
 # ── SERVIR UNA FOTO O VIDEO INDIVIDUAL — solo admin/visor ─────────────────
@@ -643,7 +705,23 @@ def ver_foto(foto_id: int, range: Optional[str] = Header(None), current_user=Dep
             raise HTTPException(status_code=502, detail="No se pudo obtener el archivo desde OneDrive")
 
     if not row["contenido"]:
-        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        total_partes = ep.tamano_total(foto_id)
+        if not total_partes:
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        # Archivo grande guardado en trozos (ver evidencia_partes.py), con soporte de Range
+        inicio, fin, codigo = 0, total_partes - 1, 200
+        if range:
+            try:
+                ini_s, fin_s = range.split("=")[1].split("-")
+                inicio = int(ini_s) if ini_s else 0
+                fin = min(int(fin_s) if fin_s else total_partes - 1, total_partes - 1)
+                codigo = 206
+            except Exception:
+                inicio, fin, codigo = 0, total_partes - 1, 200
+        hdrs = {"Accept-Ranges": "bytes", "Content-Length": str(fin - inicio + 1), "Cache-Control": "private, max-age=3600"}
+        if codigo == 206:
+            hdrs["Content-Range"] = f"bytes {inicio}-{fin}/{total_partes}"
+        return StreamingResponse(ep.iterar_rango(foto_id, inicio, fin), status_code=codigo, media_type=media_type, headers=hdrs)
 
     contenido = row["contenido"]
     contenido = bytes(contenido) if not isinstance(contenido, bytes) else contenido
@@ -714,6 +792,10 @@ def eliminar_evidencias(data: dict, current_user=Depends(verify_token)):
         raise HTTPException(status_code=400, detail="No se proporcionaron IDs válidos")
 
     placeholders = ",".join(["%s"] * len(ids))
+    try:
+        ep.borrar_partes(ids)
+    except Exception as e:
+        logger.warning(f"[evidencias] no se pudieron borrar partes: {e}")
     execute_write(
         f"DELETE FROM evidencias WHERE id IN ({placeholders})", tuple(ids)
     )
@@ -729,6 +811,7 @@ def diagnostico_evidencias(current_user=Depends(verify_token)):
         """SELECT e.id, e.unit_number, e.nombre_archivo, e.tecnico, e.asignacion_id,
                   e.onedrive_item_id, e.onedrive_url,
                   (e.contenido IS NOT NULL) AS en_db,
+                  (SELECT COUNT(*) FROM evidencia_partes p WHERE p.evidencia_id = e.id) AS n_partes,
                   COALESCE(e.created_at, '') AS fecha,
                   a.estado AS estado_actividad, a.actividad_id AS actividad
            FROM evidencias e
@@ -738,9 +821,10 @@ def diagnostico_evidencias(current_user=Depends(verify_token)):
     )
     def _dest(r):
         if r["en_db"]: return "base_de_datos"
+        if r.get("n_partes"): return "base_de_datos(partes)"
         if r["onedrive_item_id"]: return "onedrive"
         return "PERDIDO"          # fila sin archivo en ningún lado
-    videos = [{**{k: (str(v) if k == "fecha" else v) for k, v in r.items() if k != "en_db"},
+    videos = [{**{k: (str(v) if k == "fecha" else v) for k, v in r.items() if k not in ("en_db", "n_partes")},
                "ubicacion": _dest(r), "sin_actividad": r["asignacion_id"] is None} for r in (rows or [])]
     resumen = {}
     for v in videos:
@@ -834,6 +918,7 @@ def reparar_videos(aplicar: bool = False, current_user=Depends(verify_token)):
     vacias = execute_read(
         "SELECT id, unit_number, nombre_archivo FROM evidencias "
         "WHERE contenido IS NULL AND (onedrive_item_id IS NULL OR onedrive_item_id='') "
+        "AND NOT EXISTS (SELECT 1 FROM evidencia_partes p WHERE p.evidencia_id = evidencias.id) "
         "AND LOWER(nombre_archivo) REGEXP %s", (_VIDEO_REGEX,)
     ) or []
     reenlazadas, sin_archivo = [], []
@@ -986,7 +1071,7 @@ def copiar_videos_a_onedrive(aplicar: bool = False, limite: int = 2, desde_id: i
 #  - un tipo distinto de 'video' se intenta pintar como imagen.
 def _evaluar_video(r: dict) -> dict:
     """Devuelve ubicación, problemas (impiden verlo), avisos y si es reparable."""
-    if r.get("en_db"):
+    if r.get("en_db") or r.get("n_partes"):      # blob único, o archivo grande guardado en trozos
         ubicacion = "base_de_datos"
     elif r.get("onedrive_item_id"):
         ubicacion = "onedrive"
@@ -1024,6 +1109,7 @@ def verificar_videos(solo_problemas: bool = False, current_user=Depends(verify_t
     rows = execute_read(
         """SELECT e.id, e.unit_number, e.nombre_archivo, e.tecnico, e.asignacion_id, e.tipo,
                   e.onedrive_item_id, (e.contenido IS NOT NULL) AS en_db,
+                  (SELECT COUNT(*) FROM evidencia_partes p WHERE p.evidencia_id = e.id) AS n_partes,
                   LENGTH(e.contenido) AS bytes_db, COALESCE(e.created_at, '') AS fecha,
                   u.unit_number AS u_unit, u.oculto AS u_oculto, u.id_lote AS id_lote,
                   a.id AS a_id, a.unidad AS a_unidad, a.actividad_id AS actividad, a.estado AS estado_tarea
@@ -1067,3 +1153,55 @@ def verificar_videos(solo_problemas: bool = False, current_user=Depends(verify_t
         u["tareas"] = list(u["tareas"].values())
         lista.append(u)
     return {"resumen": resumen, "unidades": lista}
+
+# ── ¿OneDrive está funcionando? (token, espacio) — solo admin ──────────────
+@router.get("/onedrive-estado")
+def onedrive_estado(current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    if not ONEDRIVE_ENABLED:
+        return {"ok": False, "paso": "importar", "error": "No se pudo cargar onedrive_service"}
+    import onedrive_service as od
+    try:
+        od._cached_token["expires_at"] = 0          # forzar un token nuevo, sin usar la caché
+        token = od._get_token()
+    except Exception as e:
+        return {"ok": False, "paso": "token", "error": str(e)[:400],
+                "que_hacer": "Si dice invalid_grant/expired: hay que generar un MS_REFRESH_TOKEN nuevo. "
+                             "Si dice invalid_client: el secreto de la app (MS_CLIENT_SECRET_PERSONAL) venció."}
+    try:
+        r = requests.get(f"{od.GRAPH_BASE}/me/drive?select=id,driveType,quota",
+                         headers={"Authorization": f"Bearer {token}"}, timeout=20)
+        if not r.ok:
+            return {"ok": False, "paso": "graph", "http": r.status_code, "error": r.text[:300]}
+        q = r.json().get("quota") or {}
+        gb = lambda b: round((b or 0) / 1024 ** 3, 2)
+        return {"ok": True, "estado_cuota": q.get("state"), "usado_gb": gb(q.get("used")),
+                "total_gb": gb(q.get("total")), "libre_gb": gb(q.get("remaining"))}
+    except Exception as e:
+        return {"ok": False, "paso": "graph", "error": str(e)[:300]}
+
+
+# ── RESUMEN POR ACTIVIDAD de una unidad: qué tarea tiene cuántas fotos/videos ──
+@router.get("/resumen/{unit_number}")
+def resumen_por_actividad(unit_number: str, current_user=Depends(require_admin_or_visor)):
+    rows = execute_read(
+        """SELECT e.asignacion_id AS asignacion_id, a.actividad_id AS actividad, a.tecnico AS tecnico_tarea,
+                  SUM(CASE WHEN COALESCE(e.tipo,'foto')='video' THEN 1 ELSE 0 END) AS videos,
+                  SUM(CASE WHEN COALESCE(e.tipo,'foto')<>'video' THEN 1 ELSE 0 END) AS fotos,
+                  MAX(e.created_at) AS ultima
+           FROM evidencias e
+           LEFT JOIN asignaciones a ON a.id = e.asignacion_id
+           WHERE e.unit_number=%s
+           GROUP BY e.asignacion_id, a.actividad_id, a.tecnico
+           ORDER BY MAX(e.created_at) DESC""",
+        (unit_number,)
+    )
+    return [{
+        "asignacion_id": r["asignacion_id"],
+        "actividad": r["actividad"] or "Sin actividad",
+        "tecnico": r["tecnico_tarea"] or "",
+        "fotos": int(r["fotos"] or 0),
+        "videos": int(r["videos"] or 0),
+        "ultima": str(r["ultima"]) if r["ultima"] else "",
+    } for r in (rows or [])]
