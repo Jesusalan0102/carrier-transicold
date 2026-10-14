@@ -3665,6 +3665,7 @@ async def admin():
     </style>
 
     <div class="panel">
+      <div id="salud-banner" style="display:none;margin:0 0 12px;padding:12px 16px;border-radius:12px;background:#fef2f2;border:1px solid #fca5a5;color:#7f1d1d;font-size:14px;line-height:1.5;"></div>
       <div class="tabs">
         <button class="tab-btn active" onclick="showTab('actividades')" id="tab-actividades">
           <i class="ti ti-activity"></i> Actividades
@@ -4429,6 +4430,24 @@ async def admin():
                 });
         }
     }
+
+    // ── Banner de salud: avisa cuando OneDrive falla o hay tareas sin evidencia ──
+    async function cargarSaludEvidencia() {
+        const b = document.getElementById('salud-banner');
+        if (!b) return;
+        try {
+            const r = await fetchAuth('/api/evidencias/salud');
+            if (!r.ok) return;
+            const d = await r.json();
+            if (!d.problemas || !d.problemas.length) { b.style.display = 'none'; return; }
+            b.innerHTML = '<b>⚠️ Evidencia: requiere atención</b><ul style="margin:6px 0 8px 18px;padding:0;"></ul>' +
+                '<a href="/app/verificar-videos" style="color:#b91c1c;font-weight:700;">Ver detalle y herramientas →</a>';
+            const ul = b.querySelector('ul');
+            d.problemas.forEach(t => { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); });
+            b.style.display = 'block';
+        } catch (e) { /* el banner nunca debe romper el panel */ }
+    }
+    window.addEventListener('load', () => setTimeout(cargarSaludEvidencia, 1500));
 
     // ── Evidencia de UNA tarea (botón en Actividades) ─────────────────────
     let teUrls = [];
@@ -6176,6 +6195,8 @@ async def mis_tareas():
                     <p style="font-size:0.75rem;color:#9ca3af;margin:0 0 8px;">Los videos de galería se comprimen automáticamente antes de subirse (deja la pantalla encendida mientras tanto).</p>
                     <div id="previewFotosFinalizar" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;"></div>
                     <div id="compressInfoFinalizar" style="font-size:12px;color:#666;margin-bottom:8px;"></div>
+                    <div id="estadoVideosGaleria" style="font-size:12px;color:#92400e;margin-bottom:6px;"></div>
+                    <div id="servidorConteo" style="font-size:12px;font-weight:600;margin-bottom:8px;"></div>
 
                     <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">👥 ¿La trabajaste en equipo?</label>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
@@ -6203,8 +6224,10 @@ async def mis_tareas():
                 <style>@keyframes fadeInM{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}</style>`;
             document.body.appendChild(modal);
 
+            window.actualizarConteoServidor(id);
             document.getElementById('btnAbrirCamaraEvid').addEventListener('click', async () => {
                 const resultado = await abrirCamaraEvidencia(id, unidad);
+                window.actualizarConteoServidor(id);
                 if (resultado && resultado.subidasOk > 0) {
                     const infoEl = document.getElementById('compressInfoFinalizar');
                     if (infoEl) infoEl.textContent = `📷 ${resultado.subidasOk} foto(s) subida(s) con la cámara en esta sesión.`;
@@ -6238,6 +6261,17 @@ async def mis_tareas():
                         r.readAsDataURL(f);
                     }
                 });
+                // Los videos empiezan a subirse YA (antes de pulsar Finalizar): si se cierra la app o se
+                // acaba la batería, el video ya está en el servidor. Si trabaja en equipo se espera a
+                // Finalizar para registrar bien quién participó.
+                if (nVideos && !_equipoSeleccionado()) {
+                    const est = document.getElementById('estadoVideosGaleria');
+                    files.filter(f => f.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|3gp|avi|mkv)$/i.test(f.name)).forEach(f => {
+                        procesarVideoGaleria(f, { id, unidad, equipo: _equipoSeleccionado });
+                        const ent = window._galeriaVideos[_clientIdGaleria(id, f)];
+                        if (ent && est) { ent.oyente = t => { est.textContent = t; }; est.textContent = ent.texto; }
+                    });
+                }
                 const partes = [];
                 if (nFotos)  partes.push(`${nFotos} foto(s)`);
                 if (nVideos) partes.push(`${nVideos} video(s)`);
@@ -6297,6 +6331,74 @@ async def mis_tareas():
             } catch (e) { cont.innerHTML = ''; }
         }
 
+        // ── Video de galería: comprimir + subir por partes, UNA sola vez por archivo ─────────────
+        // Lo usan tanto la subida automática (apenas el técnico elige el video) como «Finalizar».
+        // Si ya está corriendo o terminó, se reutiliza la misma promesa: nunca se comprime ni se
+        // sube dos veces. Los videos se procesan de uno en uno (comprimir varios satura el celular).
+        window._galeriaVideos = window._galeriaVideos || {};
+        window._galeriaCola = window._galeriaCola || Promise.resolve();
+        function _clientIdGaleria(asigId, f) { return `g_${asigId}_${f.size}_${f.lastModified}_${f.name}`.slice(0, 110); }
+        function procesarVideoGaleria(f, ctx) {
+            const cid = _clientIdGaleria(ctx.id, f);
+            const previo = window._galeriaVideos[cid];
+            if (previo && previo.estado !== 'error') return previo.promesa;
+            const e = { estado: 'en_cola', texto: '⏳ Video en cola…', oyente: null };
+            const avisar = t => { e.texto = t; if (e.oyente) { try { e.oyente(t); } catch (_) {} } };
+            const perm = msg => { const x = new Error(msg); x.permanente = true; return x; };
+            window._galeriaVideos[cid] = e;
+            e.promesa = window._galeriaCola = window._galeriaCola.catch(() => {}).then(async () => {
+                const MAX_VIDEO_MB = 200;
+                try {
+                    const mbOrig = (f.size / 1048576).toFixed(1);
+                    e.estado = 'comprimiendo';
+                    let r = { file: f, comprimido: false, motivo: 'sin-libreria' };
+                    if (typeof window.comprimirVideoGaleria === 'function') {
+                        r = await window.comprimirVideoGaleria(f, { onProgress: p => avisar(`🎞️ Comprimiendo video (${mbOrig} MB)… ${Math.round(p * 100)}% — no cierres ni cambies de app`) });
+                    }
+                    if (r.file.size > MAX_VIDEO_MB * 1048576) {
+                        const razones = { 'sin-webcodecs': 'Este navegador no puede comprimir video. Actualiza Chrome (o Safari en iPhone).',
+                            'sin-libreria': 'No se pudo cargar el compresor de video. Revisa tu conexión.',
+                            'sin-codec': 'Este dispositivo no tiene codificador de video compatible.',
+                            'timeout': 'La compresión tardó demasiado.', 'error': 'No se pudo comprimir este video.' };
+                        throw perm(`El video "${f.name}" pesa ${mbOrig} MB y el máximo es ${MAX_VIDEO_MB} MB. ${razones[r.motivo] || 'No se pudo comprimir lo suficiente.'} Recórtalo o grábalo con la cámara de la app.`);
+                    }
+                    e.estado = 'subiendo';
+                    if (!window.subirVideoResumible) { const f0 = new Error('sin cliente'); f0.fallback = true; throw f0; }
+                    await window.subirVideoResumible(r.file, {
+                        clientId: cid, unidad: ctx.unidad, asignacionId: ctx.id, equipo: ctx.equipo ? ctx.equipo() : '', nombre: f.name,
+                        onProgress: p => avisar(`⬆️ Subiendo video… ${Math.round(p * 100)}%`),
+                        onEstado: t => avisar(t)
+                    });
+                    e.estado = 'ok'; avisar('✅ Video guardado en el servidor');
+                    if (window.actualizarConteoServidor) window.actualizarConteoServidor(ctx.id);
+                    return { ok: true };
+                } catch (err) {
+                    if (err && err.fallback) { e.estado = 'fallback'; return { fallback: true, file: f }; }   // método clásico
+                    e.estado = 'error'; e.error = err;
+                    avisar(err && err.permanente ? '❌ ' + err.message : '⚠️ Subida interrumpida: se reanuda al pulsar Finalizar (no se pierde nada)');
+                    throw err;
+                }
+            });
+            e.promesa.catch(() => {});      // nadie espera todavía: evita "unhandled rejection"
+            return e.promesa;
+        }
+
+        // Muestra cuántos archivos tiene REALMENTE guardados el servidor para esta tarea.
+        window.actualizarConteoServidor = async function (asigId) {
+            const el = document.getElementById('servidorConteo');
+            if (!el) return;
+            try {
+                const r = await fetchAuth(`/api/evidencias/count-asignacion/${asigId}`);
+                if (!r.ok) return;
+                const d = await r.json();
+                const total = d.total || 0;
+                el.style.color = total ? '#15803d' : '#6b7280';
+                el.textContent = total
+                    ? `✅ Guardado en el servidor: ${d.fotos != null ? d.fotos : total} foto(s)` + (d.videos ? ` · ${d.videos} video(s)` : '')
+                    : 'Aún no hay archivos guardados en el servidor para esta tarea.';
+            } catch (e) {}
+        };
+
         function _equipoSeleccionado() {
             const seccion = document.getElementById('equipoSeccion');
             if (!seccion || seccion.style.display === 'none') return '';
@@ -6355,60 +6457,22 @@ async def mis_tareas():
                         procesados.push(await _comprimirImagenCanvas(f));
                         continue;
                     }
-                    videoIdx++;
-                    const etiqueta = nVideosTotal > 1 ? ` ${videoIdx}/${nVideosTotal}` : '';
-                    const mbOrig = (f.size / (1024 * 1024)).toFixed(1);
-                    let r;
-                    if (typeof window.comprimirVideoGaleria === 'function') {
-                        r = await window.comprimirVideoGaleria(f, {
-                            onProgress: p => {
-                                btn.textContent = `🎞️ Comprimiendo video${etiqueta}… ${Math.round(p * 100)}%`;
-                                const infoEl = document.getElementById('compressInfoFinalizar');
-                                if (infoEl) infoEl.textContent = `Comprimiendo ${mbOrig} MB… no cierres ni cambies de app.`;
-                            }
-                        });
-                    } else {
-                        r = { file: f, comprimido: false, motivo: 'sin-libreria', bytesAntes: f.size, bytesDespues: f.size };
-                    }
-
-                    if (r.file.size > MAX_VIDEO_MB * 1024 * 1024) {
-                        const razones = {
-                            'sin-webcodecs': 'Este navegador no puede comprimir video. Actualiza Chrome (o Safari en iPhone) e intenta de nuevo.',
-                            'sin-libreria': 'No se pudo cargar el compresor de video. Revisa tu conexión e intenta de nuevo.',
-                            'sin-codec': 'Este dispositivo no tiene codificador de video compatible.',
-                            'timeout': 'La compresión se detuvo por tardar demasiado.',
-                            'error': 'No se pudo comprimir este video.'
-                        };
-                        const detalle = razones[r.motivo] || 'No se pudo comprimir lo suficiente.';
-                        errorEl.textContent = `El video "${f.name}" pesa ${mbOrig} MB y el máximo es ${MAX_VIDEO_MB} MB. ${detalle} Recórtalo o grábalo con la cámara de la app.`;
-                        btn.textContent = '✅ Confirmar y Finalizar'; btn.disabled = false;
-                        return;
-                    }
-                    if (r.comprimido) {
-                        console.log(`[video] ${f.name}: ${mbOrig} MB → ${(r.file.size / (1024 * 1024)).toFixed(1)} MB`);
-                    }
-                    videosParaSubir.push({ original: f, file: r.file });
+                    videosParaSubir.push({ original: f });   // se comprime y sube en el paso siguiente (o ya va en curso)
                 }
                 // 1) VIDEOS primero, por partes. clientId sale del archivo ORIGINAL (no del comprimido):
                 // si hay que reintentar, el servidor reconoce la misma subida y nunca duplica ni re-sube.
-                window._videosGaleriaOk = window._videosGaleriaOk || {};
                 for (let vi = 0; vi < videosParaSubir.length; vi++) {
                     const v = videosParaSubir[vi];
-                    const clientId = `g_${id}_${v.original.size}_${v.original.lastModified}_${v.original.name}`.slice(0, 110);
-                    if (window._videosGaleriaOk[clientId]) continue;
-                    const et = videosParaSubir.length > 1 ? ` ${vi + 1}/${videosParaSubir.length}` : '';
+                    const et = videosParaSubir.length > 1 ? ` (${vi + 1}/${videosParaSubir.length})` : '';
                     try {
-                        if (!window.subirVideoResumible) { const f0 = new Error('sin cliente'); f0.fallback = true; throw f0; }
-                        await window.subirVideoResumible(v.file, {
-                            clientId, unidad, asignacionId: id, equipo: _equipoSeleccionado(), nombre: v.original.name,
-                            onProgress: p => { btn.textContent = `📤 Subiendo video${et}… ${Math.round(p * 100)}%`; },
-                            onEstado: t => { btn.textContent = t; }
-                        });
-                        window._videosGaleriaOk[clientId] = true;
+                        const prom = procesarVideoGaleria(v.original, { id, unidad, equipo: _equipoSeleccionado });
+                        const ent = window._galeriaVideos[_clientIdGaleria(id, v.original)];
+                        if (ent) { ent.oyente = t => { btn.textContent = t.slice(0, 60) + et; }; btn.textContent = ent.texto.slice(0, 60) + et; }
+                        const res = await prom;
+                        if (res && res.fallback) procesados.push(res.file);          // método clásico
                     } catch (eV) {
-                        if (eV && eV.fallback) { procesados.push(v.file); continue; }   // método clásico
                         errorEl.textContent = (eV && eV.permanente)
-                            ? `El video "${v.original.name}" no se pudo subir: ${eV.message}`
+                            ? eV.message
                             : `Se interrumpió la subida de "${v.original.name}". No se perdió nada: pulsa de nuevo y continúa donde se quedó. La actividad NO se finalizó.`;
                         btn.textContent = '✅ Confirmar y Finalizar'; btn.disabled = false;
                         return;
@@ -10865,6 +10929,7 @@ async def verificar_videos_page():
         <label><input type="checkbox" id="vvSoloProblemas" onchange="vvCargar()"> Solo con problemas</label>
         <button class="btn-primary" onclick="vvReparar(false)">🔍 Simular reparación</button>
         <button class="btn-danger" onclick="vvReparar(true)">🛠️ Aplicar reparación</button>
+        <button class="btn-primary" onclick="vvSalud()">🩺 Estado del sistema (revisar ahora)</button>
         <button class="btn-primary" onclick="vvDescargarTodo()">⬇️ Descargar TODOS los videos de la base (ZIP)</button>
         <button class="btn-primary" onclick="vvCopiar(false)">☁️ Copiar a OneDrive (simular)</button>
         <button class="btn-primary" onclick="vvCopiar(true)">☁️ Copiar siguiente tanda a OneDrive</button>
@@ -10961,6 +11026,28 @@ async def verificar_videos_page():
             } catch (e) { pie.textContent = '⚠️ No se pudo cargar el video (' + e.message + ').'; }
         }
         // Rescate: baja en tandas de 20 TODOS los videos que están en la base (se vean o no en la app).
+        // Revisión completa: OneDrive (token y espacio), tareas sin evidencia, subidas a medias, videos solo en la DB.
+        async function vvSalud() {
+            vvSalida('Revisando OneDrive y la evidencia…');
+            try {
+                const res = await fetchAuth('/api/evidencias/salud?ahora=true');
+                if (!res.ok) { vvSalida('Error ' + res.status + ' al revisar.'); return; }
+                const d = await res.json(), o = d.onedrive || {}, a = d.auditoria || {};
+                const L = [];
+                L.push(o.ok ? '✅ OneDrive funciona (libre: ' + o.libre_gb + ' GB de ' + o.total_gb + ' GB)'
+                            : '❌ OneDrive NO funciona [' + (o.paso || '?') + ']: ' + (o.error || '') + (o.que_hacer ? '\\n   → ' + o.que_hacer : ''));
+                L.push('Videos que viven solo en la base de datos: ' + (a.videos_solo_en_db || 0) + ' (' + (a.mb_videos_solo_en_db || 0) + ' MB)');
+                L.push('Videos registrados sin archivo: ' + (a.videos_sin_archivo || 0));
+                const ts = a.tareas_sin_evidencia || [];
+                L.push('Tareas completadas sin evidencia (14 días): ' + ts.length);
+                ts.slice(0, 30).forEach(t => L.push('   #' + t.id + ' · ' + t.unidad + ' · ' + t.actividad + ' · ' + t.tecnico + ' · ' + (t.fecha_fin || '').slice(0, 16)));
+                const ic = a.subidas_incompletas || [];
+                L.push('Subidas de video a medias (más de 2 h): ' + ic.length);
+                ic.forEach(u => L.push('   ' + u.tecnico + ' · ' + u.unidad + ' · ' + u.archivo + ' (' + u.mb + ' MB) desde ' + (u.desde || '').slice(0, 16)));
+                if (d.copia_a_onedrive) L.push('Última copia automática a OneDrive: ' + JSON.stringify(d.copia_a_onedrive));
+                vvSalida(L.join('\\n'));
+            } catch (e) { vvSalida('Error de conexión al revisar.'); }
+        }
         let vvBajando = false;
         async function vvDescargarTodo() {
             if (vvBajando) return;

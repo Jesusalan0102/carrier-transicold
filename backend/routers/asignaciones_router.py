@@ -213,6 +213,17 @@ def finalizar(asig_id: int, data: dict, current_user=Depends(verify_token)):
         raise HTTPException(status_code=400, detail="El comentario es obligatorio para finalizar")
     ticket_id = data.get("ticket_id")
     now = datetime.now(TZ)
+    # La app ya exige evidencia, pero antes el SERVIDOR no lo comprobaba: si la subida fallaba y algo
+    # se saltaba la validación del celular, la tarea se cerraba vacía. Ahora se verifica aquí.
+    # El admin puede forzar el cierre sin evidencia con {"forzar": true}.
+    if not (current_user["role"] == "admin" and data.get("forzar")):
+        n_ev = execute_read("SELECT COUNT(*) AS n FROM evidencias WHERE asignacion_id=%s", (asig_id,))
+        if not n_ev or int(n_ev[0]["n"]) == 0:
+            raise HTTPException(
+                status_code=409,
+                detail="Esta tarea no tiene ninguna evidencia guardada en el servidor. "
+                       "Sube al menos un archivo y vuelve a finalizar.",
+            )
     asig_rows = execute_read("SELECT unidad, actividad_id FROM asignaciones WHERE id=%s", (asig_id,))
     execute_write(
         "UPDATE asignaciones SET estado='completada', fecha_fin=%s WHERE id=%s",

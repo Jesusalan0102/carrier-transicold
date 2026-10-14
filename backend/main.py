@@ -179,6 +179,8 @@ async def startup_event():
     from reportes_semanales import programador_reporte_semanal
     asyncio.create_task(monitor_corriendo_6h())
     asyncio.create_task(programador_reporte_semanal())
+    from salud_evidencias import monitor_salud_evidencias
+    asyncio.create_task(monitor_salud_evidencias())
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 9000)))

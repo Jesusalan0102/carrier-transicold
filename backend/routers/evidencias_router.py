@@ -274,10 +274,14 @@ def total_por_unidad(unit_number: str, current_user=Depends(verify_token)):
 @router.get("/count-asignacion/{asignacion_id}")
 def contar_evidencias_asignacion(asignacion_id: int, current_user=Depends(verify_token)):
     res = execute_read(
-        "SELECT COUNT(*) AS total FROM evidencias WHERE asignacion_id=%s",
+        "SELECT COUNT(*) AS total, "
+        "SUM(CASE WHEN COALESCE(tipo,'foto')='video' THEN 1 ELSE 0 END) AS videos "
+        "FROM evidencias WHERE asignacion_id=%s",
         (asignacion_id,)
     )
-    return {"total": res[0]["total"] if res else 0}
+    total = int(res[0]["total"]) if res else 0
+    videos = int(res[0].get("videos") or 0) if res else 0
+    return {"total": total, "videos": videos, "fotos": total - videos}
 
 
 # ── LISTAR FOTOS DE UNA ACTIVIDAD ESPECÍFICA — solo admin/visor ──────────
@@ -1295,3 +1299,15 @@ def descargar_videos(desde_id: int = 0, limite: int = 20, unidad: Optional[str] 
                  "X-En-Esta-Tanda": str(len(filas)), "Access-Control-Expose-Headers": "X-Siguiente-Desde, X-Pendientes, X-En-Esta-Tanda"},
         background=BackgroundTask(lambda: os.path.exists(tmp.name) and os.remove(tmp.name)),
     )
+
+
+# ── ESTADO DE SALUD de la evidencia (lo que ve el banner del panel) — solo admin ──
+@router.get("/salud")
+def salud_evidencias(ahora: bool = False, current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    import salud_evidencias as sv
+    estado = None if ahora else sv.leer_estado("evidencia")
+    if estado is None:                       # aún no corrió el monitor, o se pidió revisar ya
+        estado = sv.evaluar()
+    return estado
