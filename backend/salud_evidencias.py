@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 INTERVALO_SEG = 6 * 3600
 PRIMERA_ESPERA_SEG = 90
+RESPALDO_CADA_HORAS = 22
+RESPALDO_VENCIDO_HORAS = 72   # sin respaldo exitoso en 3 días => problema
 COPIAR_POR_CICLO = 3          # videos DB -> OneDrive por ciclo (cada uno puede pesar varios MB)
 DIAS_AUDITORIA = 14
 REALERTA_ONEDRIVE_HORAS = 24
@@ -129,9 +131,15 @@ def auditar() -> dict:
     }
 
 
-def problemas(onedrive: dict, auditoria: dict) -> list:
+def problemas(onedrive: dict, auditoria: dict, respaldo: dict | None = None, ahora: float | None = None) -> list:
     """Lista corta, legible, de lo que requiere atención. Vacía = todo bien."""
     out = []
+    if respaldo:
+        horas = ((ahora or time.time()) - float(respaldo.get("ts_ok", 0))) / 3600 if respaldo.get("ts_ok") else None
+        if not respaldo.get("ok"):
+            out.append(f"El último respaldo de la base de datos falló: {str(respaldo.get('error', ''))[:120]}")
+        elif horas is not None and horas > RESPALDO_VENCIDO_HORAS:
+            out.append(f"No hay respaldo de la base de datos desde hace {int(horas // 24)} días")
     if onedrive and not onedrive.get("ok"):
         out.append(f"OneDrive no funciona ({onedrive.get('paso', '?')}): {onedrive.get('error', '')[:140]}")
     n = len(auditoria.get("tareas_sin_evidencia", []))
@@ -148,7 +156,26 @@ def evaluar() -> dict:
     """Revisión completa sin efectos secundarios (la usa el panel con ?ahora=true)."""
     od_estado = revisar_onedrive()
     aud = auditar()
-    return {"onedrive": od_estado, "auditoria": aud, "problemas": problemas(od_estado, aud)}
+    resp = leer_estado("respaldo")
+    return {"onedrive": od_estado, "auditoria": aud, "respaldo": resp, "problemas": problemas(od_estado, aud, resp)}
+
+
+def toca_respaldo(resp: dict | None, ahora: float) -> bool:
+    """¿Pasaron más de RESPALDO_CADA_HORAS desde el último intento exitoso (o nunca hubo uno)?"""
+    if not resp or not resp.get("ts_ok"):
+        return True
+    return (ahora - float(resp["ts_ok"])) / 3600 >= RESPALDO_CADA_HORAS
+
+
+def respaldar(forzar: bool = False) -> dict:
+    """Ejecuta el respaldo de la DB en OneDrive y guarda el resultado. Conserva la fecha del último éxito."""
+    from respaldo_onedrive import ejecutar_respaldo
+    previo = leer_estado("respaldo") or {}
+    r = ejecutar_respaldo()
+    r["ts_ok"] = r["ts"] if r.get("ok") else previo.get("ts_ok")      # fecha del último respaldo BUENO
+    r["ultimo_archivo_ok"] = r.get("archivo") if r.get("ok") else previo.get("ultimo_archivo_ok")
+    guardar_estado("respaldo", r)
+    return r
 
 
 # ── avisos ───────────────────────────────────────────────────────────────────
@@ -187,6 +214,14 @@ def ciclo(copiar: bool = True) -> dict:
             logger.error(f"[salud] copia a OneDrive falló: {e}")
             copiado = {"error": str(e)[:200]}
     estado["copia_a_onedrive"] = copiado
+    # Respaldo diario de la base de datos (solo si OneDrive responde y ya toca)
+    if copiar and estado["onedrive"].get("ok") and toca_respaldo(leer_estado("respaldo"), ahora):
+        try:
+            respaldar()
+        except Exception as e:
+            logger.error(f"[salud] respaldo falló: {e}")
+        estado["respaldo"] = leer_estado("respaldo")
+        estado["problemas"] = problemas(estado["onedrive"], estado["auditoria"], estado["respaldo"])
     estado["ts"] = ahora
     guardar_estado("evidencia", estado)
 

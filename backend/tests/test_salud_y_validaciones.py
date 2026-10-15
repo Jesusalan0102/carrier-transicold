@@ -1,5 +1,5 @@
 """Monitor de salud, validación de evidencia en el servidor y subida automática de galería."""
-import shutil, subprocess, asyncio
+import shutil, subprocess, asyncio, time
 import pytest
 from fastapi import HTTPException
 import salud_evidencias as sv
@@ -40,6 +40,7 @@ def ciclo_env(monkeypatch):
     import routers.evidencias_router as er
     monkeypatch.setattr(er, "copiar_videos_a_onedrive",
                         lambda **kw: copias.append(kw) or {"migrados": [1, 2], "errores": [], "pendientes_restantes": 5})
+    monkeypatch.setattr(sv, "respaldar", lambda forzar=False: mem.__setitem__("respaldo", {"ok": True, "ts": time.time(), "ts_ok": time.time()}) or mem["respaldo"])
     return mem, avisos, copias
 
 

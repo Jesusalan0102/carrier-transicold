@@ -1314,3 +1314,14 @@ def salud_evidencias(ahora: bool = False, current_user=Depends(verify_token)):
     if estado is None:                       # aún no corrió el monitor, o se pidió revisar ya
         estado = sv.evaluar()
     return estado
+
+
+# ── RESPALDAR LA BASE DE DATOS EN OneDrive AHORA — solo admin ───────────────
+@router.post("/respaldo-ahora")
+def respaldo_ahora(current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    if not ONEDRIVE_ENABLED:
+        raise HTTPException(status_code=503, detail="OneDrive no está configurado")
+    import salud_evidencias as sv
+    return sv.respaldar(forzar=True)

@@ -11062,6 +11062,7 @@ async def verificar_videos_page():
         <button class="btn-primary" onclick="vvReparar(false)">🔍 Simular reparación</button>
         <button class="btn-danger" onclick="vvReparar(true)">🛠️ Aplicar reparación</button>
         <button class="btn-primary" onclick="vvSalud()">🩺 Estado del sistema (revisar ahora)</button>
+        <button class="btn-primary" onclick="vvRespaldar()">💾 Respaldar la base de datos en OneDrive ahora</button>
         <button class="btn-primary" onclick="vvDescargarTodo()">⬇️ Descargar TODOS los videos de la base (ZIP)</button>
         <button class="btn-primary" onclick="vvCopiar(false)">☁️ Copiar a OneDrive (simular)</button>
         <button class="btn-primary" onclick="vvCopiar(true)">☁️ Copiar siguiente tanda a OneDrive</button>
@@ -11176,9 +11177,24 @@ async def verificar_videos_page():
                 const ic = a.subidas_incompletas || [];
                 L.push('Subidas de video a medias (más de 2 h): ' + ic.length);
                 ic.forEach(u => L.push('   ' + u.tecnico + ' · ' + u.unidad + ' · ' + u.archivo + ' (' + u.mb + ' MB) desde ' + (u.desde || '').slice(0, 16)));
+                const rs = d.respaldo;
+                L.push(!rs ? 'Respaldo de la base de datos: aún no se ha hecho ninguno'
+                    : (rs.ok ? '✅ ' : '❌ ') + 'Último respaldo de la base de datos: ' + (rs.ultimo_archivo_ok || rs.archivo || '—') +
+                      (rs.ok ? ' (' + rs.mb + ' MB, ' + rs.tablas + ' tablas, ' + rs.filas + ' filas)' : ' — FALLÓ: ' + (rs.error || '')));
                 if (d.copia_a_onedrive) L.push('Última copia automática a OneDrive: ' + JSON.stringify(d.copia_a_onedrive));
                 vvSalida(L.join('\\n'));
             } catch (e) { vvSalida('Error de conexión al revisar.'); }
+        }
+        async function vvRespaldar() {
+            if (!confirm('Se guardará un respaldo de TODA la base de datos (sin fotos ni videos) en OneDrive/carrier-transicold/Respaldos. Puede tardar un minuto. ¿Continuar?')) return;
+            vvSalida('Generando el respaldo y subiéndolo a OneDrive… (no cierres esta pantalla)');
+            try {
+                const res = await fetchAuth('/api/evidencias/respaldo-ahora', { method: 'POST' });
+                const d = await res.json().catch(() => ({}));
+                if (!res.ok) { vvSalida('Error ' + res.status + ': ' + (d.detail || '')); return; }
+                vvSalida(d.ok ? '✅ Respaldo guardado en OneDrive: ' + d.archivo + ' (' + d.mb + ' MB, ' + d.tablas + ' tablas, ' + d.filas + ' filas, ' + d.segundos + ' s). Respaldos antiguos borrados: ' + d.antiguos_borrados
+                              : '❌ El respaldo falló: ' + (d.error || 'error desconocido'));
+            } catch (e) { vvSalida('Error de conexión al respaldar.'); }
         }
         let vvBajando = false;
         async function vvDescargarTodo() {
