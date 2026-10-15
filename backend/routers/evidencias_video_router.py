@@ -52,6 +52,7 @@ class IniciarVideo(BaseModel):
     tamano: int
     mime: Optional[str] = None
     equipo: Optional[str] = None
+    tecnico: Optional[str] = None      # solo admin: subir la evidencia a nombre del técnico de la tarea
 
 
 def _chunk() -> int:
@@ -78,9 +79,10 @@ def _normalizar_equipo(tecnico: str, equipo: Optional[str]) -> Optional[str]:
     return ", ".join(ordenados) if len(ordenados) > 1 else None
 
 
-def _get_row(upload_id: str, usuario: str):
+def _get_row(upload_id: str, usuario: str, rol: str = "tecnico"):
     rows = execute_read("SELECT * FROM video_uploads WHERE upload_id=%s", (upload_id,))
-    if not rows or rows[0]["tecnico"] != usuario:
+    # El dueño de la sesión es el técnico al que se atribuye; un admin puede continuar la subida que inició a su nombre.
+    if not rows or (rows[0]["tecnico"] != usuario and rol != "admin"):
         raise HTTPException(status_code=404, detail="Sesión de subida no encontrada")
     return rows[0]
 
@@ -134,6 +136,16 @@ async def iniciar(data: IniciarVideo, current_user=Depends(verify_token)):
     if not ONEDRIVE_ENABLED:
         raise HTTPException(status_code=503, detail="Subida por partes no disponible")
     usuario = current_user["username"]
+    quien_sube = usuario
+    if data.tecnico and data.tecnico != usuario:
+        # Solo un admin puede agregar evidencia a nombre de otro técnico (y el técnico debe existir).
+        if current_user.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Solo un administrador puede subir evidencia a nombre de otro técnico")
+        existe = await run_in_threadpool(execute_read, "SELECT username FROM users WHERE username=%s", (data.tecnico,))
+        if not existe:
+            raise HTTPException(status_code=400, detail=f"El usuario '{data.tecnico}' no existe")
+        usuario = data.tecnico
+        logger.info(f"[video] el admin '{quien_sube}' sube '{data.nombre}' a nombre de '{usuario}' (tarea {data.asignacion_id})")
     ext = _ext(data.nombre)
     if ext not in VIDEO_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Formato de video no permitido")
@@ -221,7 +233,7 @@ async def iniciar(data: IniciarVideo, current_user=Depends(verify_token)):
 @router.put("/{upload_id}/parte")
 async def subir_parte(upload_id: str, request: Request, current_user=Depends(verify_token)):
     usuario = current_user["username"]
-    row = await run_in_threadpool(_get_row, upload_id, usuario)
+    row = await run_in_threadpool(_get_row, upload_id, usuario, current_user.get("role"))
     if row["evidencia_id"]:
         return {"done": True, "evidencia_id": row["evidencia_id"]}
 
@@ -286,7 +298,7 @@ async def subir_parte(upload_id: str, request: Request, current_user=Depends(ver
 
 @router.get("/{upload_id}/estado")
 async def estado(upload_id: str, current_user=Depends(verify_token)):
-    row = await run_in_threadpool(_get_row, upload_id, current_user["username"])
+    row = await run_in_threadpool(_get_row, upload_id, current_user["username"], current_user.get("role"))
     if row["evidencia_id"]:
         return {"done": True, "evidencia_id": row["evidencia_id"]}
     try:

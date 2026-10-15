@@ -399,6 +399,9 @@ async def subir_evidencias(
         )
 
     files_a_guardar = files[:disponibles]
+    if tecnico != current_user["username"]:       # auditoría: quién subió a nombre de quién
+        logger.info(f"[evidencias] '{current_user['username']}' ({current_user.get('role')}) sube "
+                    f"{len(files_a_guardar)} archivo(s) a nombre de '{tecnico}' (unidad {unidad}, tarea {asignacion_id})")
 
     # ── Normalizar equipo: lista de usernames separados por coma, sin        ─
     # duplicados, quien sube siempre incluido (aunque no lo haya marcado). ──

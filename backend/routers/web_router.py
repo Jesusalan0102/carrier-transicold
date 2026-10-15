@@ -3905,6 +3905,14 @@ async def admin():
             <b id="te-titulo" style="flex:1;font-size:15px;"></b>
             <button class="btn btn-ghost" onclick="teCerrar()">✖ Cerrar</button>
           </div>
+          <div id="te-drop" style="display:none;border:2px dashed #94a3b8;border-radius:12px;padding:12px;text-align:center;color:#475569;margin-bottom:12px;background:#f8fafc;font-size:13px;">
+            📥 <b>Arrastra aquí</b> imágenes o videos, <b>pégalos con Ctrl+V</b> o
+            <button class="btn btn-navy" id="te-elegir" style="margin-left:4px;">Elegir archivos</button>
+            <input type="file" id="te-input" multiple accept="image/*,video/*" style="display:none">
+            <div id="te-dest" style="font-size:12px;margin-top:6px;color:#334155;"></div>
+            <div id="te-aviso" style="font-size:12px;color:#b45309;"></div>
+            <div id="te-cola" style="text-align:left;font-size:12px;margin-top:6px;max-height:140px;overflow:auto;"></div>
+          </div>
           <div id="te-visor" style="display:none;margin-bottom:12px;text-align:center;background:#0b1220;border-radius:10px;padding:10px;"></div>
           <div id="te-cuerpo" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;"></div>
         </div>
@@ -4450,9 +4458,125 @@ async def admin():
     window.addEventListener('load', () => setTimeout(cargarSaludEvidencia, 1500));
 
     // ── Evidencia de UNA tarea (botón en Actividades) ─────────────────────
+    // ── Agregar evidencia a una tarea: arrastrar, pegar (Ctrl+V) o elegir archivos (solo admin) ──
+    let teTarea = null;                 // {id, unidad, tecnico} de la tarea abierta
+    const teCola = [];                  // {file, tarea, estado: espera|subiendo|ok|error, texto}
+    const teVistos = new Set();         // evita subir dos veces el mismo archivo
+    let teTrabajando = 0, teHayNuevos = false, tePegadoN = 0;
+    const TE_VIDEO_EXT = ['mp4', 'mov', 'webm', 'm4v', '3gp', 'avi', 'mkv'];
+    const TE_IMG_EXT = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'];
+    function teExt(f) { const n = (f.name || '').split('.'); return n.length > 1 ? n.pop().toLowerCase() : ''; }
+    function teEsVideo(f) { return (f.type || '').startsWith('video/') || TE_VIDEO_EXT.includes(teExt(f)); }
+    function teEsImagen(f) { return (f.type || '').startsWith('image/') || TE_IMG_EXT.includes(teExt(f)); }
+    // Las capturas pegadas llegan todas como "image.png": se les da un nombre único y legible.
+    function teNombrePegado(f) {
+        const d = new Date(), z = n => String(n).padStart(2, '0');
+        const ext = ((f.type || 'image/png').split('/')[1] || 'png').replace('jpeg', 'jpg');
+        tePegadoN++;
+        return `pegado_${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}_${tePegadoN}.${ext}`;
+    }
+    function teRenderCola() {
+        const el = document.getElementById('te-cola');
+        if (!el) return;
+        el.innerHTML = '';
+        teCola.slice(-30).forEach(it => {
+            const d = document.createElement('div');
+            d.style.color = it.estado === 'error' ? '#b91c1c' : it.estado === 'ok' ? '#15803d' : '#475569';
+            d.textContent = `${{ espera: '⏳', subiendo: '⬆️', ok: '✅', error: '❌' }[it.estado]} ${it.file.name} — ${it.texto || ''}`;
+            el.appendChild(d);
+        });
+    }
+    function teAgregar(archivos) {
+        if (!teTarea) return;
+        let rechazados = 0, repetidos = 0;
+        archivos.forEach(f => {
+            if (!(teEsImagen(f) || teEsVideo(f))) { rechazados++; return; }
+            const key = [teTarea.id, f.name, f.size, f.lastModified].join('|');
+            if (teVistos.has(key)) { repetidos++; return; }
+            teVistos.add(key);
+            teCola.push({ file: f, tarea: teTarea, estado: 'espera', texto: 'En cola' });
+        });
+        const av = document.getElementById('te-aviso');
+        if (av) av.textContent = (rechazados ? `${rechazados} archivo(s) ignorado(s): solo se aceptan imágenes y videos. ` : '') +
+                                 (repetidos ? `${repetidos} ya estaba(n) agregado(s). ` : '');
+        teRenderCola(); teProcesar();
+    }
+    async function teSubirUno(it) {
+        const t = it.tarea, f = it.file, tecnico = t.tecnico || window.username;
+        if (teEsVideo(f) && window.subirVideoResumible) {
+            try {
+                await window.subirVideoResumible(f, {
+                    clientId: `a_${t.id}_${f.size}_${f.lastModified}_${f.name}`.slice(0, 110),
+                    unidad: t.unidad, asignacionId: t.id, tecnico, nombre: f.name,
+                    onProgress: p => { it.texto = `Subiendo… ${Math.round(p * 100)}%`; teRenderCola(); },
+                    onEstado: tx => { it.texto = tx; teRenderCola(); }
+                });
+                it.estado = 'ok'; it.texto = 'Guardado'; teHayNuevos = true;
+                return;
+            } catch (e) { if (!(e && e.fallback)) throw e; }   // sin subida por partes: método clásico
+        }
+        const fd = new FormData();
+        fd.append('unidad', t.unidad); fd.append('tecnico', tecnico); fd.append('asignacion_id', t.id);
+        fd.append('files', f, f.name);
+        const r = await fetchAuth('/api/evidencias/upload', { method: 'POST', body: fd });
+        let d = {};
+        try { d = await r.json(); } catch (_) {}
+        if (!r.ok) throw new Error(d.detail || ('Error ' + r.status));
+        if (d.fallidas && d.fallidas.length) throw new Error((d.errores && d.errores[f.name]) || 'No se pudo guardar');
+        it.estado = 'ok'; it.texto = 'Guardado'; teHayNuevos = true;
+    }
+    function teProcesar() {
+        while (teTrabajando < 2) {                       // 2 a la vez: un video grande no bloquea las fotos
+            const it = teCola.find(x => x.estado === 'espera');
+            if (!it) break;
+            it.estado = 'subiendo'; it.texto = 'Subiendo…'; teTrabajando++;
+            teSubirUno(it)
+                .catch(e => { it.estado = 'error'; it.texto = (e && e.message) || 'Error al subir'; })
+                .finally(() => {
+                    teTrabajando--; teRenderCola();
+                    if (!teCola.some(x => x.estado === 'espera' || x.estado === 'subiendo')) {
+                        // terminó la tanda: refrescar la galería de la tarea (si sigue abierta)
+                        if (teHayNuevos && teTarea && teTarea.id === it.tarea.id &&
+                            document.getElementById('te-modal').style.display !== 'none') {
+                            teHayNuevos = false; verEvidenciaTarea(it.tarea.id, { silencioso: true });
+                        }
+                    } else { teProcesar(); }
+                });
+            teRenderCola();
+        }
+    }
+    function teIniciarSubida() {
+        const modal = document.getElementById('te-modal'), zona = document.getElementById('te-drop');
+        if (!modal || !zona) return;
+        const puede = () => window.role === 'admin' && teTarea && modal.style.display !== 'none';
+        const resaltar = on => { zona.style.borderColor = on ? '#2563eb' : '#94a3b8'; zona.style.background = on ? '#eff6ff' : '#f8fafc'; };
+        ['dragenter', 'dragover'].forEach(ev => modal.addEventListener(ev, e => { if (!puede()) return; e.preventDefault(); resaltar(true); }));
+        modal.addEventListener('dragleave', e => { if (e.target === modal) resaltar(false); });
+        modal.addEventListener('drop', e => {
+            if (!puede()) return;
+            e.preventDefault(); resaltar(false);
+            teAgregar(Array.from((e.dataTransfer && e.dataTransfer.files) || []));
+        });
+        document.addEventListener('paste', e => {
+            if (!puede()) return;
+            const cd = e.clipboardData;
+            if (!cd) return;
+            let crudos = Array.from(cd.files || []);
+            if (!crudos.length) crudos = Array.from(cd.items || []).filter(i => i.kind === 'file').map(i => i.getAsFile()).filter(Boolean);
+            if (!crudos.length) return;                  // texto normal: no se toca
+            e.preventDefault();
+            teAgregar(crudos.map(f => new File([f], (f.name && f.name !== 'image.png') ? f.name : teNombrePegado(f),
+                                               { type: f.type, lastModified: Date.now() })));
+        });
+        document.getElementById('te-elegir').onclick = () => document.getElementById('te-input').click();
+        document.getElementById('te-input').onchange = e => { teAgregar(Array.from(e.target.files)); e.target.value = ''; };
+    }
+    window.addEventListener('load', teIniciarSubida);
+
     let teUrls = [];
     function teCerrar() {
         document.getElementById('te-modal').style.display = 'none';
+        if (!teTrabajando) { teCola.length = 0; teVistos.clear(); teRenderCola(); }
         teUrls.forEach(u => URL.revokeObjectURL(u)); teUrls = [];
         document.getElementById('te-visor').innerHTML = '';
     }
@@ -4486,13 +4610,21 @@ async def admin():
             visor.innerHTML = '<span style="color:#fca5a5">⚠️ No se pudo cargar este archivo.</span>';
         }
     }
-    async function verEvidenciaTarea(id) {
+    async function verEvidenciaTarea(id, opciones = {}) {
         const t = (DATA.act || []).find(x => x.id === id) || {};
+        teTarea = { id, unidad: t.unidad, tecnico: t.tecnico || '' };
+        const zona = document.getElementById('te-drop');
+        zona.style.display = window.role === 'admin' ? 'block' : 'none';
+        document.getElementById('te-dest').textContent = teTarea.tecnico
+            ? `Se guardarán a nombre de: ${teTarea.tecnico} (subido por ${window.username})`
+            : `Esta tarea no tiene técnico: se guardarán a nombre de ${window.username}`;
         const modal = document.getElementById('te-modal'), cuerpo = document.getElementById('te-cuerpo');
         document.getElementById('te-titulo').textContent =
             `Tarea #${id} · ${t.actividad_id || ''} · ${t.unidad || ''} · ${t.tecnico || ''}`;
-        document.getElementById('te-visor').style.display = 'none';
-        cuerpo.innerHTML = '<p style="grid-column:1/-1;color:#6b7280">Cargando evidencia…</p>';
+        if (!opciones.silencioso) {
+            document.getElementById('te-visor').style.display = 'none';
+            cuerpo.innerHTML = '<p style="grid-column:1/-1;color:#6b7280">Cargando evidencia…</p>';
+        }
         modal.style.display = 'flex';
         try {
             const r = await fetchAuth(`/api/evidencias/por-actividad/${id}`);
@@ -4545,7 +4677,7 @@ async def admin():
                 cuerpo.appendChild(card);
             });
             const primerVideo = ordenados.find(f => f.tipo === 'video');
-            if (primerVideo) teAbrirArchivo(primerVideo);   // si hay video, se abre solo
+            if (primerVideo && !opciones.silencioso) teAbrirArchivo(primerVideo);   // si hay video, se abre solo
         } catch (e) {
             cuerpo.innerHTML = '<p style="grid-column:1/-1;color:#b91c1c">No se pudo cargar la evidencia de esta tarea.</p>';
         }

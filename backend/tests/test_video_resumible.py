@@ -57,6 +57,7 @@ class FakeDB:
             return [dict(r) for r in self.up.values() if (r["tecnico"], r["client_id"]) == tuple(p)]
         if "SELECT evidencia_id FROM video_uploads" in sql: return [{"evidencia_id": self.up[p[0]]["evidencia_id"]}]
         if "COUNT(*)" in sql: return [{"total": 0}]
+        if "FROM users" in sql: return [{"username": p[0]}] if p[0] in ("maria", "juan") else []
         raise AssertionError(sql)
     def write(self, sql, p=None):
         if sql.startswith("INSERT INTO video_uploads"):
@@ -177,3 +178,30 @@ def test_onedrive_caido_pide_respaldo_en_db(env):
     def falla(_): raise RuntimeError("token vencido")
     fod.crear_sesion_video = falla
     assert iniciar(c, CH, cid="z").status_code == 503     # el cliente cae al método clásico
+
+
+def _como_admin(c):
+    from fastapi import FastAPI  # noqa
+    c.app.dependency_overrides[verify_token] = lambda: {"username": "admin", "role": "admin"}
+
+
+def test_admin_sube_video_a_nombre_del_tecnico(env):
+    c, fdb, _ = env
+    _como_admin(c)
+    total = CH + 10
+    j = c.post("/api/evidencias/video/iniciar", json={"client_id": "a1", "unidad": "U1", "asignacion_id": 7,
+                                                      "nombre": "clip.mp4", "tamano": total, "tecnico": "maria"}).json()
+    assert fdb.up[j["upload_id"]]["tecnico"] == "maria"
+    assert subir_todo(c, j["upload_id"], total)["done"]            # el admin puede continuar la sesión de 'maria'
+    assert fdb.ev[0][2] == "maria"                                  # la evidencia queda a nombre del técnico
+
+
+def test_tecnico_no_puede_subir_a_nombre_de_otro_ni_tecnico_inexistente(env):
+    c, _, _ = env
+    r = c.post("/api/evidencias/video/iniciar", json={"client_id": "t1", "unidad": "U1", "nombre": "a.mp4",
+                                                      "tamano": 10, "tecnico": "maria"})
+    assert r.status_code == 403
+    _como_admin(c)
+    r = c.post("/api/evidencias/video/iniciar", json={"client_id": "t2", "unidad": "U1", "nombre": "a.mp4",
+                                                      "tamano": 10, "tecnico": "fantasma"})
+    assert r.status_code == 400
