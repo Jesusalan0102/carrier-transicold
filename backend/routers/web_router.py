@@ -3957,14 +3957,18 @@ async def admin():
 
         <div id="ev-pagination" style="display:flex;gap:8px;margin-top:16px;align-items:center;flex-wrap:wrap;"></div>
 
-        <!-- Lightbox -->
+        <!-- Lightbox / galería -->
         <div id="ev-lightbox" style="
-          display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);
-          z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:12px;
+          display:none;position:fixed;inset:0;background:rgba(0,0,0,.9);
+          z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:10px;
         " onclick="evCloseLightbox(event)">
-          <img id="ev-lb-img" style="max-width:92vw;max-height:82vh;border-radius:8px;object-fit:contain;" />
-          <video id="ev-lb-video" controls playsinline style="display:none;max-width:92vw;max-height:82vh;border-radius:8px;"></video>
-          <span id="ev-lb-caption" style="color:#e8f0ff;font-size:13px;"></span>
+          <button onclick="evCerrarLightbox()" title="Cerrar (Esc)" style="position:absolute;top:12px;right:16px;width:44px;height:44px;border:none;border-radius:50%;background:rgba(255,255,255,.18);color:#fff;font-size:20px;cursor:pointer;">✖</button>
+          <button id="ev-lb-prev" onclick="evNavegar(-1, event)" title="Anterior (←)" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);width:52px;height:72px;border:none;border-radius:12px;background:rgba(255,255,255,.18);color:#fff;font-size:34px;cursor:pointer;">‹</button>
+          <button id="ev-lb-next" onclick="evNavegar(1, event)" title="Siguiente (→)" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);width:52px;height:72px;border:none;border-radius:12px;background:rgba(255,255,255,.18);color:#fff;font-size:34px;cursor:pointer;">›</button>
+          <img id="ev-lb-img" onclick="evNavegar(1, event)" title="Clic para ver la siguiente" style="max-width:86vw;max-height:80vh;border-radius:8px;object-fit:contain;cursor:pointer;" />
+          <video id="ev-lb-video" controls playsinline style="display:none;max-width:86vw;max-height:80vh;border-radius:8px;"></video>
+          <span id="ev-lb-contador" style="color:#fff;font-size:14px;font-weight:700;"></span>
+          <span id="ev-lb-caption" style="color:#e8f0ff;font-size:13px;text-align:center;max-width:90vw;"></span>
         </div>
       </div>
 
@@ -4390,29 +4394,58 @@ async def admin():
         }
     }
 
-    function evAbrirLightbox(id, nombre, tecnico, fecha, actividad, tipo, equipo) {
-        const lb  = document.getElementById('ev-lightbox');
+    // ── Galería del visor ampliado: flechas, teclado, clic y deslizar ───────────────────────────
+    let evGal = { items: [], idx: -1 }, evTok = 0, evVidUrl = null;
+    const evBlobs = new Map();          // id -> Promise<url>: caché de fotos para cambiar de una a otra al instante
+
+    function evBlob(id) {
+        if (!evBlobs.has(id)) {
+            const pr = fetchAuth(`/api/evidencias/foto/${id}`)
+                .then(r => r.ok ? r.blob() : Promise.reject(new Error(r.status)))
+                .then(b => URL.createObjectURL(b));
+            pr.catch(() => evBlobs.delete(id));
+            evBlobs.set(id, pr);
+            if (evBlobs.size > 14) {    // no acumular memoria: se suelta la más antigua
+                const viejo = evBlobs.keys().next().value;
+                evBlobs.get(viejo).then(u => URL.revokeObjectURL(u)).catch(() => {});
+                evBlobs.delete(viejo);
+            }
+        }
+        return evBlobs.get(id);
+    }
+
+    function evActualizarControles() {
+        const n = evGal.items.length;
+        document.getElementById('ev-lb-contador').textContent = n > 1 ? `${evGal.idx + 1} / ${n}` : '';
+        const ver = n > 1 ? '' : 'none';
+        document.getElementById('ev-lb-prev').style.display = ver;
+        document.getElementById('ev-lb-next').style.display = ver;
+    }
+
+    function evRenderItem(f) {
+        const tok = ++evTok;            // si el usuario ya pasó a otra, esta respuesta tardía se descarta
         const img = document.getElementById('ev-lb-img');
         const vid = document.getElementById('ev-lb-video');
         const cap = document.getElementById('ev-lb-caption');
-        const esVideo = tipo === 'video';
-        img.src = ''; img.style.display = 'none';
-        vid.pause(); vid.removeAttribute('src'); vid.load(); vid.style.display = 'none';
-        cap.textContent = `${nombre}  ·  👷 ${tecnico||'—'}  ${equipo?'·  👥 '+equipo+'  ':''}${actividad?'·  🛠 '+actividad+'  ':''}·  ${fecha?fecha.slice(0,10):''}`;
-        lb.style.display = 'flex';
-        if (esVideo) {
+        img.removeAttribute('src'); img.style.display = 'none';
+        vid.pause(); vid.removeAttribute('src'); vid.load(); vid.style.display = 'none'; vid.onerror = null;
+        if (evVidUrl) { URL.revokeObjectURL(evVidUrl); evVidUrl = null; }
+        evActualizarControles();
+        const base = `${f.nombre}  ·  👷 ${f.tecnico||'—'}  ${f.equipo?'·  👥 '+f.equipo+'  ':''}${f.actividad?'·  🛠 '+f.actividad+'  ':''}·  ${f.fecha?f.fecha.slice(0,10):''}`;
+        cap.textContent = base;
+        if (f.tipo === 'video') {
             vid.style.display = '';
-            const base = cap.textContent;
-            fetchAuth(`/api/evidencias/foto/${id}`)
+            fetchAuth(`/api/evidencias/foto/${f.id}`)
                 .then(r => r.ok ? r.blob() : Promise.reject())
                 .then(blob => {
-                    const url = URL.createObjectURL(blob);
+                    if (tok !== evTok) return;
+                    evVidUrl = URL.createObjectURL(blob);
                     // Siempre se ofrece la descarga: así el video se puede recuperar aunque
                     // este navegador no sepa reproducirlo (p. ej. .webm en iPhone/Safari).
                     cap.innerHTML = '';
                     cap.append(base + '  ·  ');
                     const a = document.createElement('a');
-                    a.href = url; a.download = nombre; a.textContent = '⬇️ Descargar video';
+                    a.href = evVidUrl; a.download = f.nombre; a.textContent = '⬇️ Descargar video';
                     a.style.cssText = 'color:#93c5fd;text-decoration:underline;';
                     cap.appendChild(a);
                     vid.onerror = () => {
@@ -4421,23 +4454,99 @@ async def admin():
                         aviso.style.cssText = 'color:#fca5a5;margin-top:6px;';
                         cap.appendChild(aviso);
                     };
-                    vid.src = url;
+                    vid.src = evVidUrl;
                 })
                 .catch(() => {
+                    if (tok !== evTok) return;
                     vid.style.display = 'none';
-                    cap.textContent = `⚠️ No se pudo cargar este video (${nombre}). El archivo podría estar dañado o incompleto.`;
+                    cap.textContent = `⚠️ No se pudo cargar este video (${f.nombre}). El archivo podría estar dañado o incompleto.`;
                 });
         } else {
             img.style.display = '';
-            fetchAuth(`/api/evidencias/foto/${id}`)
-                .then(r => r.ok ? r.blob() : Promise.reject())
-                .then(blob => { img.src = URL.createObjectURL(blob); })
+            evBlob(f.id)
+                .then(url => { if (tok === evTok) img.src = url; })
                 .catch(() => {
+                    if (tok !== evTok) return;
                     img.style.display = 'none';
-                    cap.textContent = `⚠️ No se pudo cargar esta foto (${nombre}). El archivo podría estar dañado o incompleto.`;
+                    cap.textContent = `⚠️ No se pudo cargar esta foto (${f.nombre}). El archivo podría estar dañado o incompleto.`;
                 });
         }
+        // Precarga de las fotos vecinas (los videos no, por su tamaño): así el siguiente clic es instantáneo.
+        const n = evGal.items.length;
+        if (n > 1) [1, -1, 2].forEach(d => {
+            const v = evGal.items[(evGal.idx + d + n) % n];
+            if (v && v.tipo !== 'video') evBlob(v.id).catch(() => {});
+        });
     }
+
+    // Pasa a la siguiente (+1) o anterior (-1); al llegar al final da la vuelta.
+    function evNavegar(delta, e) {
+        if (e) e.stopPropagation();
+        const n = evGal.items.length;
+        if (n < 2) return;
+        evGal.idx = (evGal.idx + delta + n) % n;
+        evRenderItem(evGal.items[evGal.idx]);
+    }
+
+    function evAbrirLightbox(id, nombre, tecnico, fecha, actividad, tipo, equipo) {
+        const actual = { id, nombre, tecnico, fecha, actividad, tipo, equipo };
+        evGal = { items: [actual], idx: 0 };
+        document.getElementById('ev-lightbox').style.display = 'flex';
+        evRenderItem(actual);           // se ve de inmediato; la lista completa llega en segundo plano
+        evCargarGaleria(id);
+    }
+
+    // Trae TODOS los archivos de la unidad con los filtros actuales (solo datos, sin imágenes) para poder navegar.
+    async function evCargarGaleria(idActual) {
+        const unidad = document.getElementById('ev-select-unidad').value;
+        if (!unidad) return;
+        const fTipo = document.getElementById('ev-filtro-tipo').value;
+        const fAct  = document.getElementById('ev-filtro-act').value;
+        try {
+            const res = await fetchAuth(`/api/evidencias/lista/${encodeURIComponent(unidad)}?page=1&per_page=500`
+                + (fTipo ? `&tipo=${fTipo}` : '') + (fAct ? `&asignacion_id=${fAct}` : ''));
+            if (!res.ok) return;
+            const d = await res.json();
+            const pos = (d.fotos || []).findIndex(x => x.id === idActual);
+            const lb = document.getElementById('ev-lightbox');
+            if (pos < 0 || lb.style.display === 'none' || !evGal.items.length || evGal.items[evGal.idx].id !== idActual) return;
+            evGal = { items: d.fotos, idx: pos };
+            evActualizarControles();
+            const n = d.fotos.length;    // precarga inmediata de las vecinas
+            [1, -1].forEach(dl => { const v = d.fotos[(pos + dl + n) % n]; if (n > 1 && v && v.tipo !== 'video') evBlob(v.id).catch(() => {}); });
+        } catch (e) { /* sin lista completa solo se ve la foto abierta */ }
+    }
+
+    function evCerrarLightbox() {
+        document.getElementById('ev-lightbox').style.display = 'none';
+        const vid = document.getElementById('ev-lb-video');
+        vid.pause(); vid.removeAttribute('src'); vid.load();
+        evTok++;
+        if (evVidUrl) { URL.revokeObjectURL(evVidUrl); evVidUrl = null; }
+        evBlobs.forEach(pr => pr.then(u => URL.revokeObjectURL(u)).catch(() => {}));
+        evBlobs.clear();
+        evGal = { items: [], idx: -1 };
+    }
+
+    // Teclado (← → Esc) y deslizar con el dedo en el celular
+    document.addEventListener('keydown', e => {
+        const lb = document.getElementById('ev-lightbox');
+        if (!lb || lb.style.display === 'none') return;
+        if (e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); evNavegar(1); }
+        else if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); evNavegar(-1); }
+        else if (e.key === 'Escape') { e.preventDefault(); evCerrarLightbox(); }
+    }, true);
+    window.addEventListener('load', () => {
+        const lb = document.getElementById('ev-lightbox');
+        if (!lb) return;
+        let x0 = null;
+        lb.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, { passive: true });
+        lb.addEventListener('touchend', e => {
+            if (x0 === null) return;
+            const dx = e.changedTouches[0].clientX - x0; x0 = null;
+            if (Math.abs(dx) > 60) evNavegar(dx < 0 ? 1 : -1);
+        }, { passive: true });
+    });
 
     // ── Banner de salud: avisa cuando OneDrive falla o hay tareas sin evidencia ──
     async function cargarSaludEvidencia() {
@@ -4684,11 +4793,7 @@ async def admin():
     }
 
     function evCloseLightbox(e) {
-        if (e.target.id === 'ev-lightbox' || e.target.id === 'ev-lb-img') {
-            document.getElementById('ev-lightbox').style.display = 'none';
-            const vid = document.getElementById('ev-lb-video');
-            vid.pause(); vid.removeAttribute('src'); vid.load();
-        }
+        if (e.target.id === 'ev-lightbox') evCerrarLightbox();   // clic en el fondo oscuro
     }
 
     async function evDescargarZip() {

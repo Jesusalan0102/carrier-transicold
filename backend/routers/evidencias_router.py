@@ -574,7 +574,8 @@ def listar_evidencias(
     asignacion_id: Optional[int] = None,   # solo los archivos de una actividad
     current_user=Depends(require_admin_or_visor)
 ):
-    offset = (page - 1) * per_page
+    per_page = max(1, min(per_page, 500))          # la galería pide hasta 500 (solo datos, sin archivos)
+    offset = (max(page, 1) - 1) * per_page
     where, params = ["e.unit_number=%s"], [unit_number]
     if tipo in ("video", "foto"):
         where.append("COALESCE(e.tipo,'foto')=%s")
