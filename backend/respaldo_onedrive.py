@@ -7,7 +7,10 @@ con un archivo .jsonl por tabla (una fila por línea, conserva NULL y tipos) y e
 Qué NO guarda: el contenido binario de los archivos (columnas BLOB y la tabla evidencia_partes): las fotos y
 videos ya tienen su copia en OneDrive y meterlos aquí haría el respaldo enorme. Con este ZIP + las carpetas de
 Evidencias de OneDrive se puede reconstruir todo: cada fila de `evidencias` conserva el id del archivo en OneDrive.
-Se conservan los últimos 14 respaldos. Lo dispara el monitor de salud (cada ~24 h) o el admin a mano.
+Se conservan los últimos 14 respaldos.
+Lo dispara `programador_respaldo_nocturno` (todas las noches a HORA_RESPALDO, hora de Tijuana; variable de
+entorno RESPALDO_HORA), con reintentos y aviso push a los admins si falla. El monitor de salud queda como
+red de seguridad (si pasan >30 h sin respaldo bueno) y el admin puede lanzarlo a mano.
 """
 import io
 import json
@@ -17,7 +20,8 @@ import re
 import tempfile
 import time
 import zipfile
-from datetime import datetime
+import asyncio
+from datetime import datetime, timedelta
 
 from db import execute_read
 
@@ -28,6 +32,16 @@ EXCLUIR_TABLAS = {"evidencia_partes", "salud_sistema"}     # binarios / estado i
 FILAS_POR_LOTE = 2000
 MAX_ZIP_MB = 200                                            # tope de seguridad antes de subir
 _NOMBRE_OK = re.compile(r"^[\w$]+$")
+
+# ── programación nocturna ──────────────────────────────────────────────────
+def _hora_respaldo() -> int:
+    try:
+        return min(23, max(0, int(os.getenv("RESPALDO_HORA", "2"))))
+    except ValueError:
+        return 2
+REINTENTOS = 3                          # intentos por noche
+ESPERA_REINTENTO_SEG = 30 * 60          # entre intentos
+MIN_HORAS_ENTRE_RESPALDOS = 12          # evita duplicados (redeploys, relojes)
 
 
 def _tablas() -> list:
@@ -162,3 +176,51 @@ def ejecutar_respaldo() -> dict:
             os.remove(tmp.name)
         except OSError:
             pass
+
+
+# ═══ Programación nocturna ═══════════════════════════════════════════════════
+def segundos_hasta_hora(hora: int, ahora: datetime) -> float:
+    """Segundos hasta la próxima ocurrencia de HH:00 en la zona horaria de `ahora`."""
+    objetivo = ahora.replace(hour=hora, minute=0, second=0, microsecond=0)
+    if objetivo <= ahora:
+        objetivo += timedelta(days=1)
+    return (objetivo - ahora).total_seconds()
+
+
+async def ejecutar_nocturno() -> dict:
+    """Un respaldo de la noche: omite si ya hay uno bueno reciente, reintenta y avisa si todo falla."""
+    from fastapi.concurrency import run_in_threadpool
+    import salud_evidencias as sv
+    previo = sv.leer_estado("respaldo") or {}
+    if previo.get("ts_ok") and (time.time() - float(previo["ts_ok"])) < MIN_HORAS_ENTRE_RESPALDOS * 3600:
+        return {"omitido": True}
+    r: dict = {}
+    for intento in range(1, REINTENTOS + 1):
+        try:
+            r = await run_in_threadpool(sv.respaldar)
+        except Exception as e:
+            r = {"ok": False, "error": str(e)[:300]}
+        if r.get("ok"):
+            logger.info(f"[respaldo] nocturno OK en el intento {intento}: {r.get('archivo')}")
+            return r
+        logger.warning(f"[respaldo] nocturno intento {intento}/{REINTENTOS} falló: {r.get('error')}")
+        if intento < REINTENTOS:
+            await asyncio.sleep(ESPERA_REINTENTO_SEG)
+    sv._avisar_admins("⚠️ Respaldo nocturno falló",
+                      f"{REINTENTOS} intentos sin éxito: {str(r.get('error', ''))[:140]}")
+    return r
+
+
+async def programador_respaldo_nocturno():
+    """Tarea de fondo (se registra en el startup de main.py): corre cada noche a RESPALDO_HORA (Tijuana)."""
+    import onedrive_service as od
+    while True:
+        try:
+            await asyncio.sleep(segundos_hasta_hora(_hora_respaldo(), datetime.now(od.TZ)))
+            await ejecutar_nocturno()
+            await asyncio.sleep(120)        # nunca dos veces en el mismo minuto
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:              # el programador nunca debe morir
+            logger.error(f"[respaldo] programador: {e}")
+            await asyncio.sleep(300)

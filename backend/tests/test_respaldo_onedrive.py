@@ -115,8 +115,55 @@ def test_cuando_toca_respaldar_y_cuando_es_problema():
     ahora = time.time()
     assert sv.toca_respaldo(None, ahora) and sv.toca_respaldo({"ok": False}, ahora)
     assert not sv.toca_respaldo({"ok": True, "ts_ok": ahora - 3600}, ahora)
-    assert sv.toca_respaldo({"ok": True, "ts_ok": ahora - 23 * 3600}, ahora)
+    assert not sv.toca_respaldo({"ok": True, "ts_ok": ahora - 23 * 3600}, ahora)      # la noche es la que respalda
+    assert sv.toca_respaldo({"ok": True, "ts_ok": ahora - 31 * 3600}, ahora)           # red de seguridad
     aud = {"tareas_sin_evidencia": [], "videos_sin_archivo": 0, "subidas_incompletas": []}
     assert sv.problemas({"ok": True}, aud, {"ok": True, "ts_ok": ahora - 3600}, ahora) == []
     assert "falló" in sv.problemas({"ok": True}, aud, {"ok": False, "error": "x"}, ahora)[0]
     assert "4 días" in sv.problemas({"ok": True}, aud, {"ok": True, "ts_ok": ahora - 4 * 86400}, ahora)[0]
+
+
+# ── programador nocturno ────────────────────────────────────────────────────────
+def test_segundos_hasta_la_hora_del_respaldo():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo("America/Tijuana")
+    assert rb.segundos_hasta_hora(2, datetime(2026, 10, 16, 23, 0, tzinfo=tz)) == 3 * 3600     # cruza la medianoche
+    assert rb.segundos_hasta_hora(2, datetime(2026, 10, 16, 1, 30, tzinfo=tz)) == 1800
+    assert rb.segundos_hasta_hora(2, datetime(2026, 10, 16, 2, 0, tzinfo=tz)) == 24 * 3600     # justo a la hora: mañana
+
+
+def test_nocturno_reintenta_y_avisa_si_todo_falla(monkeypatch):
+    import asyncio
+    avisos, llamadas = [], []
+    monkeypatch.setattr(sv, "leer_estado", lambda c: None)
+    monkeypatch.setattr(sv, "respaldar", lambda forzar=False: llamadas.append(1) or {"ok": False, "error": "invalid_grant"})
+    monkeypatch.setattr(sv, "_avisar_admins", lambda t, c: avisos.append((t, c)))
+    monkeypatch.setattr(rb, "ESPERA_REINTENTO_SEG", 0)
+    r = asyncio.run(rb.ejecutar_nocturno())
+    assert not r["ok"] and len(llamadas) == rb.REINTENTOS and len(avisos) == 1 and "invalid_grant" in avisos[0][1]
+
+
+def test_nocturno_se_detiene_al_primer_exito_y_no_duplica(monkeypatch):
+    import asyncio
+    llamadas = []
+    monkeypatch.setattr(sv, "leer_estado", lambda c: None)
+    monkeypatch.setattr(sv, "respaldar", lambda forzar=False: llamadas.append(1) or {"ok": True, "archivo": "x.zip"})
+    monkeypatch.setattr(rb, "ESPERA_REINTENTO_SEG", 0)
+    assert asyncio.run(rb.ejecutar_nocturno())["ok"] and len(llamadas) == 1
+    monkeypatch.setattr(sv, "leer_estado", lambda c: {"ok": True, "ts_ok": time.time() - 3600})   # ya hay uno de hace 1 h
+    assert asyncio.run(rb.ejecutar_nocturno()) == {"omitido": True} and len(llamadas) == 1
+
+
+def test_descarga_directa_solo_admin(monkeypatch, tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from routers.respaldo_router import router
+    from auth import verify_token
+    app = FastAPI(); app.include_router(router)
+    app.dependency_overrides[verify_token] = lambda: {"username": "t", "role": "tecnico"}
+    assert TestClient(app).get("/api/respaldo/descargar").status_code == 403
+    app.dependency_overrides[verify_token] = lambda: {"username": "a", "role": "admin"}
+    r = TestClient(app).get("/api/respaldo/descargar")
+    assert r.status_code == 200 and r.headers["content-type"] == "application/zip"
+    assert zipfile.ZipFile(io.BytesIO(r.content)).testzip() is None and "attachment" in r.headers["content-disposition"]

@@ -54,6 +54,7 @@ from routers.comentarios_router import router as comentarios_router
 from routers.alarmas_router     import router as alarmas_router
 from routers.juegos_router      import router as juegos_router
 from routers.schedule_router    import router as schedule_router
+from routers.respaldo_router    import router as respaldo_router
 from routers.ws                 import router as ws_router
 from routers.push_router        import router as push_router
 from routers.search_router      import router as search_router
@@ -131,6 +132,7 @@ app.include_router(comentarios_router)
 app.include_router(alarmas_router)
 app.include_router(juegos_router)
 app.include_router(schedule_router)
+app.include_router(respaldo_router)
 app.include_router(ws_router)
 app.include_router(push_router)
 app.include_router(search_router)
@@ -181,6 +183,8 @@ async def startup_event():
     asyncio.create_task(programador_reporte_semanal())
     from salud_evidencias import monitor_salud_evidencias
     asyncio.create_task(monitor_salud_evidencias())
+    from respaldo_onedrive import programador_respaldo_nocturno
+    asyncio.create_task(programador_respaldo_nocturno())
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 9000)))

@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 INTERVALO_SEG = 6 * 3600
 PRIMERA_ESPERA_SEG = 90
-RESPALDO_CADA_HORAS = 22
+RESPALDO_CADA_HORAS = 30     # red de seguridad: el respaldo normal lo hace programador_respaldo_nocturno
 RESPALDO_VENCIDO_HORAS = 72   # sin respaldo exitoso en 3 días => problema
 COPIAR_POR_CICLO = 3          # videos DB -> OneDrive por ciclo (cada uno puede pesar varios MB)
 DIAS_AUDITORIA = 14
