@@ -4,9 +4,10 @@ Respaldo diario de la BASE DE DATOS en OneDrive.
 Qué guarda: TODAS las tablas (tareas, usuarios, evidencias con sus enlaces a OneDrive, etc.) en un ZIP
   carrier-transicold/Respaldos/respaldo_AAAA-MM-DD_HHMM.zip
 con un archivo .jsonl por tabla (una fila por línea, conserva NULL y tipos) y esquema.sql.
-Qué NO guarda: el contenido binario de los archivos (columnas BLOB y la tabla evidencia_partes): las fotos y
-videos ya tienen su copia en OneDrive y meterlos aquí haría el respaldo enorme. Con este ZIP + las carpetas de
-Evidencias de OneDrive se puede reconstruir todo: cada fila de `evidencias` conserva el id del archivo en OneDrive.
+Qué NO guarda en el ZIP: el contenido binario de los archivos (columnas BLOB y la tabla evidencia_partes), para que
+no sea enorme. Las fotos y videos que estén solo en la DB los copia `respaldo_evidencias.respaldar_evidencias`
+(se llama justo después, cada noche) a sus carpetas de Evidencias/<lote>/<unidad>_<serie>/ sin duplicar nada.
+Con este ZIP + las carpetas de Evidencias de OneDrive se puede reconstruir todo.
 Se conservan los últimos 14 respaldos.
 Lo dispara `programador_respaldo_nocturno` (todas las noches a HORA_RESPALDO, hora de Tijuana; variable de
 entorno RESPALDO_HORA), con reintentos y aviso push a los admins si falla. El monitor de salud queda como
@@ -113,8 +114,8 @@ def generar_zip(ruta_zip: str) -> dict:
                     "- <tabla>.jsonl : una fila por línea (JSON). NULL se conserva como null.\n"
                     "- esquema.sql   : CREATE TABLE de cada tabla.\n"
                     "- NO incluye el contenido binario de fotos/videos (columna 'contenido' ni evidencia_partes):\n"
-                    "  los archivos viven en OneDrive/carrier-transicold/Evidencias y cada fila de 'evidencias'\n"
-                    "  guarda su onedrive_item_id para volver a enlazarlos.\n"
+                    "  el respaldo nocturno los copia aparte a OneDrive/carrier-transicold/Evidencias/<lote>/<unidad>_<serie>/\n"
+                    "  (mismo orden de carpetas que la app; sin duplicados).\n"
                     "- Contiene datos sensibles (usuarios, hashes de contraseña). No lo compartas.\n")
     return resumen
 
@@ -202,12 +203,32 @@ async def ejecutar_nocturno() -> dict:
             r = {"ok": False, "error": str(e)[:300]}
         if r.get("ok"):
             logger.info(f"[respaldo] nocturno OK en el intento {intento}: {r.get('archivo')}")
-            return r
+            return await run_in_threadpool(_respaldar_fotos_y_videos, r)
         logger.warning(f"[respaldo] nocturno intento {intento}/{REINTENTOS} falló: {r.get('error')}")
         if intento < REINTENTOS:
             await asyncio.sleep(ESPERA_REINTENTO_SEG)
     sv._avisar_admins("⚠️ Respaldo nocturno falló",
                       f"{REINTENTOS} intentos sin éxito: {str(r.get('error', ''))[:140]}")
+    return await run_in_threadpool(_respaldar_fotos_y_videos, r)
+
+
+def _respaldar_fotos_y_videos(r: dict) -> dict:
+    """Segunda parte de la noche: fotos/videos que están solo en la DB -> su carpeta de OneDrive."""
+    import salud_evidencias as sv
+    from respaldo_evidencias import respaldar_evidencias
+    try:
+        ev = respaldar_evidencias(aplicar=True)
+    except Exception as e:
+        ev = {"ok": False, "completo": False, "errores": [{"error": str(e)[:200]}]}
+    ev["ts"] = time.time()
+    try:
+        sv.guardar_estado("respaldo_evidencias", ev)
+    except Exception as e:
+        logger.warning(f"[respaldo] no se pudo guardar el estado de evidencias: {e}")
+    if not ev.get("ok"):
+        primero = (ev.get("errores") or [{}])[0].get("error") or ("quedó incompleto (se sigue mañana)" if not ev.get("completo") else "")
+        sv._avisar_admins("⚠️ Respaldo de fotos y videos", f"{len(ev.get('errores') or [])} error(es). {str(primero)[:140]}")
+    r["evidencias"] = ev
     return r
 
 

@@ -1,5 +1,8 @@
 """
-Descarga directa del respaldo de la base de datos (solo admin).
+Respaldo manual (solo admin).
+
+  GET  /api/respaldo/descargar            ZIP de la base de datos (sin depender de OneDrive)
+  POST /api/respaldo/evidencias-ahora     fotos/videos de la DB -> OneDrive (aplicar=false = solo cuenta lo pendiente)
 
 Sirve cuando OneDrive falla: genera el mismo ZIP que sube el respaldo nocturno (un .jsonl por tabla +
 esquema.sql, sin el contenido binario de fotos/videos) y lo entrega al navegador, sin tocar OneDrive.
@@ -33,3 +36,14 @@ def descargar_respaldo(current_user=Depends(verify_token)):
     nombre = f"respaldo_{datetime.now(ZoneInfo('America/Tijuana')).strftime('%Y-%m-%d_%H%M')}.zip"
     return FileResponse(tmp.name, media_type="application/zip", filename=nombre,
                         background=BackgroundTask(os.remove, tmp.name))
+
+
+@router.post("/evidencias-ahora")
+def respaldar_evidencias_ahora(aplicar: bool = False, solo_videos: bool = False, unidad: str = "",
+                               current_user=Depends(verify_token)):
+    """Corre el respaldo de fotos/videos ya, con tope de 80 s por llamada (antes del timeout del gateway).
+    Se repite hasta que `completo` sea true. Sin `aplicar=true` solo informa cuánto hay pendiente."""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    import respaldo_evidencias as rev
+    return rev.respaldar_evidencias(aplicar=aplicar, solo_videos=solo_videos, presupuesto_seg=80, unidad=unidad or None)

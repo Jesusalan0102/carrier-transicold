@@ -140,6 +140,7 @@ def test_nocturno_reintenta_y_avisa_si_todo_falla(monkeypatch):
     monkeypatch.setattr(sv, "respaldar", lambda forzar=False: llamadas.append(1) or {"ok": False, "error": "invalid_grant"})
     monkeypatch.setattr(sv, "_avisar_admins", lambda t, c: avisos.append((t, c)))
     monkeypatch.setattr(rb, "ESPERA_REINTENTO_SEG", 0)
+    monkeypatch.setattr(rb, "_respaldar_fotos_y_videos", lambda r: r)
     r = asyncio.run(rb.ejecutar_nocturno())
     assert not r["ok"] and len(llamadas) == rb.REINTENTOS and len(avisos) == 1 and "invalid_grant" in avisos[0][1]
 
@@ -150,9 +151,11 @@ def test_nocturno_se_detiene_al_primer_exito_y_no_duplica(monkeypatch):
     monkeypatch.setattr(sv, "leer_estado", lambda c: None)
     monkeypatch.setattr(sv, "respaldar", lambda forzar=False: llamadas.append(1) or {"ok": True, "archivo": "x.zip"})
     monkeypatch.setattr(rb, "ESPERA_REINTENTO_SEG", 0)
-    assert asyncio.run(rb.ejecutar_nocturno())["ok"] and len(llamadas) == 1
+    fotos = []
+    monkeypatch.setattr(rb, "_respaldar_fotos_y_videos", lambda r: fotos.append(1) or r)
+    assert asyncio.run(rb.ejecutar_nocturno())["ok"] and len(llamadas) == 1 and fotos == [1]   # tras la DB, fotos y videos
     monkeypatch.setattr(sv, "leer_estado", lambda c: {"ok": True, "ts_ok": time.time() - 3600})   # ya hay uno de hace 1 h
-    assert asyncio.run(rb.ejecutar_nocturno()) == {"omitido": True} and len(llamadas) == 1
+    assert asyncio.run(rb.ejecutar_nocturno()) == {"omitido": True} and len(llamadas) == 1 and fotos == [1]
 
 
 def test_descarga_directa_solo_admin(monkeypatch, tmp_path):
@@ -167,3 +170,19 @@ def test_descarga_directa_solo_admin(monkeypatch, tmp_path):
     r = TestClient(app).get("/api/respaldo/descargar")
     assert r.status_code == 200 and r.headers["content-type"] == "application/zip"
     assert zipfile.ZipFile(io.BytesIO(r.content)).testzip() is None and "attachment" in r.headers["content-disposition"]
+
+
+def test_nocturno_avisa_si_el_respaldo_de_fotos_y_videos_falla(monkeypatch):
+    import sys, types
+    avisos, estados = [], {}
+    monkeypatch.setattr(sv, "guardar_estado", lambda k, v: estados.__setitem__(k, v))
+    monkeypatch.setattr(sv, "_avisar_admins", lambda t, c: avisos.append((t, c)))
+    fake = types.SimpleNamespace(respaldar_evidencias=lambda aplicar=True: {
+        "ok": False, "completo": True, "errores": [{"id": 7, "error": "tamaño distinto"}]})
+    monkeypatch.setitem(sys.modules, "respaldo_evidencias", fake)
+    r = rb._respaldar_fotos_y_videos({"ok": True})
+    assert r["evidencias"]["errores"][0]["id"] == 7 and "respaldo_evidencias" in estados
+    assert len(avisos) == 1 and "tamaño distinto" in avisos[0][1]
+    fake.respaldar_evidencias = lambda aplicar=True: {"ok": True, "completo": True, "errores": []}
+    rb._respaldar_fotos_y_videos({"ok": True})
+    assert len(avisos) == 1                                                    # todo bien: no molesta
