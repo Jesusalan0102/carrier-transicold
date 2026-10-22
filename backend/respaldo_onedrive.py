@@ -229,6 +229,19 @@ def _respaldar_fotos_y_videos(r: dict) -> dict:
         primero = (ev.get("errores") or [{}])[0].get("error") or ("quedó incompleto (se sigue mañana)" if not ev.get("completo") else "")
         sv._avisar_admins("⚠️ Respaldo de fotos y videos", f"{len(ev.get('errores') or [])} error(es). {str(primero)[:140]}")
     r["evidencias"] = ev
+    # Tercera parte (opcional, LIBERAR_ESPACIO=1): quitar de la DB lo que ya está verificado en OneDrive.
+    # Se niega a correr si no hay un respaldo bueno de la DB (lo comprueba liberar_espacio.respaldo_reciente).
+    if os.getenv("LIBERAR_ESPACIO", "0") == "1":
+        try:
+            import liberar_espacio as le
+            lib = le.liberar_espacio(aplicar=True, presupuesto_seg=40 * 60)
+            lib["ts"] = time.time()
+            sv.guardar_estado("liberar_espacio", lib)
+            r["liberar_espacio"] = lib
+            if not lib.get("ok") and lib.get("error"):
+                sv._avisar_admins("⚠️ Liberar espacio de la DB", str(lib["error"])[:140])
+        except Exception as e:
+            logger.error(f"[respaldo] liberar espacio falló: {e}")
     return r
 
 
