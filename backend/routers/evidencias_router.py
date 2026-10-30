@@ -16,6 +16,7 @@ import asyncio
 import re
 import time
 import uuid
+import threading
 import requests
 from PIL import Image
 
@@ -1326,3 +1327,70 @@ def respaldo_ahora(current_user=Depends(verify_token)):
         raise HTTPException(status_code=503, detail="OneDrive no está configurado")
     import salud_evidencias as sv
     return sv.respaldar(forzar=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# RESPALDAR FOTOS Y VIDEOS DE LA DB EN OneDrive AHORA — solo admin   (NUEVO)
+# Corre en segundo plano (hilo) para no chocar con el timeout del gateway.
+# Nunca borra nada de la DB. Se puede ejecutar las veces que sea: lo ya
+# copiado (mismo nombre y tamaño) se omite.
+# ═══════════════════════════════════════════════════════════════════════════
+_RESP_EVID = {"corriendo": False, "inicio": None, "modo": None, "resultado": None}
+_RESP_EVID_LOCK = threading.Lock()
+
+
+def _correr_respaldo_evidencias(aplicar: bool, unidad: Optional[str]):
+    from respaldo_evidencias import respaldar_evidencias
+    try:
+        import salud_evidencias as sv
+    except Exception:
+        sv = None
+    try:
+        ev = respaldar_evidencias(aplicar=aplicar, presupuesto_seg=40 * 60, unidad=unidad)
+    except Exception as e:
+        logger.error(f"[respaldar-fotos-ahora] falló: {e}")
+        ev = {"ok": False, "completo": False, "error": str(e)[:300]}
+    ev["ts"] = time.time()
+    if aplicar and sv is not None:
+        try:
+            sv.guardar_estado("respaldo_evidencias", ev)
+        except Exception as e:
+            logger.warning(f"[respaldar-fotos-ahora] no se pudo guardar el estado: {e}")
+    _RESP_EVID["resultado"] = ev
+    _RESP_EVID["corriendo"] = False
+
+
+@router.post("/respaldar-fotos-ahora")
+def respaldar_fotos_ahora(simular: bool = True, unidad: Optional[str] = None,
+                          current_user=Depends(verify_token)):
+    """simular=true  -> solo cuenta lo pendiente (no sube nada).
+       simular=false -> copia a OneDrive las fotos/videos que están en la DB.
+       unidad=XXXX   -> opcional, limita el respaldo a una sola unidad."""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    if not ONEDRIVE_ENABLED:
+        raise HTTPException(status_code=503, detail="OneDrive no está configurado")
+    with _RESP_EVID_LOCK:
+        if _RESP_EVID["corriendo"]:
+            return {"mensaje": "Ya hay un respaldo en curso. Consulta GET /api/evidencias/respaldar-fotos-estado"}
+        _RESP_EVID.update(corriendo=True, inicio=time.time(),
+                          modo="SIMULACIÓN" if simular else "APLICADO", resultado=None)
+    threading.Thread(target=_correr_respaldo_evidencias, args=(not simular, unidad), daemon=True).start()
+    return {
+        "mensaje": "Iniciado",
+        "modo": _RESP_EVID["modo"],
+        "siguiente": "Consulta GET /api/evidencias/respaldar-fotos-estado cada minuto",
+    }
+
+
+@router.get("/respaldar-fotos-estado")
+def respaldar_fotos_estado(current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    seg = round(time.time() - _RESP_EVID["inicio"]) if (_RESP_EVID["corriendo"] and _RESP_EVID["inicio"]) else None
+    return {
+        "corriendo": _RESP_EVID["corriendo"],
+        "modo": _RESP_EVID["modo"],
+        "segundos_corriendo": seg,
+        "resultado": _RESP_EVID["resultado"],
+    }
