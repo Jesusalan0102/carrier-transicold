@@ -1394,3 +1394,140 @@ def respaldar_fotos_estado(current_user=Depends(verify_token)):
         "segundos_corriendo": seg,
         "resultado": _RESP_EVID["resultado"],
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# EXPORTAR EVIDENCIAS (FOTOS Y VIDEOS) QUE ESTÁN EN LA DB A ZIP — solo admin  (NUEVO)
+# No necesita OneDrive. Solo lectura: no modifica ni borra nada.
+# Incluye lotes ocultos. Va por tandas para no agotar la RAM ni el timeout:
+# cada llamada devuelve un ZIP (escrito a disco, no en memoria) y las
+# cabeceras X-Siguiente-Desde / X-Pendientes dicen cómo pedir la siguiente.
+# Estructura dentro del ZIP: Lote / Unidad / Tarea_<id>_<actividad> / <id>_<archivo>
+# Incluye LEEME.csv con lote, unidad, tarea, técnico, fecha y estado de cada archivo.
+# Un archivo que existe SOLO en OneDrive (fila sin contenido en la DB) no se puede
+# exportar sin OneDrive; la cabecera X-Solo-En-OneDrive indica cuántos son.
+# ═══════════════════════════════════════════════════════════════════════════
+EXPORT_MAX_MB = 120      # corta la tanda al pasar de este tamaño
+EXPORT_MAX_SEG = 60      # o de este tiempo (el gateway corta peticiones largas)
+
+
+@router.get("/exportar-db")
+def exportar_evidencias_db(desde_id: int = 0, limite: int = 300, unidad: Optional[str] = None,
+                           id_lote: Optional[str] = None, tipo: Optional[str] = None,
+                           current_user=Depends(verify_token)):
+    """tipo = 'foto' | 'video' (vacío = ambos). unidad / id_lote = filtros opcionales."""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    limite = max(1, min(int(limite), 1000))
+
+    filtro = ("e.id > %s AND (e.contenido IS NOT NULL OR EXISTS "
+              "(SELECT 1 FROM evidencia_partes p WHERE p.evidencia_id = e.id))")
+    params: list = [desde_id]
+    filtro_extra, params_extra = "", []
+    if unidad:
+        filtro_extra += " AND e.unit_number=%s"
+        params_extra.append(unidad)
+    if id_lote:
+        filtro_extra += " AND u.id_lote=%s"
+        params_extra.append(id_lote)
+    if tipo == "video":
+        filtro_extra += " AND (COALESCE(e.tipo,'')='video' OR LOWER(e.nombre_archivo) REGEXP %s)"
+        params_extra.append(_VIDEO_REGEX)
+    elif tipo == "foto":
+        filtro_extra += " AND NOT (COALESCE(e.tipo,'')='video' OR LOWER(e.nombre_archivo) REGEXP %s)"
+        params_extra.append(_VIDEO_REGEX)
+    filtro += filtro_extra
+    params += params_extra
+
+    filas = execute_read(
+        "SELECT e.id, e.unit_number, e.nombre_archivo, e.tecnico, e.asignacion_id, e.created_at, "
+        "COALESCE(e.tipo,'foto') AS tipo, a.actividad_id AS actividad, u.id_lote AS id_lote, "
+        "LENGTH(e.contenido) AS bytes_db "
+        "FROM evidencias e "
+        "LEFT JOIN unidades u ON u.unit_number = e.unit_number "
+        "LEFT JOIN asignaciones a ON a.id = e.asignacion_id "
+        f"WHERE {filtro} ORDER BY e.id LIMIT %s", tuple(params) + (limite,)
+    ) or []
+    if not filas:
+        raise HTTPException(status_code=404, detail="No hay más evidencias por exportar")
+
+    tmp = tempfile.NamedTemporaryFile(prefix="export_evid_", suffix=".zip", delete=False)
+    tmp.close()
+    manifiesto = [["id", "lote", "unidad", "tarea_id", "actividad", "tecnico", "fecha", "tipo",
+                   "archivo_original", "bytes", "ruta_en_zip", "estado"]]
+    inicio = time.monotonic()
+    acumulado = 0
+    ultimo_id = desde_id
+    errores = 0
+    try:
+        with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_STORED, allowZip64=True) as zf:
+            for r in filas:
+                if (time.monotonic() - inicio) > EXPORT_MAX_SEG or acumulado > EXPORT_MAX_MB * 1048576:
+                    break                                   # el resto va en la siguiente tanda
+                ultimo_id = r["id"]
+                nombre = r["nombre_archivo"] or f"evidencia_{r['id']}"
+                carpeta = "/".join([
+                    _seguro(r.get("id_lote"), "sin_lote"),
+                    _seguro(r["unit_number"], "sin_unidad"),
+                    (f"Tarea_{r['asignacion_id']}_{_seguro(r['actividad'], 'sin_actividad')}"
+                     if r["asignacion_id"] is not None else "Sin_tarea"),
+                ])
+                ruta = f"{carpeta}/{r['id']}_{_seguro(nombre, 'archivo')}"
+                try:
+                    if r.get("bytes_db"):                           # blob en una sola fila
+                        fila = execute_read("SELECT contenido FROM evidencias WHERE id=%s", (r["id"],))
+                        datos = bytes(fila[0]["contenido"]) if fila and fila[0]["contenido"] else b""
+                        if not datos:
+                            raise Exception("sin contenido")
+                        zf.writestr(ruta, datos)
+                        tam = len(datos)
+                        datos = None
+                    else:                                           # archivo grande guardado en trozos
+                        total_partes = ep.tamano_total(r["id"])
+                        if not total_partes:
+                            raise Exception("sin contenido")
+                        tam = 0
+                        with zf.open(ruta, "w", force_zip64=True) as dest:
+                            for trozo in ep.iterar_rango(r["id"], 0, total_partes - 1):
+                                dest.write(trozo)
+                                tam += len(trozo)
+                    acumulado += tam
+                    estado = "ok"
+                except Exception as e:
+                    logger.error(f"[exportar-db] id={r['id']}: {e}")
+                    errores += 1
+                    ruta, tam, estado = "", 0, f"ERROR: {str(e)[:80]}"
+                manifiesto.append([r["id"], r.get("id_lote") or "", r["unit_number"], r["asignacion_id"] or "",
+                                   r["actividad"] or "", r["tecnico"] or "", str(r["created_at"] or ""),
+                                   r["tipo"], nombre, tam, ruta, estado])
+            buf = io.StringIO()
+            csv.writer(buf).writerows(manifiesto)
+            zf.writestr("LEEME.csv", "\ufeff" + buf.getvalue())      # BOM: Excel lo abre con acentos
+    except Exception:
+        try:
+            os.remove(tmp.name)
+        except OSError:
+            pass
+        raise
+
+    restantes = execute_read(
+        "SELECT COUNT(*) AS n FROM evidencias e LEFT JOIN unidades u ON u.unit_number = e.unit_number "
+        f"WHERE {filtro}", tuple([ultimo_id] + params[1:])
+    )
+    pendientes = int(restantes[0]["n"]) if restantes else 0
+    solo_od = execute_read(
+        "SELECT COUNT(*) AS n FROM evidencias e LEFT JOIN unidades u ON u.unit_number = e.unit_number "
+        "WHERE e.contenido IS NULL AND NOT EXISTS (SELECT 1 FROM evidencia_partes p WHERE p.evidencia_id = e.id)"
+        f"{filtro_extra}", tuple(params_extra)
+    )
+    solo_onedrive = int(solo_od[0]["n"]) if solo_od else 0
+
+    return FileResponse(
+        tmp.name, media_type="application/zip",
+        filename=f"evidencias_{filas[0]['id']}_a_{ultimo_id}.zip",
+        headers={"X-Siguiente-Desde": str(ultimo_id), "X-Pendientes": str(pendientes),
+                 "X-En-Esta-Tanda": str(len(manifiesto) - 1), "X-Errores": str(errores),
+                 "X-Solo-En-OneDrive": str(solo_onedrive),
+                 "Access-Control-Expose-Headers": "X-Siguiente-Desde, X-Pendientes, X-En-Esta-Tanda, X-Errores, X-Solo-En-OneDrive"},
+        background=BackgroundTask(lambda: os.path.exists(tmp.name) and os.remove(tmp.name)),
+    )
