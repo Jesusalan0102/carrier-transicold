@@ -11,10 +11,13 @@ from zoneinfo import ZoneInfo
 import io
 import os
 import re
+import csv
+import uuid
 import zipfile
 import asyncio
 import logging
 import tempfile
+import threading
 import time
 import concurrent.futures
 
@@ -104,111 +107,6 @@ class SeriesUpdate(BaseModel):
 # ── GESTIÓN DE LOTES — helper y endpoints (ANTES de /{unidad_id}) ──────────
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _generar_zip_backup_lote(id_lote: str) -> bytes:
-    """
-    ZIP en memoria: CSV de series + todas las fotos de evidencia del lote.
-    Usa una sola conexión DB con cursor propio para evitar 'Lost connection'
-    en queries largas de blobs (evidencias).
-    """
-    import pymysql
-    from db import get_db_connection
-
-    conn = get_db_connection()
-    if not conn:
-        raise RuntimeError("No hay conexión con la base de datos")
-
-    try:
-        with conn.cursor(pymysql.cursors.DictCursor) as cur:
-            # 1. Obtener unidades del lote
-            cur.execute("SELECT * FROM unidades WHERE id_lote=%s ORDER BY unit_number", (id_lote,))
-            unidades = cur.fetchall()
-            if not unidades:
-                return b""
-
-            buf = io.BytesIO()
-            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as zf:
-                # CSV con las series
-                columnas = list(unidades[0].keys())
-                lineas = [",".join(columnas)]
-                for u in unidades:
-                    lineas.append(",".join(str(u.get(c, "") or "") for c in columnas))
-                zf.writestr(f"unidades_{id_lote}.csv", "\n".join(lineas))
-
-                # Fotos de evidencia (meta primero, luego contenido en bloques)
-                unit_numbers = [u["unit_number"] for u in unidades]
-                if unit_numbers:
-                    ph = ",".join(["%s"] * len(unit_numbers))
-                    cur.execute(
-                        f"SELECT id, unit_number, nombre_archivo FROM evidencias WHERE unit_number IN ({ph})",
-                        tuple(unit_numbers)
-                    )
-                    meta = cur.fetchall()
-
-                    if meta:
-                        # Traer contenido de fotos en lotes de 50 para no saturar la conexión
-                        LOTE_SIZE = 50
-                        contenidos = {}
-                        ids_lista = [m["id"] for m in meta]
-                        for i in range(0, len(ids_lista), LOTE_SIZE):
-                            bloque = ids_lista[i:i + LOTE_SIZE]
-                            ph2 = ",".join(["%s"] * len(bloque))
-                            cur.execute(
-                                f"SELECT id, contenido FROM evidencias WHERE id IN ({ph2})",
-                                tuple(bloque)
-                            )
-                            for fila in cur.fetchall():
-                                if fila["contenido"]:
-                                    contenidos[fila["id"]] = fila["contenido"]
-
-                        nombres_vistos = {}
-                        for m in meta:
-                            contenido = contenidos.get(m["id"])
-                            if not contenido:
-                                contenido = _leer_partes_evidencia(m["id"])   # archivo grande guardado en partes
-                            if not contenido:
-                                continue
-                            nombre = m["nombre_archivo"] or f"foto_{m['id']}.jpg"
-                            key = (m["unit_number"], nombre)
-                            if key in nombres_vistos:
-                                nombres_vistos[key] += 1
-                                partes = nombre.rsplit(".", 1)
-                                nombre = (
-                                    f"{partes[0]}_{nombres_vistos[key]}.{partes[1]}"
-                                    if len(partes) == 2
-                                    else f"{nombre}_{nombres_vistos[key]}"
-                                )
-                            else:
-                                nombres_vistos[key] = 0
-                            zf.writestr(f"evidencias/{m['unit_number']}/{nombre}", contenido)
-
-                # Reportes de trabajo/problemas capturados por líderes para este lote
-                cur.execute(
-                    "SELECT unit_number, tipo, detalle, username_lider, fecha, created_at "
-                    "FROM reportes_unidad WHERE id_lote=%s ORDER BY unit_number, created_at",
-                    (id_lote,)
-                )
-                reportes = cur.fetchall()
-                if reportes:
-                    columnas_r = list(reportes[0].keys())
-                    lineas_r = [",".join(columnas_r)]
-                    for r in reportes:
-                        lineas_r.append(",".join(str(r.get(c, "") or "") for c in columnas_r))
-                    zf.writestr(f"reportes_lote_{id_lote}.csv", "\n".join(lineas_r))
-
-            buf.seek(0)
-            return buf.getvalue()
-    finally:
-        conn.close()
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# ── DESCARGA DE EVIDENCIAS ORGANIZADA: LOTE → VIN → ACTIVIDAD → EVIDENCIAS ──
-# ═══════════════════════════════════════════════════════════════════════════
-# No sustituye ni modifica _generar_zip_backup_lote ni cómo se almacenan las
-# evidencias (siguen viviendo en la tabla `evidencias`, ligadas a
-# unit_number / asignacion_id / tecnico / equipo). Esta función solo las
-# reorganiza al momento de exportarlas a un ZIP.
-
 _CARACTERES_INVALIDOS_WINDOWS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
@@ -277,7 +175,240 @@ def _bajar_onedrive_a_temporal(item_id):
         raise
 
 
-def _generar_zip_evidencias_por_lotes(id_lotes: list) -> str:
+def _registrar_faltante(progreso, lote, m, motivo):
+    """Anota (en el dict de progreso del trabajo) una evidencia que NO se pudo incluir en el ZIP."""
+    if progreso is None:
+        return
+    progreso.setdefault("faltantes", []).append(
+        [lote, m.get("unit_number") or "", m.get("id") or "", m.get("nombre_archivo") or "", motivo]
+    )
+
+
+def _escribir_faltantes_csv(zf, progreso):
+    """Si hubo evidencias que no se pudieron incluir, deja FALTANTES.csv dentro del ZIP."""
+    if progreso is None or not progreso.get("faltantes"):
+        return
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Lote", "Unidad", "ID_evidencia", "Archivo", "Motivo"])
+    w.writerows(progreso["faltantes"])
+    zf.writestr("FALTANTES.csv", "\ufeff" + buf.getvalue())
+
+
+def _escribir_evidencia_en_zip(zf, cur, m, ruta_zip):
+    """Escribe UNA evidencia en el ZIP leyéndola por trozos (nunca junta archivos grandes en RAM).
+    Devuelve (True, '') si quedó incluida o (False, motivo) si no se pudo."""
+    ext = ruta_zip.rsplit(".", 1)[-1].lower() if "." in ruta_zip else ""
+    es_video = (m.get("tipo") == "video") or ext in _EXT_VIDEO
+    comp = zipfile.ZIP_STORED if es_video else None
+    bytes_db = m.get("bytes_db") or 0
+    try:
+        if m.get("en_db") and bytes_db > 0:
+            if bytes_db <= ZIP_TROZO_BYTES:
+                cur.execute("SELECT contenido FROM evidencias WHERE id=%s", (m["id"],))
+                fila = cur.fetchone()
+                datos = bytes(fila["contenido"]) if fila and fila["contenido"] else b""
+                if not datos:
+                    return False, "la fila ya no tiene contenido en la base de datos"
+                zf.writestr(ruta_zip, datos, compress_type=comp)
+            else:
+                _escribir_stream_en_zip(zf, ruta_zip, _leer_blob_por_trozos(cur, m["id"], bytes_db), es_video)
+            return True, ""
+        tam_partes = _tamano_partes_evidencia(m["id"])
+        if tam_partes:
+            _escribir_stream_en_zip(zf, ruta_zip, _iterar_partes_evidencia(m["id"], tam_partes), es_video)
+            return True, ""
+        if m.get("onedrive_item_id"):
+            if not (ONEDRIVE_ENABLED and _od_iter_item_bytes is not None):
+                return False, "solo existe en OneDrive y OneDrive no está disponible"
+            ruta_temp = _bajar_onedrive_a_temporal(m["onedrive_item_id"])
+            try:
+                zf.write(ruta_temp, ruta_zip, compress_type=comp)
+            finally:
+                try:
+                    os.remove(ruta_temp)
+                except OSError:
+                    pass
+            return True, ""
+        return False, "la fila no tiene archivo en la base de datos ni en OneDrive"
+    except Exception as e:
+        return False, str(e)[:120]
+
+
+def _generar_zip_backup_lote_disco(id_lote: str, progreso=None) -> str:
+    """
+    ZIP de BACKUP de un lote escrito en DISCO (no en memoria): CSV de series + evidencias
+    (fotos y videos) + reportes del lote. Devuelve la RUTA del ZIP.
+
+    Antes se juntaban TODAS las fotos del lote en un diccionario en RAM y luego se armaba el ZIP
+    entero en un BytesIO: con lotes de 20+ unidades eso agotaba la memoria del servidor y lo
+    reiniciaba. Ahora cada evidencia se lee y se escribe al ZIP de una en una.
+    """
+    import pymysql
+    from db import get_db_connection
+
+    conn = get_db_connection()
+    if not conn:
+        raise RuntimeError("No hay conexión con la base de datos")
+
+    tmp = tempfile.NamedTemporaryFile(prefix="backup_lote_", suffix=".zip", delete=False)
+    tmp_path = tmp.name
+    tmp.close()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            cur.execute("SELECT * FROM unidades WHERE id_lote=%s ORDER BY unit_number", (id_lote,))
+            unidades = cur.fetchall()
+            if not unidades:
+                raise RuntimeError(f"El lote '{id_lote}' no tiene unidades")
+
+            unit_numbers = [u["unit_number"] for u in unidades]
+            ph = ",".join(["%s"] * len(unit_numbers))
+            try:
+                cur.execute(
+                    f"""SELECT id, unit_number, nombre_archivo, tipo, onedrive_item_id,
+                               (contenido IS NOT NULL) AS en_db, LENGTH(contenido) AS bytes_db
+                        FROM evidencias WHERE unit_number IN ({ph}) ORDER BY unit_number, id""",
+                    tuple(unit_numbers)
+                )
+                meta = cur.fetchall()
+            except Exception as e_meta:
+                logger.warning(f"[backup_lote] Fallback sin columnas nuevas: {e_meta}")
+                cur.execute(
+                    f"""SELECT id, unit_number, nombre_archivo, 'foto' AS tipo, NULL AS onedrive_item_id,
+                               (contenido IS NOT NULL) AS en_db, LENGTH(contenido) AS bytes_db
+                        FROM evidencias WHERE unit_number IN ({ph}) ORDER BY unit_number, id""",
+                    tuple(unit_numbers)
+                )
+                meta = cur.fetchall()
+
+            if progreso is not None:
+                progreso["total"] = len(meta)
+                progreso["hechos"] = 0
+
+            with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED, compresslevel=1, allowZip64=True) as zf:
+                # CSV con las series de las unidades
+                columnas = list(unidades[0].keys())
+                buf = io.StringIO()
+                w = csv.writer(buf)
+                w.writerow(columnas)
+                for u in unidades:
+                    w.writerow([("" if u.get(c) is None else str(u.get(c))) for c in columnas])
+                zf.writestr(f"unidades_{_nombre_seguro(id_lote, 'lote')}.csv", "\ufeff" + buf.getvalue())
+
+                # Evidencias: una por una, directo del origen al ZIP
+                nombres_vistos = {}
+                for m in meta:
+                    if progreso is not None:
+                        progreso["hechos"] = progreso.get("hechos", 0) + 1
+                        progreso["mensaje"] = f"Unidad {m['unit_number']}"
+                    nombre = _nombre_seguro(m.get("nombre_archivo"), f"evidencia_{m['id']}.jpg")
+                    key = (m["unit_number"], nombre)
+                    if key in nombres_vistos:
+                        nombres_vistos[key] += 1
+                        partes = nombre.rsplit(".", 1)
+                        nombre = (
+                            f"{partes[0]}_{nombres_vistos[key]}.{partes[1]}"
+                            if len(partes) == 2 else f"{nombre}_{nombres_vistos[key]}"
+                        )
+                    else:
+                        nombres_vistos[key] = 0
+                    ruta_zip = f"evidencias/{_nombre_seguro(m['unit_number'], 'unidad')}/{nombre}"
+                    ok, motivo = _escribir_evidencia_en_zip(zf, cur, m, ruta_zip)
+                    if not ok:
+                        logger.warning(f"[backup_lote] evidencia id={m['id']} no incluida: {motivo}")
+                        _registrar_faltante(progreso, id_lote, m, motivo)
+
+                # Reportes de trabajo/problemas capturados por líderes para este lote
+                try:
+                    cur.execute(
+                        "SELECT unit_number, tipo, detalle, username_lider, fecha, created_at "
+                        "FROM reportes_unidad WHERE id_lote=%s ORDER BY unit_number, created_at",
+                        (id_lote,)
+                    )
+                    reportes = cur.fetchall()
+                    if reportes:
+                        columnas_r = list(reportes[0].keys())
+                        buf_r = io.StringIO()
+                        wr = csv.writer(buf_r)
+                        wr.writerow(columnas_r)
+                        for r in reportes:
+                            wr.writerow([("" if r.get(c) is None else str(r.get(c))) for c in columnas_r])
+                        zf.writestr(f"reportes_lote_{_nombre_seguro(id_lote, 'lote')}.csv", "\ufeff" + buf_r.getvalue())
+                except Exception as e_rep:
+                    logger.warning(f"[backup_lote] No se pudieron incluir los reportes del lote: {e_rep}")
+
+                _escribir_faltantes_csv(zf, progreso)
+        return tmp_path
+    except Exception:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
+    finally:
+        conn.close()
+
+
+def _subir_zip_lote_desde_disco(id_lote: str, ruta_local: str) -> str:
+    """Sube un ZIP de backup de lote a OneDrive leyéndolo del disco por trozos de 5 MB
+    (sync_zip_lote exige los bytes completos en RAM). Misma carpeta y nombre que sync_zip_lote:
+      carrier-transicold/Reportes/Backups_Lotes/<id_lote>_backup_<fecha>.zip
+    Devuelve el webUrl."""
+    import requests
+    from urllib.parse import quote
+    import onedrive_service as od
+
+    fecha = datetime.now(TZ).strftime("%Y-%m-%d_%H%M")
+    nombre = f"{od._sanitize_folder_name(id_lote)}_backup_{fecha}.zip"
+    carpeta = od._upload_with_retry(od._ensure_folder, f"{od.REPORTES_DIR}/Backups_Lotes")
+    ruta_od = f"{carpeta}/{nombre}"
+
+    s = requests.post(
+        f"{od.GRAPH_BASE}/me/drive/root:/{quote(ruta_od, safe='/')}:/createUploadSession",
+        headers={"Authorization": f"Bearer {od._get_token()}", "Content-Type": "application/json"},
+        json={"item": {"@microsoft.graph.conflictBehavior": "replace"}}, timeout=30)
+    s.raise_for_status()
+    url = s.json()["uploadUrl"]
+
+    total = os.path.getsize(ruta_local)
+    CHUNK = 5 * 1024 * 1024            # múltiplo de 320 KiB (requisito de Graph)
+    resultado = {}
+    with open(ruta_local, "rb") as fh:
+        inicio = 0
+        while inicio < total:
+            trozo = fh.read(CHUNK)
+            fin = inicio + len(trozo) - 1
+            ultimo_error = None
+            for intento in range(3):
+                try:
+                    r = requests.put(
+                        url,
+                        headers={"Content-Length": str(len(trozo)),
+                                 "Content-Range": f"bytes {inicio}-{fin}/{total}"},
+                        data=trozo, timeout=120)
+                    if r.status_code in (429, 500, 502, 503, 504):
+                        raise requests.HTTPError(f"HTTP {r.status_code}")
+                    r.raise_for_status()
+                    resultado = r.json() if r.content else resultado
+                    ultimo_error = None
+                    break
+                except requests.RequestException as e:
+                    ultimo_error = e
+                    time.sleep(2 * (intento + 1))
+            if ultimo_error is not None:
+                raise ultimo_error
+            inicio = fin + 1
+    return resultado.get("webUrl", "")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ── DESCARGA DE EVIDENCIAS ORGANIZADA: LOTE → VIN → ACTIVIDAD → EVIDENCIAS ──
+# ═══════════════════════════════════════════════════════════════════════════
+# No sustituye ni modifica cómo se almacenan las evidencias (siguen viviendo
+# en la tabla `evidencias`, ligadas a unit_number / asignacion_id / tecnico /
+# equipo). Esta función solo las reorganiza al momento de exportarlas a un ZIP.
+
+def _generar_zip_evidencias_por_lotes(id_lotes: list, progreso=None) -> str:
     """
     ZIP en DISCO (archivo temporal) con estructura LOTE/VIN/ACTIVIDAD/evidencia,
     más un informacion.csv por carpeta de actividad (Lote,VIN,Actividad,Tecnico,
@@ -291,16 +422,19 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list) -> str:
         juntas dentro de esa carpeta (no se separan por técnico).
       - Nunca se sobrescribe un archivo: ante una colisión de nombre se
         agrega un sufijo numérico.
+      - Si alguna evidencia no se pudo incluir (por ejemplo, un video que solo vive
+        en OneDrive y OneDrive no está disponible), se anota en FALTANTES.csv.
+
+    `progreso` (opcional) es un dict que se va actualizando con 'total', 'hechos',
+    'mensaje' y 'faltantes' para que el endpoint de estado pueda mostrar avance.
 
     Se devuelve la RUTA del ZIP (no los bytes en memoria): con lotes grandes,
     tener todas las evidencias descargadas + el ZIP comprimido completos en
     RAM al mismo tiempo puede tumbar el proceso por falta de memoria.
     Escribiendo directo a disco, en cualquier momento solo se mantiene en RAM
-    la evidencia que se está procesando. El archivo se borra automáticamente
-    después de enviarse (ver el endpoint más abajo).
+    la evidencia que se está procesando.
     """
     import pymysql
-    import tempfile
     from db import get_db_connection
 
     conn = get_db_connection()
@@ -313,11 +447,28 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list) -> str:
 
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
-            with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as zf:
+            if progreso is not None:
+                progreso["hechos"] = 0
+                try:
+                    ph0 = ",".join(["%s"] * len(id_lotes))
+                    cur.execute(
+                        "SELECT COUNT(*) AS n FROM evidencias e "
+                        "INNER JOIN unidades u ON u.unit_number = e.unit_number "
+                        f"WHERE u.id_lote IN ({ph0})", tuple(id_lotes)
+                    )
+                    fila_n = cur.fetchone() or {}
+                    progreso["total"] = int(fila_n.get("n") or 0)
+                except Exception as e_cnt:
+                    logger.warning(f"[evidencias_lotes] No se pudo contar el total: {e_cnt}")
+                    progreso["total"] = 0
+
+            with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED, compresslevel=1, allowZip64=True) as zf:
                 rutas_usadas = set()
 
                 for id_lote in id_lotes:
                     lote_safe = _nombre_seguro(id_lote, "SIN_LOTE")
+                    if progreso is not None:
+                        progreso["mensaje"] = f"Lote {id_lote}"
 
                     cur.execute(
                         "SELECT unit_number, vin_number FROM unidades WHERE id_lote=%s ORDER BY unit_number",
@@ -398,12 +549,19 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list) -> str:
                     filas_csv = {}        # (vin_safe, actividad_safe) -> [filas]
 
                     for m in meta:
+                        if progreso is not None:
+                            progreso["hechos"] = progreso.get("hechos", 0) + 1
+
                         en_db = bool(m.get("en_db")) and (m.get("bytes_db") or 0) > 0
                         en_od = (not en_db) and bool(m.get("onedrive_item_id")) \
                             and ONEDRIVE_ENABLED and _od_iter_item_bytes is not None
                         # Archivo grande guardado en trozos (evidencia_partes): tercera fuente posible
                         tam_partes = 0 if (en_db or en_od) else _tamano_partes_evidencia(m["id"])
                         if not (en_db or en_od or tam_partes):
+                            if m.get("onedrive_item_id"):
+                                _registrar_faltante(progreso, id_lote, m, "solo existe en OneDrive y OneDrive no está disponible")
+                            else:
+                                _registrar_faltante(progreso, id_lote, m, "la fila no tiene archivo en la base de datos ni en OneDrive")
                             continue
 
                         vin_safe = vin_por_unidad.get(m["unit_number"])
@@ -437,7 +595,8 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list) -> str:
                                 ruta_temp = _bajar_onedrive_a_temporal(m["onedrive_item_id"])
                             except Exception as e_od:
                                 logger.error(f"[evidencias_lotes] No se pudo bajar de OneDrive id={m['id']}: {e_od}")
-                                continue    # igual que antes: sin archivo no hay consecutivo ni fila en el CSV
+                                _registrar_faltante(progreso, id_lote, m, f"no se pudo bajar de OneDrive: {str(e_od)[:100]}")
+                                continue    # sin archivo no hay consecutivo ni fila en el CSV
 
                         clave = (vin_safe, actividad_safe)
                         contadores[clave] = contadores.get(clave, 0) + 1
@@ -493,6 +652,8 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list) -> str:
                         ruta_csv = f"{lote_safe}/{vin_safe}/{actividad_safe}/informacion.csv"
                         zf.writestr(ruta_csv, "\n".join(lineas))
 
+                _escribir_faltantes_csv(zf, progreso)
+
         return tmp_path
     except Exception:
         # Si algo falla a medio camino, no dejar el temporal huérfano en disco.
@@ -539,6 +700,7 @@ def lote_por_unidad(
 
 
 # GET /api/unidades/lotes/backup?id_lote=XXX
+# ZIP de backup del lote. Se genera en DISCO (no en memoria) y se envía desde disco.
 @router.get("/lotes/backup")
 async def descargar_backup_lote(
     id_lote: str = Query(..., description="ID del lote a respaldar"),
@@ -557,23 +719,34 @@ async def descargar_backup_lote(
             detail=f"Lote '{id_lote}' no encontrado. Disponibles: {lotes_str}"
         )
 
-    zip_bytes = await run_in_threadpool(_generar_zip_backup_lote, id_lote)
-    if not zip_bytes:
+    try:
+        zip_path = await run_in_threadpool(_generar_zip_backup_lote_disco, id_lote)
+    except Exception as e:
+        logger.exception(f"[backup_lote] Falló la generación del ZIP para '{id_lote}': {e}")
+        raise HTTPException(status_code=500, detail=f"Error al generar el ZIP: {e}")
+    if not zip_path or not os.path.exists(zip_path) or os.path.getsize(zip_path) == 0:
         raise HTTPException(status_code=500, detail="Error al generar el ZIP")
 
+    def _borrar_temp():
+        try:
+            os.remove(zip_path)
+        except OSError:
+            pass
+
     nombre_safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in id_lote)
-    return StreamingResponse(
-        io.BytesIO(zip_bytes),
+    return FileResponse(
+        zip_path,
         media_type="application/zip",
-        headers={
-            "Content-Disposition": f"attachment; filename=backup_lote_{nombre_safe}.zip",
-            "Cache-Control": "no-store",
-        }
+        filename=f"backup_lote_{nombre_safe}.zip",
+        headers={"Cache-Control": "no-store"},
+        background=BackgroundTask(_borrar_temp)
     )
 
 
 # GET /api/unidades/lotes/evidencias-zip?id_lote=A&id_lote=B  (uno o varios)
 # ZIP organizado LOTE/VIN/ACTIVIDAD/evidencia + informacion.csv por actividad.
+# (Versión directa, se conserva por compatibilidad. El botón de la app usa ahora los
+#  endpoints de "zip-trabajo" de más abajo, que no se cancelan en lotes grandes.)
 @router.get("/lotes/evidencias-zip")
 async def descargar_evidencias_lotes(
     id_lote: List[str] = Query(..., description="Uno o más IDs de lote a exportar"),
@@ -632,6 +805,170 @@ async def descargar_evidencias_lotes(
     )
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# ── TRABAJOS DE ZIP EN SEGUNDO PLANO (evidencias de lotes y backup de lote) ─
+# ═══════════════════════════════════════════════════════════════════════════
+# Armar el ZIP de un lote grande (20+ unidades, fotos y videos) tarda minutos. Si se hace
+# dentro de UNA sola petición HTTP, el navegador / el gateway cortan la conexión por falta
+# de respuesta y la descarga "se cancela". Aquí el ZIP se genera en un hilo aparte:
+#   1) POST  /lotes/zip-trabajo/iniciar        -> arranca el trabajo y devuelve job_id (al instante)
+#   2) GET   /lotes/zip-trabajo/{job_id}       -> estado y progreso (la pantalla lo consulta cada 2 s)
+#   3) GET   /lotes/zip-trabajo/{job_id}/archivo -> descarga el ZIP ya terminado (rápido, desde disco)
+# Solo corre UN trabajo a la vez (el servidor es chico y trabaja con 1 worker).
+# Los trabajos viven en memoria: si el servidor se reinicia, se pierden y hay que repetirlos.
+_JOBS_ZIP = {}
+_JOBS_ZIP_LOCK = threading.Lock()
+_JOB_TTL_SEG = 90 * 60          # un ZIP terminado se conserva 90 min para poder descargarlo
+
+
+def _borrar_archivo_trabajo(job):
+    ruta = job.get("ruta")
+    if ruta:
+        try:
+            os.remove(ruta)
+        except OSError:
+            pass
+
+
+def _limpiar_trabajos_zip(usuario=None):
+    """Quita trabajos viejos (y sus ZIP en disco). Si se indica usuario, también sus trabajos
+    anteriores ya terminados, para no acumular archivos grandes en el disco del servidor."""
+    ahora = time.time()
+    for jid in list(_JOBS_ZIP.keys()):
+        j = _JOBS_ZIP.get(jid)
+        if not j or j["estado"] not in ("listo", "error"):
+            continue
+        vencido = (ahora - j["creado"]) > _JOB_TTL_SEG
+        del_usuario = usuario is not None and j.get("usuario") == usuario
+        if vencido or del_usuario:
+            _borrar_archivo_trabajo(j)
+            _JOBS_ZIP.pop(jid, None)
+
+
+def _correr_trabajo_zip(job_id):
+    job = _JOBS_ZIP.get(job_id)
+    if not job:
+        return
+    try:
+        job["estado"] = "generando"
+        if job["tipo"] == "backup":
+            ruta = _generar_zip_backup_lote_disco(job["lotes"][0], job)
+        else:
+            ruta = _generar_zip_evidencias_por_lotes(job["lotes"], job)
+        if not ruta or not os.path.exists(ruta) or os.path.getsize(ruta) == 0:
+            raise RuntimeError("No se generó el ZIP (sin datos para los lotes seleccionados)")
+        job["ruta"] = ruta
+        job["mb"] = round(os.path.getsize(ruta) / (1024 * 1024), 1)
+        job["estado"] = "listo"
+        logger.info(f"[zip_trabajo] {job_id} listo: {job['tipo']} {job['lotes']} → {job['mb']} MB, "
+                    f"faltantes={len(job.get('faltantes') or [])}")
+    except Exception as e:
+        logger.exception(f"[zip_trabajo] {job_id} falló: {e}")
+        job["estado"] = "error"
+        job["error"] = str(e)[:300]
+
+
+# POST /api/unidades/lotes/zip-trabajo/iniciar?tipo=evidencias|backup&id_lote=A&id_lote=B
+@router.post("/lotes/zip-trabajo/iniciar")
+def iniciar_trabajo_zip(
+    tipo: str = Query("evidencias", description="evidencias (uno o varios lotes) o backup (un lote)"),
+    id_lote: List[str] = Query(..., description="Uno o más IDs de lote"),
+    current_user=Depends(verify_token)
+):
+    if tipo not in ("evidencias", "backup"):
+        raise HTTPException(status_code=400, detail="tipo debe ser 'evidencias' o 'backup'")
+    roles = ("admin", "visor") if tipo == "evidencias" else ("admin",)
+    if current_user["role"] not in roles:
+        raise HTTPException(status_code=403, detail="No tienes permiso para esta descarga")
+
+    id_lotes = list(dict.fromkeys(l.strip() for l in id_lote if l and l.strip()))
+    if not id_lotes:
+        raise HTTPException(status_code=400, detail="Debes seleccionar al menos un lote")
+    if tipo == "backup" and len(id_lotes) != 1:
+        raise HTTPException(status_code=400, detail="El backup se genera de un lote a la vez")
+
+    placeholders = ",".join(["%s"] * len(id_lotes))
+    filas = execute_read(
+        f"SELECT DISTINCT id_lote FROM unidades WHERE id_lote IN ({placeholders})", tuple(id_lotes)
+    )
+    existentes = {r["id_lote"] for r in (filas or [])}
+    faltantes = [l for l in id_lotes if l not in existentes]
+    if faltantes:
+        raise HTTPException(status_code=404, detail=f"Lote(s) no encontrado(s): {', '.join(faltantes)}")
+
+    usuario = current_user.get("username")
+    with _JOBS_ZIP_LOCK:
+        _limpiar_trabajos_zip()
+        en_curso = [j for j in _JOBS_ZIP.values() if j["estado"] in ("en_cola", "generando")]
+        for j in en_curso:
+            if j["usuario"] == usuario and j["tipo"] == tipo and j["lotes"] == id_lotes:
+                return {"job_id": j["id"], "reanudado": True}      # misma exportación: se reengancha
+        if en_curso:
+            quien = en_curso[0].get("usuario") or "otro usuario"
+            raise HTTPException(
+                status_code=409,
+                detail=f"Ya hay una exportación en curso (iniciada por {quien}). Espera a que termine e inténtalo de nuevo."
+            )
+        _limpiar_trabajos_zip(usuario=usuario)                      # libera los ZIP anteriores de este usuario
+
+        job_id = uuid.uuid4().hex[:12]
+        nombre_lotes = "_".join(_nombre_seguro(l, "LOTE") for l in id_lotes)
+        if len(nombre_lotes) > 120:
+            nombre_lotes = f"{len(id_lotes)}_lotes"
+        nombre_archivo = (f"backup_lote_{nombre_lotes}.zip" if tipo == "backup"
+                          else f"EVIDENCIAS_{nombre_lotes}.zip")
+        _JOBS_ZIP[job_id] = {
+            "id": job_id, "tipo": tipo, "lotes": id_lotes, "usuario": usuario,
+            "estado": "en_cola", "creado": time.time(), "nombre": nombre_archivo,
+            "hechos": 0, "total": 0, "mensaje": "", "faltantes": [],
+            "ruta": None, "mb": 0, "error": None,
+        }
+    logger.info(f"[zip_trabajo] {job_id} iniciado por {usuario}: {tipo} {id_lotes}")
+    threading.Thread(target=_correr_trabajo_zip, args=(job_id,), daemon=True).start()
+    return {"job_id": job_id, "reanudado": False}
+
+
+def _trabajo_o_404(job_id: str, current_user):
+    job = _JOBS_ZIP.get(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=404,
+            detail="Exportación no encontrada (el servidor pudo haberse reiniciado). Vuelve a iniciarla."
+        )
+    roles = ("admin", "visor") if job["tipo"] == "evidencias" else ("admin",)
+    if current_user["role"] not in roles:
+        raise HTTPException(status_code=403, detail="No tienes permiso para esta descarga")
+    return job
+
+
+# GET /api/unidades/lotes/zip-trabajo/{job_id}
+@router.get("/lotes/zip-trabajo/{job_id}")
+def estado_trabajo_zip(job_id: str, current_user=Depends(verify_token)):
+    job = _trabajo_o_404(job_id, current_user)
+    return {
+        "estado": job["estado"], "hechos": job.get("hechos", 0), "total": job.get("total", 0),
+        "mensaje": job.get("mensaje", ""), "error": job.get("error"), "mb": job.get("mb", 0),
+        "faltantes": len(job.get("faltantes") or []), "nombre": job["nombre"],
+    }
+
+
+# GET /api/unidades/lotes/zip-trabajo/{job_id}/archivo
+@router.get("/lotes/zip-trabajo/{job_id}/archivo")
+def descargar_trabajo_zip(job_id: str, current_user=Depends(verify_token)):
+    job = _trabajo_o_404(job_id, current_user)
+    if job["estado"] != "listo":
+        raise HTTPException(status_code=409, detail="El ZIP todavía no está listo")
+    ruta = job.get("ruta")
+    if not ruta or not os.path.exists(ruta):
+        raise HTTPException(status_code=410, detail="El archivo ya no está en el servidor. Vuelve a generarlo.")
+    # No se borra al terminar de enviarse: si la descarga se corta se puede repetir sin regenerar
+    # (se limpia solo a los 90 min o al iniciar otra exportación del mismo usuario).
+    return FileResponse(
+        ruta, media_type="application/zip", filename=job["nombre"],
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 # POST /api/unidades/lotes/ocultar?id_lote=XXX&backup_onedrive=true/false
 @router.post("/lotes/ocultar")
 async def ocultar_lote(
@@ -659,18 +996,23 @@ async def ocultar_lote(
         if not ONEDRIVE_ENABLED:
             respuesta["backup_aviso"] = "OneDrive no disponible en este servidor; el lote fue ocultado sin backup."
         else:
-            # Lanzar backup en background — el cliente ya recibió confirmación
+            # Lanzar backup en background — el cliente ya recibió confirmación.
+            # El ZIP se arma en disco y se sube por trozos (sin juntar todo en RAM).
             def _tarea_backup():
+                ruta = None
                 try:
                     logger.info(f"[ocultar_lote] Iniciando backup background para '{id_lote}'")
-                    zip_bytes = _generar_zip_backup_lote(id_lote)
-                    if zip_bytes:
-                        web_url = sync_zip_lote(id_lote, zip_bytes)
-                        logger.info(f"[ocultar_lote] Backup OneDrive completado: {web_url}")
-                    else:
-                        logger.warning(f"[ocultar_lote] ZIP vacío para '{id_lote}', sin backup")
+                    ruta = _generar_zip_backup_lote_disco(id_lote)
+                    web_url = _subir_zip_lote_desde_disco(id_lote, ruta)
+                    logger.info(f"[ocultar_lote] Backup OneDrive completado: {web_url}")
                 except Exception as e:
                     logger.error(f"[ocultar_lote] Backup OneDrive falló para '{id_lote}': {e}")
+                finally:
+                    if ruta:
+                        try:
+                            os.remove(ruta)
+                        except OSError:
+                            pass
 
             background_tasks.add_task(_tarea_backup)
             respuesta["backup_aviso"] = "El backup a OneDrive se está procesando en segundo plano."
