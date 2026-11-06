@@ -261,22 +261,51 @@ def _generar_zip_backup_lote_disco(id_lote: str, progreso=None) -> str:
             if not unidades:
                 raise RuntimeError(f"El lote '{id_lote}' no tiene unidades")
 
-            unit_numbers = [u["unit_number"] for u in unidades]
+            # Mismo orden que "Descargar evidencias" y que usa el equipo para archivar:
+            #   evidencias/<lote>/<VIN>/<actividad>/<NN_actividad_vin_tecnico_fecha_hora>.ext  (+ informacion.csv)
+            # Si una unidad no tiene VIN capturado se usa su # económico; si dos unidades del lote
+            # comparten VIN se desambigua con _1, _2…
+            lote_safe = _nombre_seguro(id_lote, "SIN_LOTE")
+            vin_por_unidad, vin_usados = {}, {}
+            for u in unidades:
+                vin_base = (u.get("vin_number") or "").strip() or u["unit_number"]
+                vin_safe = _nombre_seguro(vin_base, u["unit_number"])
+                if vin_safe in vin_usados:
+                    vin_usados[vin_safe] += 1
+                    vin_safe = f"{vin_safe}_{vin_usados[vin_safe]}"
+                else:
+                    vin_usados[vin_safe] = 0
+                vin_por_unidad[u["unit_number"]] = vin_safe
+
+            unit_numbers = list(vin_por_unidad.keys())
             ph = ",".join(["%s"] * len(unit_numbers))
             try:
                 cur.execute(
-                    f"""SELECT id, unit_number, nombre_archivo, tipo, onedrive_item_id,
-                               (contenido IS NOT NULL) AS en_db, LENGTH(contenido) AS bytes_db
-                        FROM evidencias WHERE unit_number IN ({ph}) ORDER BY unit_number, id""",
+                    f"""SELECT e.id, e.unit_number, e.nombre_archivo, e.tecnico, e.equipo,
+                               e.asignacion_id, e.tipo, e.onedrive_item_id,
+                               (e.contenido IS NOT NULL) AS en_db, LENGTH(e.contenido) AS bytes_db,
+                               COALESCE(e.created_at, NOW()) AS fecha_hora,
+                               a.actividad_id AS actividad
+                        FROM evidencias e
+                        LEFT JOIN asignaciones a ON a.id = e.asignacion_id
+                        WHERE e.unit_number IN ({ph})
+                        ORDER BY e.unit_number, actividad, e.id""",
                     tuple(unit_numbers)
                 )
                 meta = cur.fetchall()
             except Exception as e_meta:
                 logger.warning(f"[backup_lote] Fallback sin columnas nuevas: {e_meta}")
                 cur.execute(
-                    f"""SELECT id, unit_number, nombre_archivo, 'foto' AS tipo, NULL AS onedrive_item_id,
-                               (contenido IS NOT NULL) AS en_db, LENGTH(contenido) AS bytes_db
-                        FROM evidencias WHERE unit_number IN ({ph}) ORDER BY unit_number, id""",
+                    f"""SELECT e.id, e.unit_number, e.nombre_archivo, e.tecnico,
+                               NULL AS equipo, e.asignacion_id, 'foto' AS tipo,
+                               NULL AS onedrive_item_id,
+                               (e.contenido IS NOT NULL) AS en_db, LENGTH(e.contenido) AS bytes_db,
+                               COALESCE(e.created_at, NOW()) AS fecha_hora,
+                               a.actividad_id AS actividad
+                        FROM evidencias e
+                        LEFT JOIN asignaciones a ON a.id = e.asignacion_id
+                        WHERE e.unit_number IN ({ph})
+                        ORDER BY e.unit_number, actividad, e.id""",
                     tuple(unit_numbers)
                 )
                 meta = cur.fetchall()
@@ -295,28 +324,68 @@ def _generar_zip_backup_lote_disco(id_lote: str, progreso=None) -> str:
                     w.writerow([("" if u.get(c) is None else str(u.get(c))) for c in columnas])
                 zf.writestr(f"unidades_{_nombre_seguro(id_lote, 'lote')}.csv", "\ufeff" + buf.getvalue())
 
+                # Carpeta de cada VIN aunque no tenga evidencias (misma estructura que la exportación)
+                for vin_safe in vin_por_unidad.values():
+                    zf.writestr(f"evidencias/{lote_safe}/{vin_safe}/", "")
+
                 # Evidencias: una por una, directo del origen al ZIP
-                nombres_vistos = {}
+                rutas_usadas = set()
+                contadores = {}      # (vin_safe, actividad_safe) -> consecutivo
+                filas_csv = {}       # (vin_safe, actividad_safe) -> [filas]
                 for m in meta:
                     if progreso is not None:
                         progreso["hechos"] = progreso.get("hechos", 0) + 1
                         progreso["mensaje"] = f"Unidad {m['unit_number']}"
-                    nombre = _nombre_seguro(m.get("nombre_archivo"), f"evidencia_{m['id']}.jpg")
-                    key = (m["unit_number"], nombre)
-                    if key in nombres_vistos:
-                        nombres_vistos[key] += 1
-                        partes = nombre.rsplit(".", 1)
-                        nombre = (
-                            f"{partes[0]}_{nombres_vistos[key]}.{partes[1]}"
-                            if len(partes) == 2 else f"{nombre}_{nombres_vistos[key]}"
-                        )
-                    else:
-                        nombres_vistos[key] = 0
-                    ruta_zip = f"evidencias/{_nombre_seguro(m['unit_number'], 'unidad')}/{nombre}"
+                    vin_safe = vin_por_unidad.get(m["unit_number"])
+                    if not vin_safe:
+                        continue
+                    actividad_original = m.get("actividad") or "Sin actividad"
+                    actividad_safe = _nombre_seguro(actividad_original, "Sin_actividad")
+                    tecnico_original = m.get("tecnico") or ""
+                    tecnico_safe = _nombre_seguro(tecnico_original, "Sin_tecnico")
+
+                    fh = m.get("fecha_hora")
+                    try:
+                        fecha = fh.strftime("%Y-%m-%d")
+                        hora_archivo = fh.strftime("%H-%M-%S")
+                        hora_csv = fh.strftime("%H:%M:%S")
+                    except Exception:
+                        fecha, hora_archivo, hora_csv = "sin-fecha", "sin-hora", ""
+
+                    nombre_orig = m.get("nombre_archivo") or ""
+                    ext = nombre_orig.rsplit(".", 1)[-1].lower() if "." in nombre_orig else (
+                        "mp4" if m.get("tipo") == "video" else "jpg"
+                    )
+                    ext = _nombre_seguro(ext, "jpg")
+
+                    clave = (vin_safe, actividad_safe)
+                    idx = contadores.get(clave, 0) + 1
+                    base = f"{idx:02d}_{actividad_safe}_{vin_safe}_{tecnico_safe}_{fecha}_{hora_archivo}"
+                    carpeta = f"evidencias/{lote_safe}/{vin_safe}/{actividad_safe}"
+                    ruta_zip, sufijo = f"{carpeta}/{base}.{ext}", 1
+                    while ruta_zip in rutas_usadas:      # nunca sobrescribir
+                        sufijo += 1
+                        ruta_zip = f"{carpeta}/{base}_{sufijo}.{ext}"
+                    rutas_usadas.add(ruta_zip)
+
                     ok, motivo = _escribir_evidencia_en_zip(zf, cur, m, ruta_zip)
                     if not ok:
                         logger.warning(f"[backup_lote] evidencia id={m['id']} no incluida: {motivo}")
                         _registrar_faltante(progreso, id_lote, m, motivo)
+                        continue
+                    contadores[clave] = idx
+                    filas_csv.setdefault(clave, []).append([
+                        id_lote, vin_safe, actividad_original, tecnico_original,
+                        fecha, hora_csv, ruta_zip.rsplit("/", 1)[-1], m.get("equipo") or ""
+                    ])
+
+                # informacion.csv por carpeta de actividad (igual que "Descargar evidencias")
+                for (vin_safe, actividad_safe), filas in filas_csv.items():
+                    lineas = ["Lote,VIN,Actividad,Tecnico,Fecha,Hora,Archivo,Equipo"]
+                    for f in filas:
+                        lineas.append(",".join('"' + str(x).replace('"', '""') + '"' for x in f))
+                    zf.writestr(f"evidencias/{lote_safe}/{vin_safe}/{actividad_safe}/informacion.csv",
+                                "\n".join(lineas))
 
                 # Reportes de trabajo/problemas capturados por líderes para este lote
                 try:
