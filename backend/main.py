@@ -35,6 +35,10 @@ else:
 from routers.auth_router import router as auth_router
 from routers.auth_router import refresh_router
 
+# ── Licencia / activación por serial (ver licencia.py) ────────────────────────
+from routers.licencia_router import router as licencia_router
+from licencia import middleware_licencia
+
 # ── Páginas web /app/* ────────────────────────────────────────────────────────
 from routers.web_router import router as web_router
 
@@ -75,6 +79,11 @@ app = FastAPI(
     description="Sistema Operativo Carrier Transicold — API REST"
 )
 
+# La licencia se revisa dentro de CORS: así incluso las respuestas 403 de "licencia requerida"
+# llevan los encabezados CORS. Solo actúa si LICENSE_REQUIRED=1 (por defecto no hace nada).
+from starlette.middleware.base import BaseHTTPMiddleware
+app.add_middleware(BaseHTTPMiddleware, dispatch=middleware_licencia)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -112,6 +121,9 @@ async def manejador_global_de_errores(request: Request, exc: Exception):
 # ── Registro de routers ───────────────────────────────────────────────────────
 app.include_router(auth_router,          prefix="/api/auth",     tags=["auth"])
 app.include_router(refresh_router,       prefix="/api/auth",     tags=["auth"])
+
+# Activación por serial: /activar y /api/licencia/*
+app.include_router(licencia_router)
 
 # web_router primero (rutas /app/* no deben ceder a los de /api)
 app.include_router(web_router)
