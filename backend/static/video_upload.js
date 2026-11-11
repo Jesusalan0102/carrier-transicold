@@ -2,7 +2,7 @@
  * video_upload.js — Subida de video por partes, reanudable e idempotente.
  *
  * window.subirVideoResumible(archivo, opciones) -> Promise<{evidenciaId}>
- *   opciones: { clientId, unidad, asignacionId, equipo, tecnico (solo admin), nombre, mime, onProgress(0..1), onEstado(texto) }
+ *   opciones: { clientId, unidad, asignacionId, equipo, tecnico (solo admin), seccion, nombre, mime, onProgress(0..1), onEstado(texto) }
  *
  * Rechaza con un Error que puede traer:
  *   e.fallback   = true → el servidor no soporta subida por partes: usar /api/evidencias/upload
@@ -43,7 +43,7 @@
                 body: JSON.stringify({
                     client_id: op.clientId, unidad: op.unidad, asignacion_id: op.asignacionId != null ? Number(op.asignacionId) : null,
                     nombre: nombre, tamano: total, mime: op.mime || archivo.type || null, equipo: op.equipo || null,
-                    tecnico: op.tecnico || null
+                    tecnico: op.tecnico || null, seccion: op.seccion || null
                 })
             });
             if (res.status === 503) { var f = new Error('Subida por partes no disponible'); f.fallback = true; throw f; }

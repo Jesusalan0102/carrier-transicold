@@ -765,6 +765,7 @@ def _run_migrations():
                     "Accesorios", "Toma de Valores", "Evidencia", "Toma de Series",
                     "Extra Eléctrico", "Extra Soldador",
                     "Retrabajo Eléctrico", "Retrabajo Soldador",
+                    "Video de liberación",
                 ]
                 for nombre in actividades_default:
                     cur.execute(
@@ -774,6 +775,35 @@ def _run_migrations():
                 print("✅ Migración: tabla actividades_catalogo verificada/poblada")
             except Exception as e_act:
                 print(f"⚠️  Migración (actividades_catalogo) omitida: {e_act}")
+
+            # ── Secciones de evidencia (Reefer / Evaporador / Blower / Tanque) ──────────
+            # lotes_config.secciones_evidencia : secciones habilitadas por el admin para TODO el lote
+            # evidencias.seccion               : sección con la que se tomó cada evidencia
+            # video_uploads.seccion            : se conserva en la sesión de subida de video por partes
+            for _tabla, _col, _ddl in (
+                ("lotes_config",  "secciones_evidencia", "VARCHAR(120) DEFAULT NULL"),
+                ("evidencias",    "seccion",             "VARCHAR(20) DEFAULT NULL"),
+                ("video_uploads", "seccion",             "VARCHAR(20) DEFAULT NULL"),
+            ):
+                try:
+                    cur.execute(
+                        "SELECT COUNT(*) FROM information_schema.COLUMNS "
+                        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = %s",
+                        (_tabla, _col),
+                    )
+                    _r = cur.fetchone()
+                    _n = _r[0] if isinstance(_r, tuple) else list(_r.values())[0]
+                    if _n == 0:
+                        cur.execute(f"ALTER TABLE `{_tabla}` ADD COLUMN `{_col}` {_ddl}")
+                        conn.commit()
+                        print(f"✅ Migración: columna {_col} añadida a {_tabla}")
+                except Exception as e_sec:
+                    # Un ALTER fallido no debe impedir los demás (ver bug histórico de TiDB con migraciones).
+                    print(f"⚠️  Migración ({_tabla}.{_col}) omitida: {e_sec}")
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
 
             # ── asignaciones.tiempo_estimado_horas ──────────────────────────────
             # Snapshot del tiempo objetivo (tomado de actividades_catalogo al

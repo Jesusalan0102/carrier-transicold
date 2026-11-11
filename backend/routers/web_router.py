@@ -1287,7 +1287,7 @@ async def dashboard():
     </div><!-- /tab-panels-wrap -->
 
     <script>
-        const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series','Extra Eléctrico','Extra Soldador','Retrabajo Eléctrico','Retrabajo Soldador'];
+        const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series','Extra Eléctrico','Extra Soldador','Retrabajo Eléctrico','Retrabajo Soldador','Video de liberación'];
         const camposSeries = {vin_number:'VIN Number',reefer_serial:'Serie Reefer',reefer_model:'Modelo Reefer',evaporator_model_1:'Evap. 1 Modelo',evaporator_serial_mjs11:'Evap. 1 Serie',evaporator_model_2:'Evap. 2 Modelo',evaporator_serial_mjd22:'Evap. 2 Serie',engine_serial:'Motor',compressor_serial:'Compresor',generator_serial:'Generador',battery_charger_serial:'Cargador Bat.'};
 
         // ── Contador en vivo de horas 'Corriendo' (se refresca cada segundo) ──
@@ -2425,7 +2425,7 @@ async def asignaciones():
     </form>
     <script>
         const fetchAuth = window.fetchAuth;
-        const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series','Extra Eléctrico','Extra Soldador','Retrabajo Eléctrico','Retrabajo Soldador'];
+        const actividades = ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series','Extra Eléctrico','Extra Soldador','Retrabajo Eléctrico','Retrabajo Soldador','Video de liberación'];
         document.getElementById('unidad').addEventListener('change', () => document.getElementById('msgAsignacion').innerHTML = '');
         document.getElementById('tecnico').addEventListener('change', () => document.getElementById('msgAsignacion').innerHTML = '');
         document.getElementById('actividad').addEventListener('change', () => document.getElementById('msgAsignacion').innerHTML = '');
@@ -3909,6 +3909,10 @@ async def admin():
             📥 <b>Arrastra aquí</b> imágenes o videos, <b>pégalos con Ctrl+V</b> o
             <button class="btn btn-navy" id="te-elegir" style="margin-left:4px;">Elegir archivos</button>
             <input type="file" id="te-input" multiple accept="image/*,video/*" style="display:none">
+            <div id="te-secc-wrap" style="display:none;margin-top:8px;font-size:12px;">
+              Sección de estos archivos:
+              <select id="te-secc" style="padding:5px 8px;border-radius:8px;border:1px solid #94a3b8;margin-left:4px;"></select>
+            </div>
             <div id="te-dest" style="font-size:12px;margin-top:6px;color:#334155;"></div>
             <div id="te-aviso" style="font-size:12px;color:#b45309;"></div>
             <div id="te-cola" style="text-align:left;font-size:12px;margin-top:6px;max-height:140px;overflow:auto;"></div>
@@ -4006,6 +4010,32 @@ async def admin():
           gap:14px;
           margin-top:4px;
         "></div>
+
+        <!-- Modal secciones de evidencia del lote -->
+        <div id="lotes-sec-modal" style="
+          display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);
+          z-index:9000;align-items:center;justify-content:center;
+        ">
+          <div style="
+            background:#fff;border-radius:12px;padding:24px;max-width:420px;width:90%;
+            box-shadow:0 20px 60px rgba(0,0,0,.3);
+          ">
+            <h3 style="font-size:15px;font-weight:600;color:var(--navy);margin-bottom:8px;display:flex;align-items:center;gap:8px;">
+              <i class="ti ti-category" style="color:#0f766e;"></i>
+              Secciones de evidencia del lote
+            </h3>
+            <p id="lotes-sec-texto" style="font-size:13px;color:var(--color-text-secondary);margin-bottom:14px;line-height:1.5;"></p>
+            <div id="lotes-sec-opciones" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px;"></div>
+            <div style="display:flex;gap:10px;">
+              <button class="btn btn-navy" id="lotes-sec-guardar" style="flex:1;justify-content:center;" onclick="lotesSeccionesGuardar()">
+                <i class="ti ti-check"></i> Validar y aplicar al lote
+              </button>
+              <button class="btn btn-ghost" style="flex:1;justify-content:center;" onclick="lotesSeccionesCerrar()">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
 
         <!-- Modal confirmación ocultar lote -->
         <div id="lotes-modal" style="
@@ -4595,15 +4625,27 @@ async def admin():
             el.appendChild(d);
         });
     }
+    const TE_SECC_ETQ = { reefer: 'Reefer', evaporador: 'Evaporador', blower: 'Blower', tanque: 'Tanque' };
+    function teSeccionElegida() {
+        const w = document.getElementById('te-secc-wrap'), sel = document.getElementById('te-secc');
+        return (w && w.style.display !== 'none' && sel && sel.value) ? sel.value : '';
+    }
     function teAgregar(archivos) {
         if (!teTarea) return;
+        const wSecc = document.getElementById('te-secc-wrap');
+        if (wSecc && wSecc.style.display !== 'none' && !teSeccionElegida()) {
+            const av0 = document.getElementById('te-aviso');
+            if (av0) av0.textContent = 'Elige primero la sección de estos archivos (Reefer, Evaporador, Blower o Tanque).';
+            return;
+        }
+        const seccionLote = teSeccionElegida();
         let rechazados = 0, repetidos = 0;
         archivos.forEach(f => {
             if (!(teEsImagen(f) || teEsVideo(f))) { rechazados++; return; }
-            const key = [teTarea.id, f.name, f.size, f.lastModified].join('|');
+            const key = [teTarea.id, seccionLote, f.name, f.size, f.lastModified].join('|');
             if (teVistos.has(key)) { repetidos++; return; }
             teVistos.add(key);
-            teCola.push({ file: f, tarea: teTarea, estado: 'espera', texto: 'En cola' });
+            teCola.push({ file: f, tarea: teTarea, seccion: seccionLote, estado: 'espera', texto: 'En cola' });
         });
         const av = document.getElementById('te-aviso');
         if (av) av.textContent = (rechazados ? `${rechazados} archivo(s) ignorado(s): solo se aceptan imágenes y videos. ` : '') +
@@ -4615,8 +4657,8 @@ async def admin():
         if (teEsVideo(f) && window.subirVideoResumible) {
             try {
                 await window.subirVideoResumible(f, {
-                    clientId: `a_${t.id}_${f.size}_${f.lastModified}_${f.name}`.slice(0, 110),
-                    unidad: t.unidad, asignacionId: t.id, tecnico, nombre: f.name,
+                    clientId: `a_${t.id}_${it.seccion || ''}_${f.size}_${f.lastModified}_${f.name}`.slice(0, 110),
+                    unidad: t.unidad, asignacionId: t.id, tecnico, nombre: f.name, seccion: it.seccion || null,
                     onProgress: p => { it.texto = `Subiendo… ${Math.round(p * 100)}%`; teRenderCola(); },
                     onEstado: tx => { it.texto = tx; teRenderCola(); }
                 });
@@ -4626,6 +4668,7 @@ async def admin():
         }
         const fd = new FormData();
         fd.append('unidad', t.unidad); fd.append('tecnico', tecnico); fd.append('asignacion_id', t.id);
+        if (it.seccion) fd.append('seccion', it.seccion);
         fd.append('files', f, f.name);
         const r = await fetchAuth('/api/evidencias/upload', { method: 'POST', body: fd });
         let d = {};
@@ -4703,7 +4746,7 @@ async def admin():
             media.style.cssText = 'max-width:100%;max-height:60vh;border-radius:8px;';
             const info = document.createElement('div');
             info.style.cssText = 'color:#e2e8f0;font-size:12px;margin-top:6px;';
-            info.append(`${f.nombre}  ·  👷 ${f.tecnico || '—'}  ·  ${(f.fecha || '').slice(0, 16)}  ·  `);
+            info.append(`${f.seccion ? '🧩 ' + (TE_SECC_ETQ[f.seccion] || f.seccion) + '  ·  ' : ''}${f.nombre}  ·  👷 ${f.tecnico || '—'}  ·  ${(f.fecha || '').slice(0, 16)}  ·  `);
             const a = document.createElement('a');
             a.href = url; a.download = f.nombre; a.textContent = '⬇️ Descargar';
             a.style.cssText = 'color:#93c5fd;text-decoration:underline;';
@@ -4728,6 +4771,23 @@ async def admin():
             ? `Se guardarán a nombre de: ${teTarea.tecnico} (subido por ${window.username})`
             : `Esta tarea no tiene técnico: se guardarán a nombre de ${window.username}`;
         const modal = document.getElementById('te-modal'), cuerpo = document.getElementById('te-cuerpo');
+        const wSecc = document.getElementById('te-secc-wrap'), selSecc = document.getElementById('te-secc');
+        if (!opciones.silencioso) {      // al refrescar tras una subida se conserva la sección elegida
+            wSecc.style.display = 'none'; selSecc.innerHTML = '';
+            if (window.role === 'admin') {
+                try {
+                    const sr = await fetchAuth(`/api/evidencias/secciones/${id}`);
+                    if (sr.ok) {
+                        const sd = await sr.json();
+                        if (sd.aplica && sd.secciones && sd.secciones.length) {
+                            selSecc.innerHTML = '<option value="">— elige —</option>' +
+                                sd.secciones.map(x => `<option value="${x.clave}">${x.etiqueta}</option>`).join('');
+                            wSecc.style.display = 'block';
+                        }
+                    }
+                } catch (_) {}
+            }
+        }
         document.getElementById('te-titulo').textContent =
             `Tarea #${id} · ${t.actividad_id || ''} · ${t.unidad || ''} · ${t.tecnico || ''}`;
         if (!opciones.silencioso) {
@@ -4781,7 +4841,7 @@ async def admin():
                 }
                 const pie = document.createElement('div');
                 pie.style.cssText = 'padding:4px 6px;color:#374151;word-break:break-all;';
-                pie.textContent = `${f.tecnico || ''} · ${(f.fecha || '').slice(5, 16)}`;
+                pie.textContent = `${f.seccion ? '[' + (TE_SECC_ETQ[f.seccion] || f.seccion) + '] ' : ''}${f.tecnico || ''} · ${(f.fecha || '').slice(5, 16)}`;
                 card.appendChild(pie);
                 cuerpo.appendChild(card);
             });
@@ -5041,6 +5101,59 @@ async def admin():
     // ── GESTIÓN DE LOTES ──────────────────────────────────────
     let _loteSeleccionado = null;
 
+    // ── Secciones de evidencia por lote (Reefer / Evaporador / Blower / Tanque) ──────────────
+    const LOTES_SECC_ETQ = { reefer: 'Reefer', evaporador: 'Evaporador', blower: 'Blower', tanque: 'Tanque' };
+    let _loteSecciones = null;
+
+    async function lotesSeccionesAbrir(id_lote) {
+        const res = await fetchAuth(`/api/unidades/lotes/secciones?id_lote=${encodeURIComponent(id_lote)}`);
+        let d = {};
+        try { d = await res.json(); } catch(e) {}
+        if (!res.ok) { alert(d.detail || `Error ${res.status} al leer las secciones del lote`); return; }
+        _loteSecciones = id_lote;
+        document.getElementById('lotes-sec-texto').textContent =
+            `Lote "${id_lote}" (${d.unidades} unidad${d.unidades!==1?'es':''}). Marca las secciones que se tomarán en las tareas ` +
+            `${(d.actividades || []).join(' y ')}. La selección se aplica a todas las unidades del lote.`;
+        document.getElementById('lotes-sec-opciones').innerHTML = d.disponibles.map(o => `
+            <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;">
+              <input type="checkbox" class="lotes-sec-check" value="${o.clave}" ${d.secciones.includes(o.clave) ? 'checked' : ''} style="cursor:pointer;width:16px;height:16px;">
+              ${o.etiqueta}
+            </label>`).join('');
+        document.getElementById('lotes-sec-modal').style.display = 'flex';
+    }
+
+    function lotesSeccionesCerrar() {
+        _loteSecciones = null;
+        document.getElementById('lotes-sec-modal').style.display = 'none';
+    }
+
+    async function lotesSeccionesGuardar() {
+        if (!_loteSecciones) return;
+        const elegidas = [...document.querySelectorAll('.lotes-sec-check:checked')].map(c => c.value);
+        const aviso = elegidas.length
+            ? `¿Validar y aplicar ${elegidas.map(c => LOTES_SECC_ETQ[c]).join(', ')} a TODAS las unidades del lote "${_loteSecciones}"?`
+            : `¿Quitar las secciones del lote "${_loteSecciones}"? Volverá a funcionar como antes (sin dividir en secciones).`;
+        if (!confirm(aviso)) return;
+        const btn = document.getElementById('lotes-sec-guardar');
+        btn.disabled = true;
+        try {
+            const res = await fetchAuth('/api/unidades/lotes/secciones', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id_lote: _loteSecciones, secciones: elegidas })
+            });
+            let d = {};
+            try { d = await res.json(); } catch(e) {}
+            if (!res.ok) { alert(d.detail || `Error ${res.status} al guardar las secciones`); return; }
+            lotesSeccionesCerrar();
+            alert(d.mensaje);
+            lotesCargar();
+        } catch(e) {
+            alert('Error de red: ' + e.message);
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
     async function lotesCargar() {
         const mostrarOcultos = document.getElementById('lotes-mostrar-ocultos').checked;
         const grid    = document.getElementById('lotes-grid');
@@ -5083,12 +5196,18 @@ async def admin():
                   <div style="font-size:13px;color:var(--color-text-secondary);">
                     <i class="ti ti-truck"></i> ${l.total_unidades} unidad${l.total_unidades!==1?'es':''}
                   </div>
+                  ${(l.secciones && l.secciones.length)
+                    ? `<div style="font-size:12px;color:#0f766e;"><i class="ti ti-category"></i> Secciones: ${l.secciones.map(c => LOTES_SECC_ETQ[c] || c).join(', ')}</div>`
+                    : ''}
                   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:2px;">
                     <button class="btn btn-ghost lote-reporte" data-idx="${safeId}" style="font-size:12px;padding:5px 10px;">
                       <i class="ti ti-file-spreadsheet"></i> Reporte Excel
                     </button>
                     <button class="btn btn-ghost lote-backup" data-idx="${safeId}" style="font-size:12px;padding:5px 10px;">
                       <i class="ti ti-download"></i> Backup ZIP
+                    </button>
+                    <button class="btn btn-ghost lote-secciones" data-idx="${safeId}" style="font-size:12px;padding:5px 10px;">
+                      <i class="ti ti-category"></i> Secciones
                     </button>
                     ${oculto
                         ? `<button class="btn btn-navy lote-mostrar" data-idx="${safeId}" style="font-size:12px;padding:5px 10px;">
@@ -5112,6 +5231,9 @@ async def admin():
             });
             grid.querySelectorAll('.lote-backup').forEach(btn => {
                 btn.addEventListener('click', () => lotesDescargarBackup(window._lotesData[btn.dataset.idx].id_lote));
+            });
+            grid.querySelectorAll('.lote-secciones').forEach(btn => {
+                btn.addEventListener('click', () => lotesSeccionesAbrir(window._lotesData[btn.dataset.idx].id_lote));
             });
             grid.querySelectorAll('.lote-mostrar').forEach(btn => {
                 btn.addEventListener('click', () => lotesMostrar(window._lotesData[btn.dataset.idx].id_lote));
@@ -5966,6 +6088,7 @@ async def mis_tareas():
                         <button id="camEvidCerrar" type="button" style="background:rgba(255,255,255,0.15);border:none;color:#fff;border-radius:50%;width:38px;height:38px;font-size:1.1rem;cursor:pointer;">✖</button>
                     </div>
                     <div id="camEvidEstado" style="position:absolute;top:56px;left:0;right:0;text-align:center;color:#facc15;font-size:0.8rem;min-height:16px;padding:0 16px;"></div>
+                    <div id="camEvidSecciones" style="position:absolute;top:82px;left:0;right:0;display:none;gap:6px;overflow-x:auto;padding:0 12px;justify-content:center;"></div>
                     <div id="camEvidHint" style="position:absolute;bottom:190px;left:0;right:0;text-align:center;color:rgba(255,255,255,0.7);font-size:0.72rem;">Toca para foto · mantén presionado para grabar video · 🔵 azul = ya subida antes</div>
                     <div id="camEvidThumbs" style="position:absolute;bottom:112px;left:0;right:0;display:flex;gap:6px;overflow-x:auto;padding:0 12px;"></div>
                     <div style="position:absolute;bottom:0;left:0;right:0;padding:18px 20px 26px;background:linear-gradient(transparent,rgba(0,0,0,0.7));display:flex;align-items:center;justify-content:center;gap:22px;">
@@ -5979,6 +6102,35 @@ async def mis_tareas():
                 const contadorEl = overlay.querySelector('#camEvidContador');
                 const estadoEl = overlay.querySelector('#camEvidEstado');
                 const thumbsEl = overlay.querySelector('#camEvidThumbs');
+
+                // ── Secciones (Reefer / Evaporador / Blower / Tanque) ─────────────
+                // Si el administrador las habilitó para el lote, cada foto/video se guarda con la
+                // sección activa. Sin secciones habilitadas la cámara funciona exactamente igual que antes.
+                const cfgSecc = (window._seccionesTarea || {})[asignacionId];
+                const seccionesCam = (cfgSecc && cfgSecc.aplica && cfgSecc.secciones && cfgSecc.secciones.length) ? cfgSecc.secciones : [];
+                const contSecc = {};
+                seccionesCam.forEach(sx => { contSecc[sx.clave] = sx.total || 0; });
+                let seccionActual = seccionesCam.length ? seccionesCam[0].clave : null;
+                const seccionesEl = overlay.querySelector('#camEvidSecciones');
+                function pintarSecciones() {
+                    if (!seccionesCam.length) return;
+                    seccionesEl.style.display = 'flex';
+                    seccionesEl.innerHTML = '';
+                    seccionesCam.forEach(sx => {
+                        const b = document.createElement('button');
+                        b.type = 'button';
+                        const activa = sx.clave === seccionActual;
+                        b.textContent = `${sx.etiqueta} (${contSecc[sx.clave] || 0})`;
+                        b.style.cssText = 'flex:0 0 auto;border-radius:18px;padding:7px 13px;font-size:0.8rem;font-weight:700;cursor:pointer;border:2px solid ' +
+                            (activa ? '#facc15' : 'rgba(255,255,255,0.35)') + ';background:' + (activa ? '#facc15' : 'rgba(0,0,0,0.45)') + ';color:' + (activa ? '#111' : '#fff') + ';';
+                        b.addEventListener('click', () => { if (grabando) return; seccionActual = sx.clave; pintarSecciones(); });
+                        seccionesEl.appendChild(b);
+                    });
+                }
+                function sumarSeccion(clave) {
+                    if (clave && clave in contSecc) { contSecc[clave]++; pintarSecciones(); }
+                }
+                pintarSecciones();
 
                 let stream = null;
                 let facing = 'environment';
@@ -6076,7 +6228,7 @@ async def mis_tareas():
                             if (record.tipo === 'video' && window.subirVideoResumible) {
                                 try {
                                     await window.subirVideoResumible(record.blob, {
-                                        clientId: record.id, unidad, asignacionId, nombre: record.filename, mime: record.mime,
+                                        clientId: record.id, unidad, asignacionId, nombre: record.filename, mime: record.mime, seccion: record.seccion || null,
                                         onProgress: p => { estadoEl.style.color = '#facc15'; estadoEl.textContent = `⬆️ Subiendo video… ${Math.round(p * 100)}%`; },
                                         onEstado: t => { estadoEl.style.color = '#facc15'; estadoEl.textContent = t; }
                                     });
@@ -6103,6 +6255,7 @@ async def mis_tareas():
                             fd.append('unidad', unidad);
                             fd.append('tecnico', window.username);
                             fd.append('asignacion_id', asignacionId);
+                            if (record.seccion) fd.append('seccion', record.seccion);
                             const mimeArchivo = record.mime || (record.blob && record.blob.type) || 'image/jpeg';
                             fd.append('files', new File([record.blob], record.filename, { type: mimeArchivo }));
                             const res = await window.fetchAuth('/api/evidencias/upload', { method: 'POST', body: fd });
@@ -6223,9 +6376,10 @@ async def mis_tareas():
                     }
                     capturadas++;
                     actualizarContador();
+                    sumarSeccion(seccionActual);
                     const ext = tipoBlob === 'video/mp4' ? 'mp4' : 'webm';
                     const id = `${asignacionId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-                    const record = { id, asignacionId, unidad, filename: `evid_${Date.now()}.${ext}`, blob, mime: tipoBlob, tipo: 'video', intentos: 0, creado: Date.now() };
+                    const record = { id, asignacionId, unidad, filename: `evid_${Date.now()}.${ext}`, blob, mime: tipoBlob, tipo: 'video', seccion: seccionActual, intentos: 0, creado: Date.now() };
                     await _evidPut(record);   // respaldo local INMEDIATO, antes de intentar subir
                     const url = URL.createObjectURL(blob);
                     const vidEl = agregarMiniaturaVideo(url, id);
@@ -6253,8 +6407,9 @@ async def mis_tareas():
                         if (!blob) return;
                         capturadas++;
                         actualizarContador();
+                        sumarSeccion(seccionActual);
                         const id = `${asignacionId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-                        const record = { id, asignacionId, unidad, filename: `evid_${Date.now()}.jpg`, blob, intentos: 0, creado: Date.now() };
+                        const record = { id, asignacionId, unidad, filename: `evid_${Date.now()}.jpg`, blob, seccion: seccionActual, intentos: 0, creado: Date.now() };
                         await _evidPut(record);   // respaldo local INMEDIATO, antes de intentar subir
                         const url = URL.createObjectURL(blob);
                         const imgEl = agregarMiniatura(url, id);
@@ -6314,7 +6469,7 @@ async def mis_tareas():
                         (data.evidencias || []).forEach(ev => {
                             const esVideo = ev.tipo === 'video';
                             const chip = document.createElement('div');
-                            chip.title = 'Ya subida antes — toca para verla';
+                            chip.title = 'Ya subida antes — toca para verla' + (ev.seccion ? ' (' + ev.seccion + ')' : '');
                             chip.style.cssText = 'flex:0 0 auto;width:52px;height:52px;border-radius:8px;border:2px solid #60a5fa;background:#111;display:flex;align-items:center;justify-content:center;font-size:1.3rem;opacity:0.9;cursor:pointer;';
                             chip.textContent = esVideo ? '🎥' : '📷';
                             chip.addEventListener('click', () => verEvidenciaPrevia(ev.id, esVideo));
@@ -6331,6 +6486,7 @@ async def mis_tareas():
                     pendientes.forEach(record => {
                         capturadas++;
                         actualizarContador();
+                        sumarSeccion(record.seccion);
                         const url = URL.createObjectURL(record.blob);
                         const el = record.tipo === 'video' ? agregarMiniaturaVideo(url, record.id) : agregarMiniatura(url, record.id);
                         encolar(record, el);
@@ -6406,6 +6562,16 @@ async def mis_tareas():
                 if (cntRes.ok) fotosPrevias = (await cntRes.json()).total || 0;
             } catch(e) {}
 
+            // ¿Esta tarea se divide en secciones (Reefer/Evaporador/Blower/Tanque)? Las habilita el administrador por lote.
+            window._seccionesTarea = window._seccionesTarea || {};
+            let cfgSecc = null;
+            try {
+                const sRes = await fetchAuth(`/api/evidencias/secciones/${id}`);
+                if (sRes.ok) cfgSecc = await sRes.json();
+            } catch(e) {}
+            window._seccionesTarea[id] = cfgSecc;
+            const usaSecciones = !!(cfgSecc && cfgSecc.aplica && cfgSecc.secciones && cfgSecc.secciones.length);
+
             const modal = document.createElement('div');
             modal.id = 'modalFinalizar';
             modal.dataset.unidad = unidad || '';
@@ -6427,7 +6593,9 @@ async def mis_tareas():
                     <label style="font-size:0.85rem;font-weight:700;color:var(--carrier-blue);display:block;margin-bottom:6px;">📸 Evidencia fotográfica o de video</label>
                     ${fotosPrevias > 0 ? `<p style="font-size:0.8rem;color:#16a34a;margin:0 0 8px;">✔ Ya tienes ${fotosPrevias} archivo(s) guardado(s) para esta actividad. Puedes agregar más o continuar.</p>` : ''}
                     <button type="button" id="btnAbrirCamaraEvid" style="width:100%;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:10px;padding:12px;font-weight:700;font-size:0.88rem;cursor:pointer;margin-bottom:8px;">📷 Tomar fotos o video con la cámara</button>
+                    ${usaSecciones ? `<p style="font-size:0.78rem;color:#92400e;margin:0 0 8px;">Esta tarea se divide en secciones: <b>${cfgSecc.secciones.map(x => x.etiqueta).join(' · ')}</b>. En la cámara elige la sección arriba de la pantalla antes de capturar.</p>` : ''}
                     <p style="font-size:0.75rem;color:#9ca3af;margin:0 0 8px;">También puedes adjuntar fotos o video ya guardados:</p>
+                    ${usaSecciones ? `<select id="seccionGaleria" style="width:100%;border:1.5px solid #d1d5db;border-radius:10px;padding:9px;font-size:0.88rem;margin-bottom:8px;"><option value="">— Elige la sección de estos archivos —</option>${cfgSecc.secciones.map(x => `<option value="${x.clave}">${x.etiqueta}</option>`).join('')}</select>` : ''}
                     <input type="file" id="fotosFinalizarInput" multiple accept="image/*,video/*" style="width:100%;margin-bottom:8px;">
                     <p style="font-size:0.75rem;color:#9ca3af;margin:0 0 8px;">Los videos de galería se comprimen automáticamente antes de subirse (deja la pantalla encendida mientras tanto).</p>
                     <div id="previewFotosFinalizar" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;"></div>
@@ -6472,6 +6640,12 @@ async def mis_tareas():
             });
 
             document.getElementById('fotosFinalizarInput').addEventListener('change', e => {
+                const selSecc = document.getElementById('seccionGaleria');
+                if (selSecc && !selSecc.value && e.target.files.length) {
+                    e.target.value = '';
+                    document.getElementById('comentarioError').textContent = 'Primero elige la sección de los archivos que vas a adjuntar.';
+                    return;
+                }
                 const files = Array.from(e.target.files).slice(0, 100);
                 const previewDiv = document.getElementById('previewFotosFinalizar');
                 previewDiv.innerHTML = '';
@@ -6503,8 +6677,9 @@ async def mis_tareas():
                 // Finalizar para registrar bien quién participó.
                 if (nVideos && !_equipoSeleccionado()) {
                     const est = document.getElementById('estadoVideosGaleria');
+                    if (selSecc) selSecc.disabled = true;   // los videos ya van en camino con esta sección
                     files.filter(f => f.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|3gp|avi|mkv)$/i.test(f.name)).forEach(f => {
-                        procesarVideoGaleria(f, { id, unidad, equipo: _equipoSeleccionado });
+                        procesarVideoGaleria(f, { id, unidad, equipo: _equipoSeleccionado, seccion: _seccionGaleria });
                         const ent = window._galeriaVideos[_clientIdGaleria(id, f)];
                         if (ent && est) { ent.oyente = t => { est.textContent = t; }; est.textContent = ent.texto; }
                     });
@@ -6574,6 +6749,7 @@ async def mis_tareas():
         // sube dos veces. Los videos se procesan de uno en uno (comprimir varios satura el celular).
         window._galeriaVideos = window._galeriaVideos || {};
         window._galeriaCola = window._galeriaCola || Promise.resolve();
+        function _seccionGaleria() { const el = document.getElementById('seccionGaleria'); return el && el.value ? el.value : null; }
         function _clientIdGaleria(asigId, f) { return `g_${asigId}_${f.size}_${f.lastModified}_${f.name}`.slice(0, 110); }
         function procesarVideoGaleria(f, ctx) {
             const cid = _clientIdGaleria(ctx.id, f);
@@ -6602,7 +6778,7 @@ async def mis_tareas():
                     e.estado = 'subiendo';
                     if (!window.subirVideoResumible) { const f0 = new Error('sin cliente'); f0.fallback = true; throw f0; }
                     await window.subirVideoResumible(r.file, {
-                        clientId: cid, unidad: ctx.unidad, asignacionId: ctx.id, equipo: ctx.equipo ? ctx.equipo() : '', nombre: f.name,
+                        clientId: cid, unidad: ctx.unidad, asignacionId: ctx.id, equipo: ctx.equipo ? ctx.equipo() : '', nombre: f.name, seccion: ctx.seccion ? ctx.seccion() : null,
                         onProgress: p => avisar(`⬆️ Subiendo video… ${Math.round(p * 100)}%`),
                         onEstado: t => avisar(t)
                     });
@@ -6675,6 +6851,11 @@ async def mis_tareas():
                 return;
             }
 
+            if (archivosNuevos.length > 0 && document.getElementById('seccionGaleria') && !_seccionGaleria()) {
+                errorEl.textContent = 'Elige la sección de los archivos adjuntos.';
+                return;
+            }
+
             const btn = document.getElementById('btnConfirmarFinalizar');
             btn.disabled = true;
 
@@ -6702,7 +6883,7 @@ async def mis_tareas():
                     const v = videosParaSubir[vi];
                     const et = videosParaSubir.length > 1 ? ` (${vi + 1}/${videosParaSubir.length})` : '';
                     try {
-                        const prom = procesarVideoGaleria(v.original, { id, unidad, equipo: _equipoSeleccionado });
+                        const prom = procesarVideoGaleria(v.original, { id, unidad, equipo: _equipoSeleccionado, seccion: _seccionGaleria });
                         const ent = window._galeriaVideos[_clientIdGaleria(id, v.original)];
                         if (ent) { ent.oyente = t => { btn.textContent = t.slice(0, 60) + et; }; btn.textContent = ent.texto.slice(0, 60) + et; }
                         const res = await prom;
@@ -6723,6 +6904,8 @@ async def mis_tareas():
                 fd.append('asignacion_id', id);
                 const equipo = _equipoSeleccionado();
                 if (equipo) fd.append('equipo', equipo);
+                const seccGal = _seccionGaleria();
+                if (seccGal) fd.append('seccion', seccGal);
                 procesados.forEach(f => fd.append('files', f));
                 let upRes;
                 try {
@@ -6751,6 +6934,21 @@ async def mis_tareas():
                     return;
                 }
                 }
+            }
+
+            // 1b) Si la tarea se divide en secciones, avisar si alguna habilitada quedó sin evidencia.
+            if (window._seccionesTarea && window._seccionesTarea[id] && window._seccionesTarea[id].aplica) {
+                try {
+                    const sr = await fetchAuth(`/api/evidencias/secciones/${id}`);
+                    if (sr.ok) {
+                        const sd = await sr.json();
+                        const faltan = (sd.secciones || []).filter(x => !x.total).map(x => x.etiqueta);
+                        if (faltan.length && !confirm(`Aún no hay evidencia en: ${faltan.join(', ')}.\n\n¿Finalizar de todas formas?`)) {
+                            btn.textContent = '✅ Confirmar y Finalizar'; btn.disabled = false;
+                            return;
+                        }
+                    }
+                } catch (e) { /* sin conexión para consultar: no se bloquea el cierre */ }
             }
 
             // 2) Cerrar la actividad con el comentario
@@ -6998,7 +7196,7 @@ async def solicitud():
         async function cargarOpciones() {
             const unidadesRes = await fetchAuth('/api/unidades/'); const unidades = await unidadesRes.json();
             document.getElementById('unidad').innerHTML = '<option value="">Unidad</option>' + (Array.isArray(unidades) ? unidades.map(u => `<option value="${u.unit_number}">${u.unit_number} (${u.id_lote})</option>`).join('') : '');
-            document.getElementById('actividad').innerHTML = '<option value="">Actividad</option>' + ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series','Extra Eléctrico','Extra Soldador','Retrabajo Eléctrico','Retrabajo Soldador'].map(a => `<option value="${a}">${a}</option>`).join('');
+            document.getElementById('actividad').innerHTML = '<option value="">Actividad</option>' + ['Cableado','Programación','Soldadura','Check de fugas','Vacío','Cerrado','Pre-viaje','Horas Corridas','Standby','GPS','Corriendo','Inspección','Accesorios','Toma de Valores','Evidencia','Toma de Series','Extra Eléctrico','Extra Soldador','Retrabajo Eléctrico','Retrabajo Soldador','Video de liberación'].map(a => `<option value="${a}">${a}</option>`).join('');
             const histRes = await fetchAuth('/api/asignaciones/?tecnico=' + username + '&limit=20'); const historial = await histRes.json();
             let hHtml = '';
             if (Array.isArray(historial)) historial.forEach(h => { const color = h.estado === 'solicitado' ? '#fef9c3' : h.estado === 'pendiente' ? '#fff7ed' : h.estado === 'en_proceso' ? '#eff6ff' : '#f0fdf4'; const borderColor = h.estado === 'solicitado' ? '#854d0e' : h.estado === 'pendiente' ? '#9a3412' : h.estado === 'en_proceso' ? '#1e40af' : '#166534'; hHtml += `<div style="background:${color};border-left:4px solid ${borderColor};padding:10px 16px;margin-bottom:6px;border-radius:8px;"><b>${h.actividad_id}</b> — Unidad: ${h.unidad} · ${h.estado}</div>`; });

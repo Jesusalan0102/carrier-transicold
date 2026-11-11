@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
+import secciones as sec
 from auth import verify_token
 from db import execute_read, execute_write
 
@@ -53,6 +54,7 @@ class IniciarVideo(BaseModel):
     mime: Optional[str] = None
     equipo: Optional[str] = None
     tecnico: Optional[str] = None      # solo admin: subir la evidencia a nombre del técnico de la tarea
+    seccion: Optional[str] = None      # Reefer/Evaporador/Blower/Tanque (solo Inspección y Evidencia)
 
 
 def _chunk() -> int:
@@ -104,10 +106,10 @@ def _registrar_evidencia(row: dict, item: dict) -> int:
         from db import execute_write_with_id
         eid = execute_write_with_id(
             "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico, asignacion_id, "
-            "tipo, mime_type, onedrive_item_id, onedrive_url, equipo) "
-            "VALUES (%s,%s,NULL,%s,%s,'video',%s,%s,%s,%s)",
+            "tipo, mime_type, onedrive_item_id, onedrive_url, equipo, seccion) "
+            "VALUES (%s,%s,NULL,%s,%s,'video',%s,%s,%s,%s,%s)",
             (row["unidad"], row["nombre_archivo"], row["tecnico"], row["asignacion_id"],
-             row["mime_type"], item.get("id"), item.get("webUrl"), row["equipo"]),
+             row["mime_type"], item.get("id"), item.get("webUrl"), row["equipo"], row.get("seccion")),
         )
         if not eid:   # el driver no devolvió el id: buscar la fila por el item de OneDrive
             r = execute_read("SELECT id FROM evidencias WHERE onedrive_item_id=%s ORDER BY id DESC LIMIT 1", (item.get("id"),))
@@ -186,6 +188,12 @@ async def iniciar(data: IniciarVideo, current_user=Depends(verify_token)):
         )
         return {"done": False, "upload_id": row["upload_id"], "next_start": 0, "chunk_size": _chunk()}
 
+    # Sección (solo Inspección/Evidencia); un nombre desconocido es un error permanente (400).
+    try:
+        seccion_final = await run_in_threadpool(sec.seccion_para_guardar, data.asignacion_id, data.seccion)
+    except ValueError as e_sec:
+        raise HTTPException(status_code=400, detail=str(e_sec))
+
     # Límite por actividad (evidencias ya guardadas + videos en curso no cuentan hasta terminar)
     if data.asignacion_id is not None:
         res = await run_in_threadpool(
@@ -213,9 +221,9 @@ async def iniciar(data: IniciarVideo, current_user=Depends(verify_token)):
         await run_in_threadpool(
             execute_write,
             "INSERT INTO video_uploads (upload_id, client_id, tecnico, unidad, asignacion_id, equipo, "
-            "nombre_archivo, mime_type, tamano, onedrive_path, upload_url) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "nombre_archivo, mime_type, tamano, onedrive_path, upload_url, seccion) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (upload_id, data.client_id, usuario, data.unidad, data.asignacion_id,
-             _normalizar_equipo(usuario, data.equipo), data.nombre[:255], mime, data.tamano, ruta, upload_url),
+             _normalizar_equipo(usuario, data.equipo), data.nombre[:255], mime, data.tamano, ruta, upload_url, seccion_final),
         )
     except Exception as e:
         # Carrera: dos "iniciar" simultáneos con el mismo client_id -> se queda con el que ganó.

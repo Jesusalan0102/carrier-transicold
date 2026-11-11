@@ -57,6 +57,9 @@ MIME_MAP = {
 }
 
 
+import secciones as sec
+
+
 def _extension(filename: str) -> str:
     return (filename.rsplit(".", 1)[-1].lower() if filename and "." in filename else "")
 
@@ -113,7 +116,8 @@ def comprimir_imagen(contenido: bytes, filename: str) -> bytes:
 
 
 # ── TAREA PARA UN SOLO ARCHIVO (foto o video) ─────────────────────────────
-async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_id: int = None, equipo: str = None) -> dict:
+async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_id: int = None, equipo: str = None,
+                        seccion: str = None) -> dict:
     """Lee, comprime (si es foto) y guarda una foto o video. Devuelve
     {'filename', 'ok', 'error'}.
 
@@ -159,7 +163,7 @@ async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_
         # La DB rechaza filas > 6 MB (error 8025): los archivos grandes van en trozos.
         if contenido_a_guardar is not None and len(contenido_a_guardar) > ep.DB_FILA_MAX:
             return await _guardar_grande_en_partes(
-                file.filename, contenido_a_guardar, unidad, tecnico, asignacion_id, tipo, mime_type, equipo
+                file.filename, contenido_a_guardar, unidad, tecnico, asignacion_id, tipo, mime_type, equipo, seccion
             )
 
         # execute_write es una llamada SÍNCRONA a MySQL; si se llama directo
@@ -171,9 +175,9 @@ async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_
         try:
             ok = await run_in_threadpool(
                 execute_write,
-                "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico, asignacion_id, tipo, mime_type, onedrive_item_id, onedrive_url, equipo) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                (unidad, file.filename, contenido_a_guardar, tecnico, asignacion_id, tipo, mime_type, onedrive_item_id, onedrive_url, equipo)
+                "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico, asignacion_id, tipo, mime_type, onedrive_item_id, onedrive_url, equipo, seccion) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                (unidad, file.filename, contenido_a_guardar, tecnico, asignacion_id, tipo, mime_type, onedrive_item_id, onedrive_url, equipo, seccion)
             )
         except Exception as e_insert:
             # Columnas nuevas (tipo/mime_type/onedrive_*/equipo) aún no migradas
@@ -202,13 +206,13 @@ async def procesar_foto(file: UploadFile, unidad: str, tecnico: str, asignacion_
         return {"filename": file.filename, "ok": False, "error": str(e)}
 
 
-def _insertar_fila_sin_contenido(filename, unidad, tecnico, asignacion_id, tipo, mime_type, equipo) -> int:
+def _insertar_fila_sin_contenido(filename, unidad, tecnico, asignacion_id, tipo, mime_type, equipo, seccion=None) -> int:
     """Crea la fila de `evidencias` con contenido NULL y devuelve su id."""
     try:
         eid = execute_write_with_id(
-            "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico, asignacion_id, tipo, mime_type, equipo) "
-            "VALUES (%s,%s,NULL,%s,%s,%s,%s,%s)",
-            (unidad, filename, tecnico, asignacion_id, tipo, mime_type, equipo),
+            "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico, asignacion_id, tipo, mime_type, equipo, seccion) "
+            "VALUES (%s,%s,NULL,%s,%s,%s,%s,%s,%s)",
+            (unidad, filename, tecnico, asignacion_id, tipo, mime_type, equipo, seccion),
         )
     except Exception as e:
         logger.warning(f"[evidencias] INSERT sin columnas nuevas (partes): {e}")
@@ -226,10 +230,10 @@ def _insertar_fila_sin_contenido(filename, unidad, tecnico, asignacion_id, tipo,
     return eid
 
 
-async def _guardar_grande_en_partes(filename, contenido, unidad, tecnico, asignacion_id, tipo, mime_type, equipo) -> dict:
+async def _guardar_grande_en_partes(filename, contenido, unidad, tecnico, asignacion_id, tipo, mime_type, equipo, seccion=None) -> dict:
     eid = None
     try:
-        eid = await run_in_threadpool(_insertar_fila_sin_contenido, filename, unidad, tecnico, asignacion_id, tipo, mime_type, equipo)
+        eid = await run_in_threadpool(_insertar_fila_sin_contenido, filename, unidad, tecnico, asignacion_id, tipo, mime_type, equipo, seccion)
         await run_in_threadpool(ep.guardar_partes, eid, contenido)
         logger.info(f"[evidencias] {filename} ({len(contenido)//1024}KB) guardado en partes, id={eid}")
         return {"filename": filename, "ok": True, "error": None}
@@ -290,7 +294,7 @@ def contar_evidencias_asignacion(asignacion_id: int, current_user=Depends(verify
 def evidencias_por_actividad(asignacion_id: int, current_user=Depends(require_admin_or_visor)):
     try:
         rows = execute_read(
-            """SELECT id, nombre_archivo, tecnico, unit_number, tipo, equipo,
+            """SELECT id, nombre_archivo, tecnico, unit_number, tipo, equipo, seccion,
                       COALESCE(created_at, '') AS fecha
                FROM evidencias
                WHERE asignacion_id=%s
@@ -316,6 +320,7 @@ def evidencias_por_actividad(asignacion_id: int, current_user=Depends(require_ad
         "equipo": r.get("equipo") or "",
         "unit_number": r["unit_number"],
         "tipo": r.get("tipo") or "foto",
+        "seccion": r.get("seccion") or "",
         "fecha": str(r["fecha"]) if r["fecha"] else "",
     } for r in (rows or [])]
     return {"asignacion_id": asignacion_id, "total": len(fotos), "fotos": fotos}
@@ -337,7 +342,7 @@ def mis_evidencias(asignacion_id: int, current_user=Depends(verify_token)):
             raise HTTPException(status_code=403, detail="Esta actividad no te pertenece")
     try:
         rows = execute_read(
-            """SELECT id, nombre_archivo, tecnico, tipo,
+            """SELECT id, nombre_archivo, tecnico, tipo, seccion,
                       COALESCE(created_at, '') AS fecha
                FROM evidencias WHERE asignacion_id=%s ORDER BY id ASC""",
             (asignacion_id,)
@@ -355,9 +360,40 @@ def mis_evidencias(asignacion_id: int, current_user=Depends(verify_token)):
         "nombre": r["nombre_archivo"] or f"evidencia_{r['id']}",
         "tecnico": r.get("tecnico") or "",
         "tipo": r.get("tipo") or "foto",
+        "seccion": r.get("seccion") or "",
         "fecha": str(r["fecha"]) if r.get("fecha") else "",
     } for r in (rows or [])]
     return {"asignacion_id": asignacion_id, "total": len(evidencias), "evidencias": evidencias}
+
+
+# ── SECCIONES HABILITADAS PARA UNA TAREA (técnico dueño, o admin/visor/líder) ─
+# Responde si la tarea se divide en secciones (Inspección / Evidencia con secciones
+# habilitadas por el admin para el lote) y cuántas evidencias lleva cada una.
+@router.get("/secciones/{asignacion_id}")
+def secciones_de_tarea(asignacion_id: int, current_user=Depends(verify_token)):
+    info = sec.info_asignacion(asignacion_id)
+    if not info:
+        raise HTTPException(status_code=404, detail="Actividad no encontrada")
+    if current_user["role"] not in ("admin", "visor", "lider") and info["tecnico"] != current_user["username"]:
+        raise HTTPException(status_code=403, detail="Esta actividad no te pertenece")
+    habilitadas = info["secciones"]
+    if not habilitadas:
+        return {"asignacion_id": asignacion_id, "aplica": False, "actividad": info["actividad"], "secciones": []}
+    conteo = {}
+    try:
+        for f in execute_read(
+            "SELECT seccion, COUNT(*) AS n FROM evidencias WHERE asignacion_id=%s GROUP BY seccion", (asignacion_id,)
+        ) or []:
+            conteo[f["seccion"] or ""] = f["n"]
+    except Exception as e:
+        logger.warning(f"[evidencias] no se pudo contar por sección: {e}")
+    return {
+        "asignacion_id": asignacion_id,
+        "aplica": True,
+        "actividad": info["actividad"],
+        "id_lote": info["id_lote"],
+        "secciones": [{"clave": c, "etiqueta": sec.ETIQUETAS[c], "total": conteo.get(c, 0)} for c in habilitadas],
+    }
 
 
 # ── SUBIR FOTOS ───────────────────────────────────────────────────────────
@@ -368,6 +404,7 @@ async def subir_evidencias(
     files: List[UploadFile] = File(...),
     asignacion_id: int = Form(None),
     equipo: str = Form(None),
+    seccion: str = Form(None),
     current_user=Depends(verify_token)
 ):
     # Verificar límite
@@ -399,6 +436,12 @@ async def subir_evidencias(
             detail=f"Ya alcanzaste el límite de {MAX_FOTOS} fotos {limite_detalle}"
         )
 
+    # Sección (Reefer/Evaporador/Blower/Tanque): solo aplica a Inspección y Evidencia.
+    try:
+        seccion_final = await run_in_threadpool(sec.seccion_para_guardar, asignacion_id, seccion)
+    except ValueError as e_sec:
+        raise HTTPException(status_code=400, detail=str(e_sec))
+
     files_a_guardar = files[:disponibles]
     if tecnico != current_user["username"]:       # auditoría: quién subió a nombre de quién
         logger.info(f"[evidencias] '{current_user['username']}' ({current_user.get('role')}) sube "
@@ -424,7 +467,7 @@ async def subir_evidencias(
     async def procesar_con_limite(file):
         sem = semaforo_video if _tipo_de_archivo(file.filename) == "video" else semaforo
         async with sem:
-            return await procesar_foto(file, unidad, tecnico, asignacion_id, equipo_normalizado)
+            return await procesar_foto(file, unidad, tecnico, asignacion_id, equipo_normalizado, seccion_final)
 
     resultados = await asyncio.gather(
         *[procesar_con_limite(f) for f in files_a_guardar],

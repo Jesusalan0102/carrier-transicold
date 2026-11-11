@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.concurrency import run_in_threadpool
 from starlette.background import BackgroundTask
 from db import execute_read, execute_write
+import secciones as sec
 from auth import verify_token
 from pydantic import BaseModel
 from typing import Optional, List
@@ -282,7 +283,7 @@ def _generar_zip_backup_lote_disco(id_lote: str, progreso=None) -> str:
             try:
                 cur.execute(
                     f"""SELECT e.id, e.unit_number, e.nombre_archivo, e.tecnico, e.equipo,
-                               e.asignacion_id, e.tipo, e.onedrive_item_id,
+                               e.asignacion_id, e.tipo, e.onedrive_item_id, e.seccion,
                                (e.contenido IS NOT NULL) AS en_db, LENGTH(e.contenido) AS bytes_db,
                                COALESCE(e.created_at, NOW()) AS fecha_hora,
                                a.actividad_id AS actividad
@@ -298,7 +299,7 @@ def _generar_zip_backup_lote_disco(id_lote: str, progreso=None) -> str:
                 cur.execute(
                     f"""SELECT e.id, e.unit_number, e.nombre_archivo, e.tecnico,
                                NULL AS equipo, e.asignacion_id, 'foto' AS tipo,
-                               NULL AS onedrive_item_id,
+                               NULL AS onedrive_item_id, NULL AS seccion,
                                (e.contenido IS NOT NULL) AS en_db, LENGTH(e.contenido) AS bytes_db,
                                COALESCE(e.created_at, NOW()) AS fecha_hora,
                                a.actividad_id AS actividad
@@ -341,6 +342,9 @@ def _generar_zip_backup_lote_disco(id_lote: str, progreso=None) -> str:
                         continue
                     actividad_original = m.get("actividad") or "Sin actividad"
                     actividad_safe = _nombre_seguro(actividad_original, "Sin_actividad")
+                    # Sección (Reefer/Evaporador/Blower/Tanque): subcarpeta dentro de la tarea
+                    seccion_nombre = sec.etiqueta(m.get("seccion")) or ""
+                    seccion_safe = _nombre_seguro(seccion_nombre, "") if seccion_nombre else ""
                     tecnico_original = m.get("tecnico") or ""
                     tecnico_safe = _nombre_seguro(tecnico_original, "Sin_tecnico")
 
@@ -358,10 +362,11 @@ def _generar_zip_backup_lote_disco(id_lote: str, progreso=None) -> str:
                     )
                     ext = _nombre_seguro(ext, "jpg")
 
-                    clave = (vin_safe, actividad_safe)
+                    clave = (vin_safe, actividad_safe, seccion_safe)
                     idx = contadores.get(clave, 0) + 1
-                    base = f"{idx:02d}_{actividad_safe}_{vin_safe}_{tecnico_safe}_{fecha}_{hora_archivo}"
-                    carpeta = f"evidencias/{lote_safe}/{vin_safe}/{actividad_safe}"
+                    marca_sec = f"_{seccion_safe}" if seccion_safe else ""
+                    base = f"{idx:02d}_{actividad_safe}{marca_sec}_{vin_safe}_{tecnico_safe}_{fecha}_{hora_archivo}"
+                    carpeta = f"evidencias/{lote_safe}/{vin_safe}/{actividad_safe}" + (f"/{seccion_safe}" if seccion_safe else "")
                     ruta_zip, sufijo = f"{carpeta}/{base}.{ext}", 1
                     while ruta_zip in rutas_usadas:      # nunca sobrescribir
                         sufijo += 1
@@ -376,15 +381,16 @@ def _generar_zip_backup_lote_disco(id_lote: str, progreso=None) -> str:
                     contadores[clave] = idx
                     filas_csv.setdefault(clave, []).append([
                         id_lote, vin_safe, actividad_original, tecnico_original,
-                        fecha, hora_csv, ruta_zip.rsplit("/", 1)[-1], m.get("equipo") or ""
+                        fecha, hora_csv, ruta_zip.rsplit("/", 1)[-1], m.get("equipo") or "", seccion_nombre
                     ])
 
                 # informacion.csv por carpeta de actividad (igual que "Descargar evidencias")
-                for (vin_safe, actividad_safe), filas in filas_csv.items():
-                    lineas = ["Lote,VIN,Actividad,Tecnico,Fecha,Hora,Archivo,Equipo"]
+                for (vin_safe, actividad_safe, seccion_safe), filas in filas_csv.items():
+                    lineas = ["Lote,VIN,Actividad,Tecnico,Fecha,Hora,Archivo,Equipo,Seccion"]
                     for f in filas:
                         lineas.append(",".join('"' + str(x).replace('"', '""') + '"' for x in f))
-                    zf.writestr(f"evidencias/{lote_safe}/{vin_safe}/{actividad_safe}/informacion.csv",
+                    sub = f"/{seccion_safe}" if seccion_safe else ""
+                    zf.writestr(f"evidencias/{lote_safe}/{vin_safe}/{actividad_safe}{sub}/informacion.csv",
                                 "\n".join(lineas))
 
                 # Reportes de trabajo/problemas capturados por líderes para este lote
@@ -576,7 +582,7 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list, progreso=None) -> str:
                     try:
                         cur.execute(
                             f"""SELECT e.id, e.unit_number, e.nombre_archivo, e.tecnico, e.equipo,
-                                       e.asignacion_id, e.tipo, e.onedrive_item_id,
+                                       e.asignacion_id, e.tipo, e.onedrive_item_id, e.seccion,
                                        (e.contenido IS NOT NULL) AS en_db,
                                        LENGTH(e.contenido) AS bytes_db,
                                        COALESCE(e.created_at, NOW()) AS fecha_hora,
@@ -593,7 +599,7 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list, progreso=None) -> str:
                         cur.execute(
                             f"""SELECT e.id, e.unit_number, e.nombre_archivo, e.tecnico,
                                        NULL AS equipo, e.asignacion_id, 'foto' AS tipo,
-                                       NULL AS onedrive_item_id,
+                                       NULL AS onedrive_item_id, NULL AS seccion,
                                        (e.contenido IS NOT NULL) AS en_db,
                                        LENGTH(e.contenido) AS bytes_db,
                                        COALESCE(e.created_at, NOW()) AS fecha_hora,
@@ -641,6 +647,9 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list, progreso=None) -> str:
 
                         actividad_original = m.get("actividad") or "Sin actividad"
                         actividad_safe = _nombre_seguro(actividad_original, "Sin_actividad")
+                        # Sección (Reefer/Evaporador/Blower/Tanque): subcarpeta dentro de la tarea
+                        seccion_nombre = sec.etiqueta(m.get("seccion")) or ""
+                        seccion_safe = _nombre_seguro(seccion_nombre, "") if seccion_nombre else ""
                         tecnico_original = m.get("tecnico") or ""
                         tecnico_safe = _nombre_seguro(tecnico_original, "Sin_tecnico")
 
@@ -667,19 +676,21 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list, progreso=None) -> str:
                                 _registrar_faltante(progreso, id_lote, m, f"no se pudo bajar de OneDrive: {str(e_od)[:100]}")
                                 continue    # sin archivo no hay consecutivo ni fila en el CSV
 
-                        clave = (vin_safe, actividad_safe)
+                        clave = (vin_safe, actividad_safe, seccion_safe)
                         contadores[clave] = contadores.get(clave, 0) + 1
                         idx = contadores[clave]
 
-                        base = f"{idx:02d}_{actividad_safe}_{vin_safe}_{tecnico_safe}_{fecha}_{hora_archivo}"
-                        ruta = f"{lote_safe}/{vin_safe}/{actividad_safe}/{base}.{ext}"
+                        sub_sec = f"/{seccion_safe}" if seccion_safe else ""
+                        marca_sec = f"_{seccion_safe}" if seccion_safe else ""
+                        base = f"{idx:02d}_{actividad_safe}{marca_sec}_{vin_safe}_{tecnico_safe}_{fecha}_{hora_archivo}"
+                        ruta = f"{lote_safe}/{vin_safe}/{actividad_safe}{sub_sec}/{base}.{ext}"
                         # Nunca sobrescribir: si hay colisión (p.ej. dos evidencias
                         # del mismo técnico en el mismo segundo), se agrega sufijo.
                         sufijo = 1
                         ruta_final = ruta
                         while ruta_final in rutas_usadas:
                             sufijo += 1
-                            ruta_final = f"{lote_safe}/{vin_safe}/{actividad_safe}/{base}_{sufijo}.{ext}"
+                            ruta_final = f"{lote_safe}/{vin_safe}/{actividad_safe}{sub_sec}/{base}_{sufijo}.{ext}"
                         rutas_usadas.add(ruta_final)
 
                         es_video = (m.get("tipo") == "video") or ext in _EXT_VIDEO
@@ -709,16 +720,17 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list, progreso=None) -> str:
 
                         filas_csv.setdefault(clave, []).append([
                             id_lote, vin_safe, actividad_original, tecnico_original,
-                            fecha, hora_csv, ruta_final.rsplit("/", 1)[-1], m.get("equipo") or ""
+                            fecha, hora_csv, ruta_final.rsplit("/", 1)[-1], m.get("equipo") or "", seccion_nombre
                         ])
 
                     # informacion.csv por carpeta de actividad (no reemplaza la
                     # info visual que ya trae cada fotografía, es adicional).
-                    for (vin_safe, actividad_safe), filas in filas_csv.items():
-                        lineas = ["Lote,VIN,Actividad,Tecnico,Fecha,Hora,Archivo,Equipo"]
+                    for (vin_safe, actividad_safe, seccion_safe), filas in filas_csv.items():
+                        lineas = ["Lote,VIN,Actividad,Tecnico,Fecha,Hora,Archivo,Equipo,Seccion"]
                         for f in filas:
                             lineas.append(",".join('"' + str(x).replace('"', '""') + '"' for x in f))
-                        ruta_csv = f"{lote_safe}/{vin_safe}/{actividad_safe}/informacion.csv"
+                        sub = f"/{seccion_safe}" if seccion_safe else ""
+                        ruta_csv = f"{lote_safe}/{vin_safe}/{actividad_safe}{sub}/informacion.csv"
                         zf.writestr(ruta_csv, "\n".join(lineas))
 
                 _escribir_faltantes_csv(zf, progreso)
@@ -738,14 +750,78 @@ def _generar_zip_evidencias_por_lotes(id_lotes: list, progreso=None) -> str:
 # GET /api/unidades/lotes  — listar lotes con conteo y estado oculto
 @router.get("/lotes")
 def listar_lotes(current_user=Depends(verify_token)):
-    return execute_read("""
-        SELECT id_lote,
-               COUNT(*) AS total_unidades,
-               MAX(oculto) AS oculto
-        FROM unidades
-        GROUP BY id_lote
-        ORDER BY oculto ASC, id_lote ASC
-    """)
+    try:
+        filas = execute_read("""
+            SELECT u.id_lote,
+                   COUNT(*) AS total_unidades,
+                   MAX(u.oculto) AS oculto,
+                   MAX(lc.secciones_evidencia) AS secciones
+            FROM unidades u
+            LEFT JOIN lotes_config lc ON lc.id_lote = u.id_lote
+            GROUP BY u.id_lote
+            ORDER BY oculto ASC, u.id_lote ASC
+        """)
+    except Exception as e:      # columna/tabla aún no migrada: se responde como antes
+        logger.warning(f"[lotes] listado sin secciones: {e}")
+        return execute_read("""
+            SELECT id_lote,
+                   COUNT(*) AS total_unidades,
+                   MAX(oculto) AS oculto
+            FROM unidades
+            GROUP BY id_lote
+            ORDER BY oculto ASC, id_lote ASC
+        """)
+    for f in filas or []:
+        f["secciones"] = sec.normalizar(f.get("secciones"))
+    return filas
+
+
+class SeccionesLote(BaseModel):
+    id_lote: str
+    secciones: List[str] = []
+
+
+# GET /api/unidades/lotes/secciones?id_lote=XXX
+# Secciones de evidencia habilitadas para el lote (la elige el administrador).
+@router.get("/lotes/secciones")
+def ver_secciones_lote(id_lote: str = Query(...), current_user=Depends(verify_token)):
+    if current_user["role"] not in ("admin", "visor"):
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    unidades = execute_read("SELECT id FROM unidades WHERE id_lote=%s", (id_lote,))
+    if not unidades:
+        raise HTTPException(status_code=404, detail=f"Lote '{id_lote}' no encontrado")
+    return {
+        "id_lote": id_lote,
+        "unidades": len(unidades),
+        "actividades": list(sec.ACTIVIDADES_CON_SECCIONES),
+        "disponibles": [{"clave": c, "etiqueta": sec.ETIQUETAS[c]} for c in sec.SECCIONES],
+        "secciones": sec.secciones_de_lote(id_lote),
+    }
+
+
+# POST /api/unidades/lotes/secciones   {"id_lote": "...", "secciones": ["reefer","tanque"]}
+# Valida y aplica la selección a TODAS las unidades del lote. Lista vacía = sin secciones (como antes).
+@router.post("/lotes/secciones")
+def guardar_secciones(datos: SeccionesLote, current_user=Depends(verify_token)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    malas = sec.invalidas(datos.secciones)
+    if malas:
+        raise HTTPException(status_code=400,
+                            detail=f"Sección no válida: {', '.join(malas)}. Opciones: {', '.join(sec.SECCIONES)}")
+    unidades = execute_read("SELECT id FROM unidades WHERE id_lote=%s", (datos.id_lote,))
+    if not unidades:
+        raise HTTPException(status_code=404, detail=f"Lote '{datos.id_lote}' no encontrado")
+    guardadas = sec.guardar_secciones_lote(datos.id_lote, datos.secciones, current_user["username"])
+    logger.info(f"[secciones] '{current_user['username']}' fijó {guardadas or 'sin secciones'} para el lote {datos.id_lote}")
+    return {
+        "id_lote": datos.id_lote,
+        "secciones": guardadas,
+        "unidades_afectadas": len(unidades),
+        "mensaje": (f"Secciones habilitadas para el lote '{datos.id_lote}' ({len(unidades)} unidad(es)): "
+                    + ", ".join(sec.ETIQUETAS[c] for c in guardadas)) if guardadas
+                   else f"El lote '{datos.id_lote}' ya no usa secciones.",
+    }
 
 
 # GET /api/unidades/lote-por-unidad?unit_number=A&unit_number=B  (uno o varios)
