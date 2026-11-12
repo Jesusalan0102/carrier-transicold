@@ -922,6 +922,10 @@ async def login():
             .btn-primary { background: linear-gradient(135deg, #002B5B 0%, #0057A8 100%); color: white; border: none; border-radius: 10px; padding: 14px; width: 100%; font-weight: 700; font-size: 1rem; cursor: pointer; transition: transform 0.2s; }
             .btn-primary:hover { transform: translateY(-2px); }
             #errorMsg { color: #dc2626; font-size: 0.85rem; min-height: 20px; }
+            .login-card .jass-firma { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 22px; padding-top: 16px; border-top: 1px solid #e5e9f2; text-decoration: none; color: #6b7280; font-size: 0.7rem; letter-spacing: 0.14em; }
+            .login-card .jass-firma img { width: 34px; height: 34px; margin: 0; border-radius: 50%; }
+            .login-card .jass-firma b { color: #5b93c4; font-weight: 800; }
+            .login-card .jass-firma:hover b { color: #3f7fb8; }
 
             #splashScreen {
                 position: fixed; inset: 0; z-index: 9999;
@@ -950,7 +954,10 @@ async def login():
                 <p id="errorMsg"></p>
                 <button type="submit" class="btn-primary">Ingresar al Sistema</button>
             </form>
-            <p style="text-align:center; font-size:0.75rem; color:#9ca3af; margin-top:16px;">© 2026 Carrier Transicold</p>
+            <a class="jass-firma" href="https://jass-solutions.netlify.app" target="_blank" rel="noopener" aria-label="Designed by JASS Solutions">
+                <img src="/static/jass-logo.png" alt="JASS Solutions" width="34" height="34">
+                <span>DESIGNED BY <b>JASS SOLUTIONS</b></span>
+            </a>
         </div>
         <script>
             document.getElementById('loginForm').addEventListener('submit', async (e) => {
